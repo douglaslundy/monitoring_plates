@@ -1,0 +1,104 @@
+version: "3.9"
+
+networks:
+  monitoramento_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: monitoramento
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - monitoramento_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d monitoramento"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    networks:
+      - monitoramento_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://user:pass@postgres:5432/monitoramento
+      REDIS_URL: redis://redis:6379
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.core.seed &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoramento_net
+
+  worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://user:pass@postgres:5432/monitoramento
+      REDIS_URL: redis://redis:6379
+    command: celery -A app.workers.frame_processor worker --loglevel=info -Q frames
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoramento_net
+
+  retention-worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://user:pass@postgres:5432/monitoramento
+      REDIS_URL: redis://redis:6379
+    command: celery -A app.workers.retention_cleaner beat --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoramento_net
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - monitoramento_net

@@ -1,0 +1,248 @@
+from io import BytesIO
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+from app.core.security import hash_password
+from app.models.camera import Camera
+from app.models.client import Client
+from app.models.plan import Plan
+from app.models.user import User, UserRole
+
+
+@pytest.fixture
+def plan(db):
+    p = Plan(
+        name="Básico",
+        max_cameras=3,
+        retention_days=30,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=0,
+        is_active=True,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+@pytest.fixture
+def tenant_a(db, plan):
+    c = Client(name="Cliente A", email="a@cliente.com", plan_id=plan.id, is_active=True)
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@pytest.fixture
+def tenant_b(db, plan):
+    c = Client(name="Cliente B", email="b@cliente.com", plan_id=plan.id, is_active=True)
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@pytest.fixture
+def super_admin(db):
+    u = User(
+        email="admin@sistema.com",
+        name="Admin",
+        password_hash=hash_password("Admin@123"),
+        role=UserRole.super_admin,
+        is_active=True,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+@pytest.fixture
+def client_user_a(db, tenant_a):
+    u = User(
+        email="user@clientea.com",
+        name="User A",
+        password_hash=hash_password("Admin@123"),
+        role=UserRole.client_user,
+        client_id=tenant_a.id,
+        is_active=True,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+def login(client, email: str, password: str = "Admin@123") -> str:
+    res = client.post("/api/auth/login", json={"email": email, "password": password})
+    assert res.status_code == 200, res.text
+    return res.json()["access_token"]
+
+
+def auth(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+# ── Camera creation ────────────────────────────────────────────────────────────
+
+def test_camera_agent_token_unico_gerado(client, db, super_admin, tenant_a):
+    """Agent camera gets a unique 32-char hex token on creation."""
+    token = login(client, "admin@sistema.com")
+    res = client.post(
+        "/api/cameras",
+        json={
+            "client_id": str(tenant_a.id),
+            "name": "Cam Agent",
+            "connection_type": "agent",
+            "is_active": True,
+        },
+        headers=auth(token),
+    )
+    assert res.status_code == 201
+    data = res.json()
+    assert data["agent_token"] is not None
+    assert len(data["agent_token"]) == 32
+    assert "-" not in data["agent_token"]
+
+
+def test_camera_rtsp_sem_agent_token(client, db, super_admin, tenant_a):
+    """RTSP camera should have no agent token."""
+    token = login(client, "admin@sistema.com")
+    res = client.post(
+        "/api/cameras",
+        json={
+            "client_id": str(tenant_a.id),
+            "name": "Cam RTSP",
+            "connection_type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.1/stream",
+            "is_active": True,
+        },
+        headers=auth(token),
+    )
+    assert res.status_code == 201
+    assert res.json()["agent_token"] is None
+
+
+def test_dois_agentes_tokens_diferentes(client, db, super_admin, tenant_a):
+    """Two agent cameras must have distinct tokens."""
+    token = login(client, "admin@sistema.com")
+    body = {"client_id": str(tenant_a.id), "name": "Cam", "connection_type": "agent", "is_active": True}
+    r1 = client.post("/api/cameras", json=body, headers=auth(token))
+    r2 = client.post("/api/cameras", json={**body, "name": "Cam 2"}, headers=auth(token))
+    assert r1.json()["agent_token"] != r2.json()["agent_token"]
+
+
+# ── /api/agent/frame ───────────────────────────────────────────────────────────
+
+def test_agent_frame_token_correto(client, db, super_admin, tenant_a):
+    """/api/agent/frame with valid Bearer token returns 200 and queues a task."""
+    import sys
+    import types
+
+    # Stub frame_processor module so the lazy import inside the route works
+    # without requiring Celery or Redis in the test environment.
+    mock_task = MagicMock()
+    mock_task.delay = MagicMock(return_value=None)
+    stub_module = types.ModuleType("app.workers.frame_processor")
+    stub_module.process_frame = mock_task  # type: ignore[attr-defined]
+
+    admin_token = login(client, "admin@sistema.com")
+    cam_res = client.post(
+        "/api/cameras",
+        json={"client_id": str(tenant_a.id), "name": "Cam", "connection_type": "agent", "is_active": True},
+        headers=auth(admin_token),
+    )
+    agent_token = cam_res.json()["agent_token"]
+
+    fake_jpeg = b"\xff\xd8\xff" + b"\x00" * 64
+    with patch.dict(sys.modules, {"app.workers.frame_processor": stub_module}):
+        res = client.post(
+            "/api/agent/frame",
+            files={"frame": ("frame.jpg", BytesIO(fake_jpeg), "image/jpeg")},
+            headers={"Authorization": f"Bearer {agent_token}"},
+        )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["received"] is True
+    assert "camera_id" in data
+    mock_task.delay.assert_called_once()
+
+
+def test_agent_frame_token_errado(client, db):
+    """/api/agent/frame with invalid token returns 401."""
+    fake_jpeg = b"\xff\xd8\xff" + b"\x00" * 64
+    res = client.post(
+        "/api/agent/frame",
+        files={"frame": ("frame.jpg", BytesIO(fake_jpeg), "image/jpeg")},
+        headers={"Authorization": "Bearer token-invalido"},
+    )
+    assert res.status_code == 401
+
+
+def test_agent_frame_sem_bearer(client, db):
+    """/api/agent/frame without Bearer prefix returns 401."""
+    fake_jpeg = b"\xff\xd8\xff" + b"\x00" * 64
+    res = client.post(
+        "/api/agent/frame",
+        files={"frame": ("frame.jpg", BytesIO(fake_jpeg), "image/jpeg")},
+        headers={"Authorization": "algumtoken"},
+    )
+    assert res.status_code == 401
+
+
+# ── Multi-tenant isolation ─────────────────────────────────────────────────────
+
+def test_cliente_nao_ve_cameras_de_outro_cliente(client, db, super_admin, tenant_a, tenant_b, client_user_a):
+    """A client_user only sees cameras belonging to their own client."""
+    admin_token = login(client, "admin@sistema.com")
+
+    # Create one camera for each tenant
+    client.post(
+        "/api/cameras",
+        json={"client_id": str(tenant_a.id), "name": "Cam A", "connection_type": "rtsp", "rtsp_url": "rtsp://a", "is_active": True},
+        headers=auth(admin_token),
+    )
+    client.post(
+        "/api/cameras",
+        json={"client_id": str(tenant_b.id), "name": "Cam B", "connection_type": "rtsp", "rtsp_url": "rtsp://b", "is_active": True},
+        headers=auth(admin_token),
+    )
+
+    user_token = login(client, "user@clientea.com")
+    res = client.get("/api/cameras", headers=auth(user_token))
+    assert res.status_code == 200
+    cameras = res.json()
+    assert len(cameras) == 1
+    assert cameras[0]["client_id"] == str(tenant_a.id)
+    assert cameras[0]["name"] == "Cam A"
+
+
+def test_super_admin_ve_todas_cameras(client, db, super_admin, tenant_a, tenant_b):
+    """Super admin sees cameras from all clients."""
+    admin_token = login(client, "admin@sistema.com")
+    client.post("/api/cameras", json={"client_id": str(tenant_a.id), "name": "Cam A", "connection_type": "rtsp", "rtsp_url": "rtsp://a", "is_active": True}, headers=auth(admin_token))
+    client.post("/api/cameras", json={"client_id": str(tenant_b.id), "name": "Cam B", "connection_type": "rtsp", "rtsp_url": "rtsp://b", "is_active": True}, headers=auth(admin_token))
+
+    res = client.get("/api/cameras", headers=auth(admin_token))
+    assert res.status_code == 200
+    assert len(res.json()) == 2
+
+
+def test_get_camera_por_id_inclui_is_online(client, db, super_admin, tenant_a):
+    """GET /{id} returns camera with is_online field and last_occurrences."""
+    admin_token = login(client, "admin@sistema.com")
+    cam = client.post(
+        "/api/cameras",
+        json={"client_id": str(tenant_a.id), "name": "Cam", "connection_type": "rtsp", "rtsp_url": "rtsp://x", "is_active": True},
+        headers=auth(admin_token),
+    ).json()
+
+    res = client.get(f"/api/cameras/{cam['id']}", headers=auth(admin_token))
+    assert res.status_code == 200
+    data = res.json()
+    assert "is_online" in data
+    assert "last_occurrences" in data
+    assert isinstance(data["last_occurrences"], list)
