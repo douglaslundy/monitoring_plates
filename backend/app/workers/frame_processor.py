@@ -25,7 +25,7 @@ try:
         logger = logging.getLogger(__name__)
         frame_bytes = base64.b64decode(frame_b64)
 
-        result = recognizer.recognize(frame_bytes)
+        result = recognizer.recognize(frame_bytes, camera_id=camera_id)
         if result is None:
             return
 
@@ -68,6 +68,11 @@ try:
                 confidence=confidence,
                 image_path=image_path,
                 expires_at=expires_at,
+                vehicle_type=result.get("vehicle_type"),
+                vehicle_color=result.get("vehicle_color"),
+                vehicle_make_model=result.get("vehicle_make_model"),
+                region_code=result.get("region_code"),
+                ocr_engine_used=result.get("engine"),
             )
             db.add(occ)
             db.commit()

@@ -4,6 +4,7 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.models.plan import Plan
 from app.models.user import User, UserRole
+from app.models.ocr_engine_config import OcrEngineConfig, OcrEngineType, OcrEngineMode
 
 
 def run() -> None:
@@ -39,6 +40,21 @@ def run() -> None:
             db.add_all(plans)
             db.commit()
             print("[seed] Planos criados.")
+
+        easyocr_cfg = (
+            db.query(OcrEngineConfig)
+            .filter(OcrEngineConfig.engine_type == OcrEngineType.easyocr)
+            .first()
+        )
+        if not easyocr_cfg:
+            db.add(OcrEngineConfig(
+                engine_type=OcrEngineType.easyocr,
+                mode=OcrEngineMode.cloud,
+                is_active=True,
+                regions=["br"],
+            ))
+            db.commit()
+            print("[seed] Motor OCR padrão criado: EasyOCR (ativo).")
 
         if not db.query(User).filter(User.email == "admin@sistema.com").first():
             admin = User(

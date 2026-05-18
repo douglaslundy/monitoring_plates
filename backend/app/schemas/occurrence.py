@@ -39,6 +39,11 @@ class OccurrenceWithCamera(BaseModel):
     detected_at: datetime
     expires_at: Optional[datetime] = None
     camera: CameraMin
+    vehicle_type: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    vehicle_make_model: Optional[str] = None
+    region_code: Optional[str] = None
+    ocr_engine_used: Optional[str] = None
 
 
 class OccurrenceSearch(BaseModel):

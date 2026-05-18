@@ -13,6 +13,7 @@ class PlanBase(BaseModel):
     realtime_alerts: bool = True
     price_monthly: Decimal
     is_active: bool = True
+    ocr_engine: str = "system_default"
 
 
 class PlanCreate(PlanBase):
@@ -27,6 +28,7 @@ class PlanUpdate(BaseModel):
     realtime_alerts: Optional[bool] = None
     price_monthly: Optional[Decimal] = None
     is_active: Optional[bool] = None
+    ocr_engine: Optional[str] = None
 
 
 class PlanRead(PlanBase):

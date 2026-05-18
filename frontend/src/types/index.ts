@@ -7,8 +7,25 @@ export interface Plan {
   realtime_alerts: boolean;
   price_monthly: number | string;
   is_active: boolean;
+  ocr_engine: "system_default" | "easyocr" | "plate_recognizer";
   created_at: string;
   client_count?: number;
+}
+
+export interface OccurrenceWithCamera {
+  id: string;
+  plate: string;
+  confidence: number;
+  image_path: string;
+  image_url: string;
+  detected_at: string;
+  expires_at: string | null;
+  camera: CameraMin;
+  vehicle_type: string | null;
+  vehicle_color: string | null;
+  vehicle_make_model: string | null;
+  region_code: string | null;
+  ocr_engine_used: string | null;
 }
 
 export interface Client {
@@ -75,16 +92,6 @@ export interface CameraMin {
   location: string | null;
 }
 
-export interface OccurrenceWithCamera {
-  id: string;
-  plate: string;
-  confidence: number;
-  image_path: string;
-  image_url: string;
-  detected_at: string;
-  expires_at: string | null;
-  camera: CameraMin;
-}
 
 export interface OccurrencePage {
   items: OccurrenceWithCamera[];

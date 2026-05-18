@@ -5,7 +5,7 @@ import api from "@/lib/api";
 import { Plan } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
-import { CreditCard, Users, Camera, Clock, Mail, Wifi } from "lucide-react";
+import { CreditCard, Users, Camera, Clock, Mail, Wifi, ScanLine } from "lucide-react";
 
 export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -99,6 +99,17 @@ export default function PlansPage() {
                 <span className="text-muted-foreground">Tempo real:</span>
                 <Badge variant={plan.realtime_alerts ? "success" : "secondary"}>
                   {plan.realtime_alerts ? "Sim" : "Não"}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <ScanLine className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">Motor OCR:</span>
+                <Badge variant={plan.ocr_engine === "plate_recognizer" ? "info" : "secondary"}>
+                  {plan.ocr_engine === "plate_recognizer"
+                    ? "Plate Recognizer"
+                    : plan.ocr_engine === "easyocr"
+                    ? "EasyOCR"
+                    : "Padrão do sistema"}
                 </Badge>
               </div>
               <div className="flex items-center gap-2 text-sm pt-1">

@@ -423,6 +423,30 @@ export default function ClientSearchPage() {
                   <p className="font-medium">{formatDt(selected.expires_at)}</p>
                 </div>
               )}
+              {selected.vehicle_type && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Tipo de veículo</p>
+                  <p className="font-medium capitalize">{selected.vehicle_type}</p>
+                </div>
+              )}
+              {selected.vehicle_color && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Cor</p>
+                  <p className="font-medium capitalize">{selected.vehicle_color}</p>
+                </div>
+              )}
+              {selected.vehicle_make_model && (
+                <div className="col-span-2">
+                  <p className="text-xs text-muted-foreground mb-1">Marca / Modelo</p>
+                  <p className="font-medium">{selected.vehicle_make_model}</p>
+                </div>
+              )}
+              {selected.region_code && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Região</p>
+                  <p className="font-medium uppercase">{selected.region_code}</p>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3">

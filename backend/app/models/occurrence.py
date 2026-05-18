@@ -18,6 +18,11 @@ class Occurrence(Base):
     detected_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    vehicle_type = Column(String(30), nullable=True)
+    vehicle_color = Column(String(50), nullable=True)
+    vehicle_make_model = Column(String(100), nullable=True)
+    region_code = Column(String(10), nullable=True)
+    ocr_engine_used = Column(String(30), nullable=True)
 
     camera = relationship("Camera", back_populates="occurrences")
     alerts_sent = relationship("AlertSent", back_populates="occurrence")

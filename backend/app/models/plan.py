@@ -19,6 +19,7 @@ class Plan(Base):
     realtime_alerts = Column(Boolean, nullable=False, default=True)
     price_monthly = Column(Numeric(10, 2), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    ocr_engine = Column(String(30), nullable=False, default="system_default")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     clients = relationship("Client", back_populates="plan")
