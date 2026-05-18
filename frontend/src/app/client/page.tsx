@@ -6,7 +6,8 @@ import { MetricCard } from "@/components/ui/MetricCard";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { getMe } from "@/lib/auth";
-import type { OccurrenceStats, OccurrenceWithCamera, UserMe } from "@/types";
+import type { UserMe } from "@/lib/auth";
+import type { OccurrenceStats, OccurrenceWithCamera } from "@/types";
 import { Camera, Shield, Activity, BarChart2 } from "lucide-react";
 
 function BarChart({ data }: { data: { hour: number; count: number }[] }) {
