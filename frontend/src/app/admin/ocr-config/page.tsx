@@ -175,15 +175,7 @@ export default function OcrConfigPage() {
       <PageHeader
         title="Motores OCR"
         description="Configure e gerencie os motores de reconhecimento de placas"
-        action={
-          <button
-            onClick={openCreate}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Adicionar motor
-          </button>
-        }
+        action={{ label: "Adicionar motor", icon: Plus, onClick: openCreate }}
       />
 
       {error && (
@@ -286,8 +278,8 @@ export default function OcrConfigPage() {
       )}
 
       <Modal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
+        open={showModal}
+        onOpenChange={setShowModal}
         title={editing ? `Editar ${ENGINE_LABELS[editing.engine_type]}` : "Adicionar motor OCR"}
       >
         <div className="space-y-4">

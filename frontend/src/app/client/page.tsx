@@ -81,6 +81,11 @@ export default function ClientDashboard() {
         name: lastAlert.camera_name,
         location: lastAlert.location,
       },
+      vehicle_type: null,
+      vehicle_color: null,
+      vehicle_make_model: null,
+      region_code: null,
+      ocr_engine_used: null,
     };
     setFeed((prev) => [synthetic, ...prev].slice(0, 10));
   }, [lastAlert]);

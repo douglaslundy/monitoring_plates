@@ -93,6 +93,42 @@ try:
         finally:
             db.close()
 
+    @celery_app.task(name="app.workers.frame_processor.poll_rtsp_cameras")
+    def poll_rtsp_cameras() -> None:
+        import base64
+        import logging
+        from datetime import datetime, timezone
+
+        from app.core.database import SessionLocal
+        from app.models.camera import Camera, ConnectionType
+        from app.services.camera_service import capture_rtsp_frame
+
+        logger = logging.getLogger(__name__)
+        db = SessionLocal()
+        try:
+            cameras = (
+                db.query(Camera)
+                .filter(
+                    Camera.connection_type == ConnectionType.rtsp,
+                    Camera.is_active == True,  # noqa: E712
+                    Camera.rtsp_url.isnot(None),
+                )
+                .all()
+            )
+            for camera in cameras:
+                try:
+                    frame_bytes = capture_rtsp_frame(camera.rtsp_url)
+                    if frame_bytes is None:
+                        continue
+                    camera.last_seen_at = datetime.now(timezone.utc)
+                    db.commit()
+                    frame_b64 = base64.b64encode(frame_bytes).decode()
+                    process_frame.delay(str(camera.id), frame_b64)
+                except Exception as exc:
+                    logger.warning("RTSP poll failed camera=%s: %s", camera.id, exc)
+        finally:
+            db.close()
+
 except ImportError:
     class _NoOpTask:
         def delay(self, *args, **kwargs):  # type: ignore[override]

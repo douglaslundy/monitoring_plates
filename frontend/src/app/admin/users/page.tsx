@@ -6,6 +6,8 @@ import { User, Client } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
+import { Plus } from "lucide-react";
 
 const roleLabel: Record<string, string> = {
   super_admin: "Super Admin",
@@ -13,14 +15,13 @@ const roleLabel: Record<string, string> = {
   client_user: "Usuário",
 };
 
-const roleBadge: Record<
-  string,
-  "default" | "success" | "warning" | "secondary" | "danger"
-> = {
+const roleBadge: Record<string, "default" | "success" | "warning" | "secondary" | "danger"> = {
   super_admin: "default",
   client_admin: "warning",
   client_user: "secondary",
 };
+
+const EMPTY_FORM = { name: "", email: "", password: "", role: "client_user", client_id: "", is_active: true };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -29,10 +30,12 @@ export default function UsersPage() {
   const [error, setError] = useState("");
   const [filterClient, setFilterClient] = useState("");
   const [filterRole, setFilterRole] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   async function fetchData() {
     setLoading(true);
@@ -51,8 +54,40 @@ export default function UsersPage() {
     }
   }
 
-  const clientMap = Object.fromEntries(clients.map((c) => [c.id, c.name]));
+  function openModal() {
+    setForm(EMPTY_FORM);
+    setFormError("");
+    setModalOpen(true);
+  }
 
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
+      setFormError("Preencha todos os campos obrigatórios");
+      return;
+    }
+    setSaving(true);
+    setFormError("");
+    try {
+      await api.post("/api/users", {
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        role: form.role,
+        client_id: form.client_id || null,
+        is_active: form.is_active,
+      });
+      setModalOpen(false);
+      fetchData();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setFormError(msg ?? "Erro ao criar usuário");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const clientMap = Object.fromEntries(clients.map((c) => [c.id, c.name]));
   const filtered = users.filter((u) => {
     if (filterClient && u.client_id !== filterClient) return false;
     if (filterRole && u.role !== filterRole) return false;
@@ -75,9 +110,7 @@ export default function UsersPage() {
       key: "role",
       header: "Perfil",
       render: (_, row) => (
-        <Badge variant={roleBadge[row.role] ?? "secondary"}>
-          {roleLabel[row.role] ?? row.role}
-        </Badge>
+        <Badge variant={roleBadge[row.role] ?? "secondary"}>{roleLabel[row.role] ?? row.role}</Badge>
       ),
     },
     {
@@ -94,9 +127,7 @@ export default function UsersPage() {
       key: "is_active",
       header: "Status",
       render: (_, row) => (
-        <Badge variant={row.is_active ? "success" : "danger"}>
-          {row.is_active ? "Ativo" : "Inativo"}
-        </Badge>
+        <Badge variant={row.is_active ? "success" : "danger"}>{row.is_active ? "Ativo" : "Inativo"}</Badge>
       ),
     },
     {
@@ -108,7 +139,11 @@ export default function UsersPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Usuários" description="Gerencie os usuários do sistema" />
+      <PageHeader
+        title="Usuários"
+        description="Gerencie os usuários do sistema"
+        action={{ label: "Novo Usuário", icon: Plus, onClick: openModal }}
+      />
 
       <div className="flex flex-wrap gap-3 mb-4">
         {clients.length > 0 && (
@@ -119,9 +154,7 @@ export default function UsersPage() {
           >
             <option value="">Todos os clientes</option>
             {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
+              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         )}
@@ -137,10 +170,7 @@ export default function UsersPage() {
         </select>
         {(filterClient || filterRole) && (
           <button
-            onClick={() => {
-              setFilterClient("");
-              setFilterRole("");
-            }}
+            onClick={() => { setFilterClient(""); setFilterRole(""); }}
             className="text-sm text-muted-foreground hover:text-foreground underline"
           >
             Limpar filtros
@@ -152,17 +182,103 @@ export default function UsersPage() {
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-          {error}
-        </div>
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
       )}
 
-      <DataTable
-        data={filtered}
-        columns={columns}
-        loading={loading}
-        emptyMessage="Nenhum usuário encontrado"
-      />
+      <DataTable data={filtered} columns={columns} loading={loading} emptyMessage="Nenhum usuário encontrado" />
+
+      <Modal open={modalOpen} onOpenChange={setModalOpen} title="Novo Usuário">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Nome *</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Nome completo"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">E-mail *</label>
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="email@exemplo.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Senha *</label>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Mínimo 8 caracteres"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Perfil *</label>
+            <select
+              value={form.role}
+              onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="client_user">Usuário</option>
+              <option value="client_admin">Admin Cliente</option>
+              <option value="super_admin">Super Admin</option>
+            </select>
+          </div>
+          {clients.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Cliente</label>
+              <select
+                value={form.client_id}
+                onChange={(e) => setForm((f) => ({ ...f, client_id: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Nenhum (sistema)</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="is_active"
+              checked={form.is_active}
+              onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
+              className="rounded"
+            />
+            <label htmlFor="is_active" className="text-sm">Usuário ativo</label>
+          </div>
+
+          {formError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">{formError}</p>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving ? "Criando..." : "Criar Usuário"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

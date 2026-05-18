@@ -1,5 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
+from datetime import timedelta
 from app.core.config import settings
 
 celery_app = Celery("retention_cleaner", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
@@ -8,7 +9,12 @@ celery_app.conf.beat_schedule = {
     "clean-old-occurrences": {
         "task": "app.workers.retention_cleaner.clean_old_occurrences",
         "schedule": crontab(hour=2, minute=0),
-    }
+    },
+    "poll-rtsp-cameras": {
+        "task": "app.workers.frame_processor.poll_rtsp_cameras",
+        "schedule": timedelta(seconds=1),
+        "options": {"queue": "frames"},
+    },
 }
 
 
