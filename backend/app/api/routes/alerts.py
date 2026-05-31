@@ -10,7 +10,7 @@ from app.schemas.alert import AlertSentRead
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
-@router.get("/", response_model=List[AlertSentRead])
+@router.get("", response_model=List[AlertSentRead])
 def list_alerts(
     skip: int = 0,
     limit: int = 100,

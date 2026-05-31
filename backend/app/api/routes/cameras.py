@@ -25,7 +25,7 @@ def _get_camera_or_403(camera_id: UUID, current_user: User, db: Session) -> Came
     return camera
 
 
-@router.get("/", response_model=List[CameraRead])
+@router.get("", response_model=List[CameraRead])
 def list_cameras(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -35,7 +35,7 @@ def list_cameras(
     return db.query(Camera).filter(Camera.client_id == current_user.client_id).all()
 
 
-@router.post("/", response_model=CameraRead, status_code=201)
+@router.post("", response_model=CameraRead, status_code=201)
 def create_camera(
     payload: CameraCreate,
     db: Session = Depends(get_db),

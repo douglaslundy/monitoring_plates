@@ -24,7 +24,7 @@ def _build_plan_read(plan: Plan, db: Session) -> PlanRead:
     return result
 
 
-@router.get("/", response_model=List[PlanRead])
+@router.get("", response_model=List[PlanRead])
 def list_plans(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
@@ -33,7 +33,7 @@ def list_plans(
     return [_build_plan_read(p, db) for p in plans]
 
 
-@router.post("/", response_model=PlanRead, status_code=201)
+@router.post("", response_model=PlanRead, status_code=201)
 def create_plan(
     payload: PlanCreate,
     db: Session = Depends(get_db),

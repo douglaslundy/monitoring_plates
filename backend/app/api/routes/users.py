@@ -11,7 +11,7 @@ from app.schemas.user import UserCreate, UserRead, UserUpdate
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/", response_model=List[UserRead])
+@router.get("", response_model=List[UserRead])
 def list_users(
     client_id: Optional[UUID] = None,
     db: Session = Depends(get_db),
@@ -27,7 +27,7 @@ def list_users(
     raise HTTPException(status_code=403, detail="Acesso não autorizado")
 
 
-@router.post("/", response_model=UserRead, status_code=201)
+@router.post("", response_model=UserRead, status_code=201)
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),

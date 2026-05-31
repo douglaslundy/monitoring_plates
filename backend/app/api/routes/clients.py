@@ -21,7 +21,7 @@ def _build_client_read(client: Client, db: Session) -> ClientRead:
     return result
 
 
-@router.get("/", response_model=List[ClientRead])
+@router.get("", response_model=List[ClientRead])
 def list_clients(
     db: Session = Depends(get_db),
     _=Depends(require_super_admin),
@@ -30,7 +30,7 @@ def list_clients(
     return [_build_client_read(c, db) for c in clients]
 
 
-@router.post("/", response_model=ClientRead, status_code=201)
+@router.post("", response_model=ClientRead, status_code=201)
 def create_client(
     payload: ClientCreateWithAdmin,
     db: Session = Depends(get_db),

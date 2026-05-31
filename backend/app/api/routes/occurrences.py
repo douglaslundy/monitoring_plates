@@ -220,7 +220,7 @@ def export_csv(
     )
 
 
-@router.get("/", response_model=OccurrencePage)
+@router.get("", response_model=OccurrencePage)
 def list_occurrences(
     plate: Optional[str] = Query(None),
     camera_id: Optional[UUID] = Query(None),

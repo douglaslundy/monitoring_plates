@@ -17,7 +17,7 @@ from app.schemas.ocr_engine_config import (
 router = APIRouter(prefix="/ocr-config", tags=["ocr-config"])
 
 
-@router.get("/", response_model=List[OcrEngineConfigRead])
+@router.get("", response_model=List[OcrEngineConfigRead])
 def list_configs(
     db: Session = Depends(get_db),
     _=Depends(require_super_admin),
@@ -25,7 +25,7 @@ def list_configs(
     return db.query(OcrEngineConfig).order_by(OcrEngineConfig.created_at).all()
 
 
-@router.post("/", response_model=OcrEngineConfigRead, status_code=201)
+@router.post("", response_model=OcrEngineConfigRead, status_code=201)
 def create_config(
     payload: OcrEngineConfigCreate,
     db: Session = Depends(get_db),

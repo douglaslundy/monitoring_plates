@@ -11,7 +11,7 @@ from app.schemas.monitored_plate import MonitoredPlateCreate, MonitoredPlateRead
 router = APIRouter(prefix="/monitored-plates", tags=["monitored-plates"])
 
 
-@router.get("/", response_model=List[MonitoredPlateRead])
+@router.get("", response_model=List[MonitoredPlateRead])
 def list_plates(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -25,7 +25,7 @@ def list_plates(
     )
 
 
-@router.post("/", response_model=MonitoredPlateRead, status_code=201)
+@router.post("", response_model=MonitoredPlateRead, status_code=201)
 def create_plate(
     payload: MonitoredPlateCreate,
     db: Session = Depends(get_db),
