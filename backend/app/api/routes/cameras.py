@@ -50,7 +50,14 @@ def create_camera(
     else:
         effective_client_id = current_user.client_id
         if not effective_client_id:
-            raise HTTPException(status_code=400, detail="Usuário sem cliente vinculado")
+            active_clients = db.query(Client).filter(Client.is_active == True).all()  # noqa: E712
+            if len(active_clients) == 1:
+                effective_client_id = active_clients[0].id
+                current_user.client_id = effective_client_id
+                db.commit()
+                db.refresh(current_user)
+            else:
+                raise HTTPException(status_code=400, detail="Usuário sem cliente vinculado")
         if payload.client_id and payload.client_id != current_user.client_id:
             raise HTTPException(status_code=403, detail="Acesso negado")
 

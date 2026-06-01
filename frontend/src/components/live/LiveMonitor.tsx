@@ -94,12 +94,17 @@ export default function LiveMonitor({
         }));
         return;
       }
+      let imgSrc: string | undefined = undefined;
+      if (res.data.image_url) {
+        const blobRes = await api.get(res.data.image_url, { responseType: "blob" });
+        imgSrc = URL.createObjectURL(blobRes.data);
+      }
       setFrames((s) => ({
         ...s,
         [cameraId]: {
           ...s[cameraId],
           loading: false,
-          image: res.data.image_url || undefined,
+          image: imgSrc,
           plate: res.data.plate || undefined,
           updatedAt: res.data.detected_at ? new Date(res.data.detected_at).getTime() : Date.now(),
           error: "",
