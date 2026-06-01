@@ -12,6 +12,7 @@ from app.models.occurrence import Occurrence
 from app.models.user import User, UserRole
 from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDetail, OccurrenceSmall
 from app.services.camera_service import generate_agent_token, capture_rtsp_frame
+from app.services.storage_service import get_url
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -146,3 +147,25 @@ def get_camera_token(
 ):
     camera = _get_camera_or_403(camera_id, current_user, db)
     return {"agent_token": camera.agent_token, "camera_id": str(camera_id)}
+
+
+@router.get("/{camera_id}/last-frame")
+def get_camera_last_frame(
+    camera_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _get_camera_or_403(camera_id, current_user, db)
+    occ = (
+        db.query(Occurrence)
+        .filter(Occurrence.camera_id == camera_id, Occurrence.image_path.isnot(None))
+        .order_by(Occurrence.detected_at.desc())
+        .first()
+    )
+    if not occ or not occ.image_path:
+        return {"image_url": None, "detected_at": None, "plate": None}
+    return {
+        "image_url": get_url(occ.image_path),
+        "detected_at": occ.detected_at,
+        "plate": occ.plate,
+    }

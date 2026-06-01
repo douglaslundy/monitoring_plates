@@ -12,6 +12,7 @@ type FrameState = {
   loading?: boolean;
   error?: string;
   updatedAt?: number;
+  plate?: string;
 };
 
 export default function LiveMonitor({
@@ -73,10 +74,57 @@ export default function LiveMonitor({
     }
   }, []);
 
+  const loadAgentLastFrame = useCallback(async (cameraId: string) => {
+    setFrames((s) => ({ ...s, [cameraId]: { ...s[cameraId], loading: true, error: "" } }));
+    try {
+      const res = await api.get<{ image_url: string | null; detected_at: string | null; plate: string | null }>(
+        `/api/cameras/${cameraId}/last-frame`
+      );
+      if (!res.data.image_url) {
+        setFrames((s) => ({
+          ...s,
+          [cameraId]: {
+            ...s[cameraId],
+            loading: false,
+            image: undefined,
+            plate: undefined,
+            updatedAt: undefined,
+            error: "Sem frame recebido ainda",
+          },
+        }));
+        return;
+      }
+      setFrames((s) => ({
+        ...s,
+        [cameraId]: {
+          ...s[cameraId],
+          loading: false,
+          image: res.data.image_url || undefined,
+          plate: res.data.plate || undefined,
+          updatedAt: res.data.detected_at ? new Date(res.data.detected_at).getTime() : Date.now(),
+          error: "",
+        },
+      }));
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      setFrames((s) => ({
+        ...s,
+        [cameraId]: {
+          ...s[cameraId],
+          loading: false,
+          error: typeof detail === "string" ? detail : "Falha ao carregar ultimo frame",
+        },
+      }));
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
-    const ids = rtspCameras.map((c) => c.id);
-    await Promise.all(ids.map((id) => testCamera(id)));
-  }, [rtspCameras, testCamera]);
+    await Promise.all(
+      cameras.map((c) =>
+        c.connection_type === "rtsp" ? testCamera(c.id) : loadAgentLastFrame(c.id)
+      )
+    );
+  }, [cameras, testCamera, loadAgentLastFrame]);
 
   useEffect(() => {
     fetchCameras();
@@ -143,9 +191,30 @@ export default function LiveMonitor({
                 </div>
 
                 {cam.connection_type !== "rtsp" ? (
-                  <div className="text-xs p-3 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                    Camera tipo agente: sem preview RTSP. Valide por status online/heartbeat.
-                  </div>
+                  <>
+                    <div className="aspect-video rounded border bg-black/5 overflow-hidden mb-2 flex items-center justify-center">
+                      {frame?.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={frame.image} alt={`Frame ${cam.name}`} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Sem frame</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => loadAgentLastFrame(cam.id)}
+                        className="px-2 py-1 text-xs border rounded"
+                        disabled={frame?.loading}
+                      >
+                        {frame?.loading ? "Carregando..." : "Atualizar ultimo frame"}
+                      </button>
+                      <span className="text-[11px] text-muted-foreground">
+                        {frame?.updatedAt ? new Date(frame.updatedAt).toLocaleTimeString("pt-BR") : ""}
+                      </span>
+                    </div>
+                    {frame?.plate && <p className="mt-2 text-xs text-muted-foreground">Ultima placa: {frame.plate}</p>}
+                    {frame?.error && <p className="mt-2 text-xs text-red-600">{frame.error}</p>}
+                  </>
                 ) : (
                   <>
                     <div className="aspect-video rounded border bg-black/5 overflow-hidden mb-2 flex items-center justify-center">
