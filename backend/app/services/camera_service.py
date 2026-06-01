@@ -31,3 +31,23 @@ def capture_rtsp_frame(rtsp_url: str) -> Optional[bytes]:
 
 def capture_frame(stream_url: str) -> Optional[bytes]:
     return capture_rtsp_frame(stream_url)
+
+
+def crop_half_frame(frame_bytes: bytes, side: str) -> bytes:
+    import cv2
+    import numpy as np
+
+    arr = np.frombuffer(frame_bytes, dtype=np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        return frame_bytes
+
+    h = frame.shape[0]
+    mid = h // 2
+    if side == "lower":
+        cropped = frame[mid:, :]
+    else:
+        cropped = frame[:mid, :]
+
+    ok, buf = cv2.imencode(".jpg", cropped, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return buf.tobytes() if ok else frame_bytes

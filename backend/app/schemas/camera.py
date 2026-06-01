@@ -10,6 +10,8 @@ class CameraBase(BaseModel):
     location: Optional[str] = None
     connection_type: str = "rtsp"
     rtsp_url: Optional[str] = None
+    dual_lens: bool = False
+    lens_side: Optional[str] = None
     is_active: bool = True
 
 
@@ -22,6 +24,8 @@ class CameraUpdate(BaseModel):
     location: Optional[str] = None
     connection_type: Optional[str] = None
     rtsp_url: Optional[str] = None
+    dual_lens: Optional[bool] = None
+    lens_side: Optional[str] = None
     is_active: Optional[bool] = None
 
 

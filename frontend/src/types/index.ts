@@ -69,6 +69,8 @@ export interface Camera {
   connection_type: "rtsp" | "agent";
   rtsp_url: string | null;
   agent_token: string | null;
+  dual_lens: boolean;
+  lens_side: "upper" | "lower" | null;
   is_active: boolean;
   last_seen_at: string | null;
   created_at: string;

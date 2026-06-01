@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from app.api.deps import get_db, get_current_user, require_client_admin
+from app.api.deps import get_db, get_current_user
 from app.models.camera import Camera
 from app.models.client import Client
 from app.models.occurrence import Occurrence
@@ -108,7 +108,7 @@ def update_camera(
     camera_id: UUID,
     payload: CameraUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_client_admin),
+    current_user: User = Depends(get_current_user),
 ):
     camera = _get_camera_or_403(camera_id, current_user, db)
     for k, v in payload.model_dump(exclude_none=True).items():
@@ -122,7 +122,7 @@ def update_camera(
 def delete_camera(
     camera_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_client_admin),
+    current_user: User = Depends(get_current_user),
 ):
     camera = _get_camera_or_403(camera_id, current_user, db)
     db.delete(camera)

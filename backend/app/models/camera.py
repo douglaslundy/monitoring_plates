@@ -14,6 +14,11 @@ class ConnectionType(str, enum.Enum):
     agent = "agent"
 
 
+class LensSide(str, enum.Enum):
+    upper = "upper"
+    lower = "lower"
+
+
 class Camera(Base):
     __tablename__ = "cameras"
 
@@ -27,6 +32,11 @@ class Camera(Base):
     )
     rtsp_url = Column(String(500), nullable=True)
     agent_token = Column(String(64), unique=True, nullable=True)
+    dual_lens = Column(Boolean, nullable=False, default=False)
+    lens_side = Column(
+        Enum(LensSide, native_enum=False, length=10),
+        nullable=True,
+    )
     is_active = Column(Boolean, nullable=False, default=True)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

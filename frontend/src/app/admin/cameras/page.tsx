@@ -16,6 +16,7 @@ import {
   Copy,
   Check,
   Trash2,
+  Pencil,
 } from "lucide-react";
 
 type WizardStep = 1 | 2;
@@ -26,6 +27,8 @@ interface CreateForm {
   location: string;
   connection_type: "rtsp" | "agent";
   rtsp_url: string;
+  dual_lens: boolean;
+  lens_side: "upper" | "lower";
 }
 
 interface FormErrors {
@@ -40,6 +43,8 @@ const emptyForm: CreateForm = {
   location: "",
   connection_type: "rtsp",
   rtsp_url: "",
+  dual_lens: false,
+  lens_side: "upper",
 };
 
 function validateRtsp(url: string): string {
@@ -135,6 +140,8 @@ export default function AdminCamerasPage() {
         location: form.location || null,
         connection_type: form.connection_type,
         rtsp_url: form.connection_type === "rtsp" ? form.rtsp_url : null,
+        dual_lens: form.connection_type === "agent" ? form.dual_lens : false,
+        lens_side: form.connection_type === "agent" && form.dual_lens ? form.lens_side : null,
         is_active: true,
       };
       const res = await api.post<Camera>("/api/cameras", payload);
@@ -162,6 +169,22 @@ export default function AdminCamerasPage() {
     } catch {
       toast("Erro ao remover câmera", "error");
       setDeleteTarget(null);
+    }
+  }
+
+  async function handleEdit(camera: Camera) {
+    const name = window.prompt("Nome da câmera", camera.name);
+    if (!name) return;
+    const location = window.prompt("Localização", camera.location ?? "") ?? "";
+    try {
+      await api.patch(`/api/cameras/${camera.id}`, {
+        name,
+        location: location || null,
+      });
+      toast("Câmera atualizada");
+      fetchData();
+    } catch {
+      toast("Erro ao editar câmera", "error");
     }
   }
 
@@ -306,6 +329,14 @@ export default function AdminCamerasPage() {
               </p>
 
               <div className="flex gap-3">
+                <button
+                  onClick={() => handleEdit(cam)}
+                  aria-label={`Editar câmera ${cam.name}`}
+                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors focus:outline-none focus:underline"
+                >
+                  <Pencil className="h-3 w-3" aria-hidden="true" />
+                  Editar
+                </button>
                 <button
                   onClick={() => setDeleteTarget(cam)}
                   aria-label={`Remover câmera ${cam.name}`}
@@ -479,6 +510,29 @@ export default function AdminCamerasPage() {
                   <p id="cam-rtsp-hint" className="mt-1 text-xs text-muted-foreground">
                     Deve começar com rtsp:// ou rtsps://
                   </p>
+                )}
+              </div>
+            )}
+
+            {form.connection_type === "agent" && (
+              <div className="rounded border p-3 bg-gray-50 space-y-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.dual_lens}
+                    onChange={(e) => setField("dual_lens", e.target.checked)}
+                  />
+                  Câmera de 2 lentes
+                </label>
+                {form.dual_lens && (
+                  <select
+                    value={form.lens_side}
+                    onChange={(e) => setField("lens_side", e.target.value as "upper" | "lower")}
+                    className={inputCls()}
+                  >
+                    <option value="upper">Lente 1 (superior)</option>
+                    <option value="lower">Lente 2 (inferior)</option>
+                  </select>
                 )}
               </div>
             )}

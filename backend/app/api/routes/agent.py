@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.camera import Camera
 from app.models.occurrence import Occurrence
+from app.services.camera_service import crop_half_frame
 from app.services.storage_service import save_latest_frame
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -75,6 +76,8 @@ async def receive_frame(
         raise HTTPException(status_code=401, detail="Token inválido ou câmera inativa")
 
     frame_bytes = await frame.read()
+    if camera.dual_lens and camera.lens_side in ("upper", "lower"):
+        frame_bytes = crop_half_frame(frame_bytes, camera.lens_side)
     save_latest_frame(frame_bytes, str(camera.id))
     camera.last_seen_at = datetime.now(timezone.utc)
     db.commit()

@@ -5,7 +5,7 @@ import api from "@/lib/api";
 import { Camera } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
-import { Camera as CameraIcon, Video, Cpu } from "lucide-react";
+import { Camera as CameraIcon, Video, Cpu, Trash2, Pencil } from "lucide-react";
 
 export default function ClientCamerasPage() {
   const [cameras, setCameras] = useState<Camera[]>([]);
@@ -16,6 +16,8 @@ export default function ClientCamerasPage() {
   const [location, setLocation] = useState("");
   const [connectionType, setConnectionType] = useState<"rtsp" | "agent">("rtsp");
   const [rtspUrl, setRtspUrl] = useState("");
+  const [dualLens, setDualLens] = useState(false);
+  const [lensSide, setLensSide] = useState<"upper" | "lower">("upper");
   const [saving, setSaving] = useState(false);
 
   const fetchCameras = useCallback(async () => {
@@ -55,6 +57,8 @@ export default function ClientCamerasPage() {
         location: location.trim() || null,
         connection_type: connectionType,
         rtsp_url: connectionType === "rtsp" ? rtspUrl.trim() : null,
+        dual_lens: connectionType === "agent" ? dualLens : false,
+        lens_side: connectionType === "agent" && dualLens ? lensSide : null,
         is_active: true,
       });
 
@@ -62,12 +66,39 @@ export default function ClientCamerasPage() {
       setLocation("");
       setConnectionType("rtsp");
       setRtspUrl("");
+      setDualLens(false);
+      setLensSide("upper");
       await fetchCameras();
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Erro ao cadastrar camera.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(cam: Camera) {
+    if (!confirm(`Remover câmera ${cam.name}?`)) return;
+    try {
+      await api.delete(`/api/cameras/${cam.id}`);
+      await fetchCameras();
+    } catch {
+      setError("Erro ao remover camera.");
+    }
+  }
+
+  async function handleEdit(cam: Camera) {
+    const newName = window.prompt("Nome da câmera", cam.name);
+    if (!newName) return;
+    const newLocation = window.prompt("Localização", cam.location ?? "") ?? "";
+    try {
+      await api.patch(`/api/cameras/${cam.id}`, {
+        name: newName,
+        location: newLocation || null,
+      });
+      await fetchCameras();
+    } catch {
+      setError("Erro ao editar camera.");
     }
   }
 
@@ -117,6 +148,24 @@ export default function ClientCamerasPage() {
               placeholder="rtsp://usuario:senha@ip:porta/stream"
               className="w-full border rounded-md px-3 py-2 text-sm"
             />
+          )}
+          {connectionType === "agent" && (
+            <div className="col-span-1 md:col-span-2 border rounded-md p-3 bg-gray-50">
+              <label className="flex items-center gap-2 text-sm mb-2">
+                <input type="checkbox" checked={dualLens} onChange={(e) => setDualLens(e.target.checked)} />
+                Camera de 2 lentes
+              </label>
+              {dualLens && (
+                <select
+                  value={lensSide}
+                  onChange={(e) => setLensSide(e.target.value as "upper" | "lower")}
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                >
+                  <option value="upper">Lente 1 (superior)</option>
+                  <option value="lower">Lente 2 (inferior)</option>
+                </select>
+              )}
+            </div>
           )}
         </div>
         <button
@@ -204,6 +253,14 @@ export default function ClientCamerasPage() {
               </div>
 
               <p className="text-xs text-muted-foreground">Ultima atividade: {formatLastSeen(cam.last_seen_at)}</p>
+              <div className="mt-2 flex gap-3">
+                <button onClick={() => handleEdit(cam)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                  <Pencil className="h-3 w-3" /> Editar
+                </button>
+                <button onClick={() => handleDelete(cam)} className="text-xs text-red-600 hover:underline flex items-center gap-1">
+                  <Trash2 className="h-3 w-3" /> Excluir
+                </button>
+              </div>
             </div>
           ))}
         </div>
