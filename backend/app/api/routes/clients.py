@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+﻿from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List
@@ -8,6 +8,9 @@ from app.api.deps import get_db, require_super_admin
 from app.core.security import hash_password
 from app.models.client import Client
 from app.models.camera import Camera
+from app.models.occurrence import Occurrence
+from app.models.monitored_plate import MonitoredPlate
+from app.models.alert_sent import AlertSent
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreateWithAdmin, ClientRead, ClientUpdate
 
@@ -37,9 +40,9 @@ def create_client(
     _=Depends(require_super_admin),
 ):
     if db.query(Client).filter(Client.email == payload.email).first():
-        raise HTTPException(status_code=400, detail="Email de cliente já cadastrado")
+        raise HTTPException(status_code=400, detail="Email de cliente ja cadastrado")
     if db.query(User).filter(User.email == payload.admin_email).first():
-        raise HTTPException(status_code=400, detail="Email do administrador já cadastrado")
+        raise HTTPException(status_code=400, detail="Email do administrador ja cadastrado")
 
     client = Client(
         name=payload.name,
@@ -78,7 +81,7 @@ def get_client(
         db.query(Client).options(joinedload(Client.plan)).filter(Client.id == client_id).first()
     )
     if not client:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        raise HTTPException(status_code=404, detail="Cliente nao encontrado")
     return _build_client_read(client, db)
 
 
@@ -93,7 +96,7 @@ def update_client(
         db.query(Client).options(joinedload(Client.plan)).filter(Client.id == client_id).first()
     )
     if not client:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        raise HTTPException(status_code=404, detail="Cliente nao encontrado")
     for k, v in payload.model_dump(exclude_none=True).items():
         setattr(client, k, v)
     db.commit()
@@ -102,14 +105,31 @@ def update_client(
 
 
 @router.delete("/{client_id}", status_code=204)
-def deactivate_client(
+def delete_client(
     client_id: UUID,
     db: Session = Depends(get_db),
     _=Depends(require_super_admin),
 ):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    client.is_active = False
-    db.query(User).filter(User.client_id == client_id).update({"is_active": False})
+        raise HTTPException(status_code=404, detail="Cliente nao encontrado")
+
+    camera_ids = [row.id for row in db.query(Camera.id).filter(Camera.client_id == client_id).all()]
+    plate_ids = [row.id for row in db.query(MonitoredPlate.id).filter(MonitoredPlate.client_id == client_id).all()]
+
+    if camera_ids:
+        occ_ids = [row.id for row in db.query(Occurrence.id).filter(Occurrence.camera_id.in_(camera_ids)).all()]
+        if occ_ids:
+            db.query(AlertSent).filter(AlertSent.occurrence_id.in_(occ_ids)).delete(synchronize_session=False)
+            db.query(Occurrence).filter(Occurrence.id.in_(occ_ids)).delete(synchronize_session=False)
+
+    if plate_ids:
+        db.query(AlertSent).filter(AlertSent.monitored_plate_id.in_(plate_ids)).delete(synchronize_session=False)
+        db.query(MonitoredPlate).filter(MonitoredPlate.id.in_(plate_ids)).delete(synchronize_session=False)
+
+    if camera_ids:
+        db.query(Camera).filter(Camera.id.in_(camera_ids)).delete(synchronize_session=False)
+
+    db.query(User).filter(User.client_id == client_id).delete(synchronize_session=False)
+    db.delete(client)
     db.commit()

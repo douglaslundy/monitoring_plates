@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
@@ -8,7 +8,7 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { MetricCard } from "@/components/ui/MetricCard";
-import { Building2, Plus, Power } from "lucide-react";
+import { Building2, Plus, Power, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
 interface CreateForm {
@@ -19,6 +19,15 @@ interface CreateForm {
   admin_name: string;
   admin_email: string;
   admin_password: string;
+}
+
+interface EditForm {
+  id: string;
+  name: string;
+  email: string;
+  plan_id: string;
+  plan_expires_at: string;
+  is_active: boolean;
 }
 
 const emptyForm: CreateForm = {
@@ -38,8 +47,9 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<CreateForm>(emptyForm);
-  const [formErrors, setFormErrors] = useState<Partial<CreateForm>>({});
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
@@ -58,49 +68,28 @@ export default function ClientsPage() {
       setClients(cr.data);
       setPlans(pr.data);
     } catch {
-      setError("Erro ao carregar dados. Verifique sua conexão.");
+      setError("Erro ao carregar dados.");
     } finally {
       setLoading(false);
     }
   }
 
-  function validate(): boolean {
-    const errs: Partial<CreateForm> = {};
-    if (!form.name.trim()) errs.name = "Campo obrigatório";
-    if (!form.email.trim()) errs.email = "Campo obrigatório";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = "Email inválido";
-    if (!form.plan_id) errs.plan_id = "Campo obrigatório";
-    if (!form.admin_name.trim()) errs.admin_name = "Campo obrigatório";
-    if (!form.admin_email.trim()) errs.admin_email = "Campo obrigatório";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.admin_email)) errs.admin_email = "Email inválido";
-    if (!form.admin_password) errs.admin_password = "Campo obrigatório";
-    else if (form.admin_password.length < 8) errs.admin_password = "Mínimo 8 caracteres";
-    setFormErrors(errs);
-    return Object.keys(errs).length === 0;
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!validate()) return;
     setSubmitting(true);
     setSubmitError("");
     try {
       await api.post("/api/clients", {
-        name: form.name,
-        email: form.email,
-        plan_id: form.plan_id,
+        ...form,
         plan_expires_at: form.plan_expires_at || null,
         is_active: true,
-        admin_name: form.admin_name,
-        admin_email: form.admin_email,
-        admin_password: form.admin_password,
       });
-      toast("Cliente criado com sucesso");
-      closeModal();
+      toast("Cliente criado");
+      setModalOpen(false);
+      setForm(emptyForm);
       fetchData();
-    } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setSubmitError(detail ?? "Erro ao criar cliente");
+    } catch (err: any) {
+      setSubmitError(err?.response?.data?.detail || "Erro ao criar cliente");
     } finally {
       setSubmitting(false);
     }
@@ -108,32 +97,63 @@ export default function ClientsPage() {
 
   async function handleToggleActive(c: Client) {
     try {
-      if (c.is_active) {
-        await api.delete(`/api/clients/${c.id}`);
-      } else {
-        await api.patch(`/api/clients/${c.id}`, { is_active: true });
-      }
+      await api.patch(`/api/clients/${c.id}`, { is_active: !c.is_active });
       fetchData();
     } catch {
-      // silent error — table will reflect real state on next fetch
+      toast("Falha ao atualizar status");
     }
   }
 
-  function closeModal() {
-    setModalOpen(false);
-    setForm(emptyForm);
-    setFormErrors({});
-    setSubmitError("");
+  function openEdit(c: Client) {
+    setEditForm({
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      plan_id: c.plan_id,
+      plan_expires_at: c.plan_expires_at ? c.plan_expires_at.slice(0, 10) : "",
+      is_active: c.is_active,
+    });
+    setEditOpen(true);
   }
 
-  const inputCls = (err?: string) =>
-    `w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary ${err ? "border-red-400 focus:ring-red-400" : "border-gray-300"}`;
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editForm) return;
+    setSubmitting(true);
+    try {
+      await api.patch(`/api/clients/${editForm.id}`, {
+        name: editForm.name,
+        email: editForm.email,
+        plan_id: editForm.plan_id,
+        plan_expires_at: editForm.plan_expires_at || null,
+        is_active: editForm.is_active,
+      });
+      toast("Cliente atualizado");
+      setEditOpen(false);
+      setEditForm(null);
+      fetchData();
+    } catch (err: any) {
+      toast(err?.response?.data?.detail || "Falha ao atualizar cliente");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDelete(c: Client) {
+    if (!confirm(`Excluir cliente ${c.name}? Esta acao remove dados relacionados.`)) return;
+    try {
+      await api.delete(`/api/clients/${c.id}`);
+      toast("Cliente excluido");
+      fetchData();
+    } catch (err: any) {
+      toast(err?.response?.data?.detail || "Falha ao excluir cliente");
+    }
+  }
 
   const columns: Column<Client>[] = [
     {
       key: "name",
       header: "Cliente",
-      sortable: true,
       render: (_, row) => (
         <div>
           <p className="font-medium">{row.name}</p>
@@ -141,237 +161,81 @@ export default function ClientsPage() {
         </div>
       ),
     },
-    {
-      key: "plan",
-      header: "Plano",
-      render: (_, row) => (
-        <span className="font-medium text-primary">{row.plan?.name ?? "—"}</span>
-      ),
-    },
-    {
-      key: "camera_count",
-      header: "Câmeras",
-      sortable: true,
-      render: (_, row) => <span>{row.camera_count}</span>,
-    },
-    {
-      key: "plan_expires_at",
-      header: "Expira em",
-      render: (_, row) => {
-        if (!row.plan_expires_at)
-          return <span className="text-muted-foreground text-xs">Sem expiração</span>;
-        const d = new Date(row.plan_expires_at);
-        const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
-        return (
-          <span className={days <= 30 && days > 0 ? "text-orange-600 font-medium" : ""}>
-            {d.toLocaleDateString("pt-BR")}
-            {days <= 30 && days > 0 && (
-              <span className="ml-1 text-xs">({days}d)</span>
-            )}
-          </span>
-        );
-      },
-    },
+    { key: "plan", header: "Plano", render: (_, row) => <span>{row.plan?.name ?? "-"}</span> },
+    { key: "camera_count", header: "Cameras", render: (_, row) => <span>{row.camera_count}</span> },
     {
       key: "is_active",
       header: "Status",
-      render: (_, row) => (
-        <Badge variant={row.is_active ? "success" : "danger"}>
-          {row.is_active ? "Ativo" : "Inativo"}
-        </Badge>
-      ),
+      render: (_, row) => <Badge variant={row.is_active ? "success" : "danger"}>{row.is_active ? "Ativo" : "Inativo"}</Badge>,
     },
     {
       key: "id",
-      header: "Ações",
+      header: "Acoes",
       render: (_, row) => (
-        <button
-          onClick={() => handleToggleActive(row)}
-          title={row.is_active ? "Desativar cliente" : "Reativar cliente"}
-          className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-        >
-          <Power
-            className={`h-4 w-4 ${row.is_active ? "text-red-500" : "text-green-500"}`}
-          />
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => openEdit(row)} className="p-1.5 rounded hover:bg-gray-100" title="Editar">
+            <Pencil className="h-4 w-4 text-blue-600" />
+          </button>
+          <button onClick={() => handleToggleActive(row)} className="p-1.5 rounded hover:bg-gray-100" title="Ativar/Desativar">
+            <Power className={`h-4 w-4 ${row.is_active ? "text-orange-600" : "text-green-600"}`} />
+          </button>
+          <button onClick={() => handleDelete(row)} className="p-1.5 rounded hover:bg-gray-100" title="Excluir">
+            <Trash2 className="h-4 w-4 text-red-600" />
+          </button>
+        </div>
       ),
     },
   ];
 
-  const activeClients = clients.filter((c) => c.is_active);
-  const expiringCount = clients.filter((c) => {
-    if (!c.plan_expires_at) return false;
-    const d = Math.ceil((new Date(c.plan_expires_at).getTime() - Date.now()) / 86400000);
-    return d <= 30 && d > 0;
-  }).length;
-
   return (
     <div className="p-6">
-      <PageHeader
-        title="Clientes"
-        description="Gerencie os clientes do sistema"
-        action={{ label: "Novo Cliente", icon: Plus, onClick: () => setModalOpen(true) }}
-      />
-
+      <PageHeader title="Clientes" description="Gerencie os clientes" action={{ label: "Novo Cliente", icon: Plus, onClick: () => setModalOpen(true) }} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <MetricCard title="Total" value={clients.length} icon={Building2} />
-        <MetricCard title="Ativos" value={activeClients.length} description="Clientes ativos" />
-        <MetricCard title="Expirando" value={expiringCount} description="Próximos 30 dias" />
+        <MetricCard title="Ativos" value={clients.filter((c) => c.is_active).length} />
+        <MetricCard title="Inativos" value={clients.filter((c) => !c.is_active).length} />
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={fetchData} className="underline text-xs ml-4">
-            Tentar novamente
-          </button>
-        </div>
-      )}
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
 
-      <DataTable
-        data={clients}
-        columns={columns}
-        loading={loading}
-        emptyMessage="Nenhum cliente cadastrado. Crie o primeiro!"
-      />
+      <DataTable data={clients} columns={columns} loading={loading} emptyMessage="Nenhum cliente" />
 
-      <Modal
-        open={modalOpen}
-        onOpenChange={(o) => { if (!o) closeModal(); else setModalOpen(true); }}
-        title="Novo Cliente"
-        description="Cadastre uma empresa e seu administrador"
-      >
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-          {submitError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-              {submitError}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">Nome da Empresa *</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className={inputCls(formErrors.name)}
-                placeholder="Empresa ABC"
-              />
-              {formErrors.name && (
-                <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Email da Empresa *</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className={inputCls(formErrors.email)}
-                placeholder="contato@empresa.com"
-              />
-              {formErrors.email && (
-                <p className="mt-1 text-xs text-red-600">{formErrors.email}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">Plano *</label>
-              <select
-                value={form.plan_id}
-                onChange={(e) => setForm({ ...form, plan_id: e.target.value })}
-                className={inputCls(formErrors.plan_id)}
-              >
-                <option value="">Selecione</option>
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} — R$ {Number(p.price_monthly).toFixed(2)}
-                  </option>
-                ))}
-              </select>
-              {formErrors.plan_id && (
-                <p className="mt-1 text-xs text-red-600">{formErrors.plan_id}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Expira em</label>
-              <input
-                type="date"
-                value={form.plan_expires_at}
-                onChange={(e) => setForm({ ...form, plan_expires_at: e.target.value })}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-          </div>
-
-          <hr className="my-2" />
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Administrador do Cliente
-          </p>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Nome do Administrador *</label>
-            <input
-              type="text"
-              value={form.admin_name}
-              onChange={(e) => setForm({ ...form, admin_name: e.target.value })}
-              className={inputCls(formErrors.admin_name)}
-              placeholder="João Silva"
-            />
-            {formErrors.admin_name && (
-              <p className="mt-1 text-xs text-red-600">{formErrors.admin_name}</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">Email do Admin *</label>
-              <input
-                type="email"
-                value={form.admin_email}
-                onChange={(e) => setForm({ ...form, admin_email: e.target.value })}
-                className={inputCls(formErrors.admin_email)}
-                placeholder="admin@empresa.com"
-              />
-              {formErrors.admin_email && (
-                <p className="mt-1 text-xs text-red-600">{formErrors.admin_email}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Senha do Admin *</label>
-              <input
-                type="password"
-                value={form.admin_password}
-                onChange={(e) => setForm({ ...form, admin_password: e.target.value })}
-                className={inputCls(formErrors.admin_password)}
-                placeholder="Mínimo 8 caracteres"
-              />
-              {formErrors.admin_password && (
-                <p className="mt-1 text-xs text-red-600">{formErrors.admin_password}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={closeModal}
-              className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 transition"
-            >
-              {submitting ? "Criando..." : "Criar Cliente"}
-            </button>
+      <Modal open={modalOpen} onOpenChange={setModalOpen} title="Novo Cliente" description="Cadastro de cliente e admin">
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {submitError && <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{submitError}</div>}
+          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <select className="w-full border rounded px-3 py-2 text-sm" value={form.plan_id} onChange={(e) => setForm({ ...form, plan_id: e.target.value })}>
+            <option value="">Selecione o plano</option>
+            {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <input type="date" className="w-full border rounded px-3 py-2 text-sm" value={form.plan_expires_at} onChange={(e) => setForm({ ...form, plan_expires_at: e.target.value })} />
+          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Nome admin" value={form.admin_name} onChange={(e) => setForm({ ...form, admin_name: e.target.value })} />
+          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Email admin" value={form.admin_email} onChange={(e) => setForm({ ...form, admin_email: e.target.value })} />
+          <input type="password" className="w-full border rounded px-3 py-2 text-sm" placeholder="Senha admin" value={form.admin_password} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setModalOpen(false)} className="px-3 py-2 border rounded text-sm">Cancelar</button>
+            <button type="submit" disabled={submitting} className="px-3 py-2 bg-black text-white rounded text-sm">{submitting ? "Salvando..." : "Criar"}</button>
           </div>
         </form>
+      </Modal>
+
+      <Modal open={editOpen} onOpenChange={setEditOpen} title="Editar Cliente" description="Altere plano e dados">
+        {editForm && (
+          <form onSubmit={saveEdit} className="space-y-3">
+            <input className="w-full border rounded px-3 py-2 text-sm" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+            <input className="w-full border rounded px-3 py-2 text-sm" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+            <select className="w-full border rounded px-3 py-2 text-sm" value={editForm.plan_id} onChange={(e) => setEditForm({ ...editForm, plan_id: e.target.value })}>
+              {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <input type="date" className="w-full border rounded px-3 py-2 text-sm" value={editForm.plan_expires_at} onChange={(e) => setEditForm({ ...editForm, plan_expires_at: e.target.value })} />
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.is_active} onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })} /> Cliente ativo</label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditOpen(false)} className="px-3 py-2 border rounded text-sm">Cancelar</button>
+              <button type="submit" disabled={submitting} className="px-3 py-2 bg-black text-white rounded text-sm">{submitting ? "Salvando..." : "Salvar"}</button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );
