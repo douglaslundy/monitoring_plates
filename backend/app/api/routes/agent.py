@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.camera import Camera
 from app.models.occurrence import Occurrence
+from app.services.storage_service import save_latest_frame
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -74,6 +75,7 @@ async def receive_frame(
         raise HTTPException(status_code=401, detail="Token inválido ou câmera inativa")
 
     frame_bytes = await frame.read()
+    save_latest_frame(frame_bytes, str(camera.id))
     camera.last_seen_at = datetime.now(timezone.utc)
     db.commit()
 

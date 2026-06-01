@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,7 +13,7 @@ from app.models.occurrence import Occurrence
 from app.models.user import User, UserRole
 from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDetail, OccurrenceSmall
 from app.services.camera_service import generate_agent_token, capture_rtsp_frame
-from app.services.storage_service import get_url
+from app.services.storage_service import get_url, latest_frame_exists
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -163,6 +164,13 @@ def get_camera_last_frame(
         .first()
     )
     if not occ or not occ.image_path:
+        latest_path = f"cameras/{camera_id}/latest.jpg"
+        if latest_frame_exists(str(camera_id)):
+            return {
+                "image_url": f"{get_url(latest_path)}?t={int(datetime.now(timezone.utc).timestamp())}",
+                "detected_at": None,
+                "plate": None,
+            }
         return {"image_url": None, "detected_at": None, "plate": None}
     return {
         "image_url": get_url(occ.image_path),

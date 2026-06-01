@@ -51,6 +51,48 @@ def get_url(path: str) -> str:
     return f"/api/images/{path}"
 
 
+def save_latest_frame(image_bytes: bytes, camera_id: str) -> str:
+    """Store/overwrite latest agent frame for quick live preview."""
+    if settings.STORAGE_TYPE == "s3":
+        return _save_latest_frame_s3(image_bytes, camera_id)
+    return _save_latest_frame_local(image_bytes, camera_id)
+
+
+def _save_latest_frame_local(image_bytes: bytes, camera_id: str) -> str:
+    relative = f"cameras/{camera_id}/latest.jpg"
+    full = Path(settings.STORAGE_PATH) / relative
+    full.parent.mkdir(parents=True, exist_ok=True)
+    full.write_bytes(image_bytes)
+    return relative
+
+
+def _save_latest_frame_s3(image_bytes: bytes, camera_id: str) -> str:
+    import boto3
+
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=settings.S3_ENDPOINT or None,
+        aws_access_key_id=settings.S3_ACCESS_KEY,
+        aws_secret_access_key=settings.S3_SECRET_KEY,
+    )
+    key = f"cameras/{camera_id}/latest.jpg"
+    s3.put_object(
+        Bucket=settings.S3_BUCKET,
+        Key=key,
+        Body=image_bytes,
+        ContentType="image/jpeg",
+        CacheControl="no-cache, no-store, must-revalidate",
+    )
+    return key
+
+
+def latest_frame_exists(camera_id: str) -> bool:
+    if settings.STORAGE_TYPE == "s3":
+        return True
+    full = Path(settings.STORAGE_PATH) / f"cameras/{camera_id}/latest.jpg"
+    return full.exists()
+
+
 def delete_file(path: str) -> None:
     if settings.STORAGE_TYPE == "local":
         full = Path(settings.STORAGE_PATH) / path
