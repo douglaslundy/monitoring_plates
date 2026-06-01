@@ -41,13 +41,21 @@ def create_camera(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role != UserRole.super_admin:
-        if payload.client_id != current_user.client_id:
+    if current_user.role == UserRole.super_admin:
+        effective_client_id = payload.client_id
+        if not effective_client_id:
+            raise HTTPException(status_code=400, detail="client_id é obrigatório para super_admin")
+    else:
+        effective_client_id = current_user.client_id
+        if not effective_client_id:
+            raise HTTPException(status_code=400, detail="Usuário sem cliente vinculado")
+        if payload.client_id and payload.client_id != current_user.client_id:
             raise HTTPException(status_code=403, detail="Acesso negado")
-        tenant = db.query(Client).filter(Client.id == payload.client_id).first()
+
+        tenant = db.query(Client).filter(Client.id == effective_client_id).first()
         if tenant and tenant.plan and tenant.plan.max_cameras is not None:
             count = db.query(Camera).filter(
-                Camera.client_id == payload.client_id,
+                Camera.client_id == effective_client_id,
                 Camera.is_active == True,  # noqa: E712
             ).count()
             if count >= tenant.plan.max_cameras:
@@ -57,7 +65,9 @@ def create_camera(
                 )
 
     token = generate_agent_token() if payload.connection_type == "agent" else None
-    camera = Camera(**payload.model_dump(), agent_token=token)
+    camera_data = payload.model_dump(exclude_none=True)
+    camera_data["client_id"] = effective_client_id
+    camera = Camera(**camera_data, agent_token=token)
     db.add(camera)
     db.commit()
     db.refresh(camera)

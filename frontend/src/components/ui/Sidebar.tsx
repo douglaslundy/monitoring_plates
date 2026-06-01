@@ -36,13 +36,13 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/plans", label: "Planos", icon: CreditCard },
   { href: "/admin/users", label: "Usuários", icon: Users },
   { href: "/admin/cameras", label: "Câmeras", icon: Camera },
-  { href: "/admin/search", label: "Pesquisa", icon: Search },
+  { href: "/admin/detections", label: "Detecções", icon: Search },
   { href: "/admin/ocr-config", label: "Motores OCR", icon: ScanLine },
 ];
 
 export const CLIENT_NAV: NavItem[] = [
   { href: "/client", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/client/search", label: "Pesquisar Placas", icon: Search },
+  { href: "/client/detections", label: "Detecções", icon: Search },
   { href: "/client/alerts", label: "Alertas", icon: Bell },
   { href: "/client/cameras", label: "Câmeras", icon: Camera },
   { href: "/client/settings", label: "Configurações", icon: Settings },

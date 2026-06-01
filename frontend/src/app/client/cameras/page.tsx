@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import api from "@/lib/api";
-import { getMe } from "@/lib/auth";
 import { Camera } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
@@ -12,7 +11,6 @@ export default function ClientCamerasPage() {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [clientId, setClientId] = useState("");
 
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -34,20 +32,12 @@ export default function ClientCamerasPage() {
   }, []);
 
   useEffect(() => {
-    getMe()
-      .then((me) => setClientId(me.client_id ?? ""))
-      .catch(() => setError("Nao foi possivel carregar os dados do usuario."));
-
     fetchCameras();
   }, [fetchCameras]);
 
   async function handleCreateCamera(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!clientId) {
-      setError("Cliente do usuario nao identificado.");
-      return;
-    }
     if (!name.trim()) {
       setError("Informe o nome da camera.");
       return;
@@ -61,7 +51,6 @@ export default function ClientCamerasPage() {
     setError("");
     try {
       await api.post("/api/cameras", {
-        client_id: clientId,
         name: name.trim(),
         location: location.trim() || null,
         connection_type: connectionType,

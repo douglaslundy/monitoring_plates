@@ -14,7 +14,7 @@ class CameraBase(BaseModel):
 
 
 class CameraCreate(CameraBase):
-    pass
+    client_id: Optional[UUID] = None
 
 
 class CameraUpdate(BaseModel):
