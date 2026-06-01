@@ -39,7 +39,7 @@ def list_cameras(
 def create_camera(
     payload: CameraCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_client_admin),
+    current_user: User = Depends(get_current_user),
 ):
     if current_user.role != UserRole.super_admin:
         if payload.client_id != current_user.client_id:

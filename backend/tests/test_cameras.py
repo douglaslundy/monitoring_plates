@@ -135,6 +135,24 @@ def test_dois_agentes_tokens_diferentes(client, db, super_admin, tenant_a):
     assert r1.json()["agent_token"] != r2.json()["agent_token"]
 
 
+def test_client_user_pode_cadastrar_camera_no_proprio_cliente(client, db, tenant_a, client_user_a):
+    """A client_user can create a camera for their own tenant."""
+    user_token = login(client, "user@clientea.com")
+    res = client.post(
+        "/api/cameras",
+        json={
+            "client_id": str(tenant_a.id),
+            "name": "Cam User",
+            "connection_type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.2/stream",
+            "is_active": True,
+        },
+        headers=auth(user_token),
+    )
+    assert res.status_code == 201
+    assert res.json()["client_id"] == str(tenant_a.id)
+
+
 # ── /api/agent/frame ───────────────────────────────────────────────────────────
 
 def test_agent_frame_token_correto(client, db, super_admin, tenant_a):
