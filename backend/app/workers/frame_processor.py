@@ -101,7 +101,7 @@ try:
 
         from app.core.database import SessionLocal
         from app.models.camera import Camera, ConnectionType
-        from app.services.camera_service import capture_rtsp_frame
+        from app.services.camera_service import capture_rtsp_frame, crop_half_frame
 
         logger = logging.getLogger(__name__)
         db = SessionLocal()
@@ -120,6 +120,8 @@ try:
                     frame_bytes = capture_rtsp_frame(camera.rtsp_url)
                     if frame_bytes is None:
                         continue
+                    if camera.dual_lens and camera.lens_side in ("upper", "lower"):
+                        frame_bytes = crop_half_frame(frame_bytes, camera.lens_side)
                     camera.last_seen_at = datetime.now(timezone.utc)
                     db.commit()
                     frame_b64 = base64.b64encode(frame_bytes).decode()

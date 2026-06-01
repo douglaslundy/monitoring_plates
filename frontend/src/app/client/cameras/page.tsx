@@ -72,8 +72,8 @@ export default function ClientCamerasPage() {
         location: location.trim() || null,
         connection_type: connectionType,
         rtsp_url: connectionType === "rtsp" ? rtspUrl.trim() : null,
-        dual_lens: connectionType === "agent" ? dualLens : false,
-        lens_side: connectionType === "agent" && dualLens ? lensSide : null,
+        dual_lens: dualLens,
+        lens_side: dualLens ? lensSide : null,
         is_active: true,
       });
 
@@ -141,11 +141,8 @@ export default function ClientCamerasPage() {
         location: editForm.location.trim() || null,
         connection_type: editForm.connection_type,
         rtsp_url: editForm.connection_type === "rtsp" ? editForm.rtsp_url.trim() : null,
-        dual_lens: editForm.connection_type === "agent" ? editForm.dual_lens : false,
-        lens_side:
-          editForm.connection_type === "agent" && editForm.dual_lens
-            ? editForm.lens_side
-            : null,
+        dual_lens: editForm.dual_lens,
+        lens_side: editForm.dual_lens ? editForm.lens_side : null,
         is_active: editForm.is_active,
       });
       closeEdit();
@@ -205,24 +202,22 @@ export default function ClientCamerasPage() {
               className="w-full border rounded-md px-3 py-2 text-sm"
             />
           )}
-          {connectionType === "agent" && (
-            <div className="col-span-1 md:col-span-2 border rounded-md p-3 bg-gray-50">
-              <label className="flex items-center gap-2 text-sm mb-2">
-                <input type="checkbox" checked={dualLens} onChange={(e) => setDualLens(e.target.checked)} />
-                Camera de 2 lentes
-              </label>
-              {dualLens && (
-                <select
-                  value={lensSide}
-                  onChange={(e) => setLensSide(e.target.value as "upper" | "lower")}
-                  className="w-full border rounded-md px-3 py-2 text-sm"
-                >
-                  <option value="upper">Lente 1 (superior)</option>
-                  <option value="lower">Lente 2 (inferior)</option>
-                </select>
-              )}
-            </div>
-          )}
+          <div className="col-span-1 md:col-span-2 border rounded-md p-3 bg-gray-50">
+            <label className="flex items-center gap-2 text-sm mb-2">
+              <input type="checkbox" checked={dualLens} onChange={(e) => setDualLens(e.target.checked)} />
+              Camera de 2 lentes
+            </label>
+            {dualLens && (
+              <select
+                value={lensSide}
+                onChange={(e) => setLensSide(e.target.value as "upper" | "lower")}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+              >
+                <option value="upper">Lente 1 (superior)</option>
+                <option value="lower">Lente 2 (inferior)</option>
+              </select>
+            )}
+          </div>
         </div>
         <button
           type="submit"
@@ -345,20 +340,18 @@ export default function ClientCamerasPage() {
             {editForm.connection_type === "rtsp" && (
               <input value={editForm.rtsp_url} onChange={(e) => setEditForm((p) => (p ? { ...p, rtsp_url: e.target.value } : p))} placeholder="rtsp://usuario:senha@ip:porta/stream" className="w-full border rounded-md px-3 py-2 text-sm" />
             )}
-            {editForm.connection_type === "agent" && (
-              <div className="border rounded-md p-3 bg-gray-50">
-                <label className="flex items-center gap-2 text-sm mb-2">
-                  <input type="checkbox" checked={editForm.dual_lens} onChange={(e) => setEditForm((p) => (p ? { ...p, dual_lens: e.target.checked } : p))} />
-                  Camera de 2 lentes
-                </label>
-                {editForm.dual_lens && (
-                  <select value={editForm.lens_side} onChange={(e) => setEditForm((p) => (p ? { ...p, lens_side: e.target.value as "upper" | "lower" } : p))} className="w-full border rounded-md px-3 py-2 text-sm">
-                    <option value="upper">Lente 1 (superior)</option>
-                    <option value="lower">Lente 2 (inferior)</option>
-                  </select>
-                )}
-              </div>
-            )}
+            <div className="border rounded-md p-3 bg-gray-50">
+              <label className="flex items-center gap-2 text-sm mb-2">
+                <input type="checkbox" checked={editForm.dual_lens} onChange={(e) => setEditForm((p) => (p ? { ...p, dual_lens: e.target.checked } : p))} />
+                Camera de 2 lentes
+              </label>
+              {editForm.dual_lens && (
+                <select value={editForm.lens_side} onChange={(e) => setEditForm((p) => (p ? { ...p, lens_side: e.target.value as "upper" | "lower" } : p))} className="w-full border rounded-md px-3 py-2 text-sm">
+                  <option value="upper">Lente 1 (superior)</option>
+                  <option value="lower">Lente 2 (inferior)</option>
+                </select>
+              )}
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={editForm.is_active} onChange={(e) => setEditForm((p) => (p ? { ...p, is_active: e.target.checked } : p))} />
               Camera ativa

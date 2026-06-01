@@ -154,8 +154,8 @@ export default function AdminCamerasPage() {
         location: form.location || null,
         connection_type: form.connection_type,
         rtsp_url: form.connection_type === "rtsp" ? form.rtsp_url : null,
-        dual_lens: form.connection_type === "agent" ? form.dual_lens : false,
-        lens_side: form.connection_type === "agent" && form.dual_lens ? form.lens_side : null,
+        dual_lens: form.dual_lens,
+        lens_side: form.dual_lens ? form.lens_side : null,
         is_active: true,
       };
       const res = await api.post<Camera>("/api/cameras", payload);
@@ -225,11 +225,8 @@ export default function AdminCamerasPage() {
         location: editForm.location.trim() || null,
         connection_type: editForm.connection_type,
         rtsp_url: editForm.connection_type === "rtsp" ? editForm.rtsp_url.trim() : null,
-        dual_lens: editForm.connection_type === "agent" ? editForm.dual_lens : false,
-        lens_side:
-          editForm.connection_type === "agent" && editForm.dual_lens
-            ? editForm.lens_side
-            : null,
+        dual_lens: editForm.dual_lens,
+        lens_side: editForm.dual_lens ? editForm.lens_side : null,
         is_active: editForm.is_active,
       });
       toast("Câmera atualizada");
@@ -478,20 +475,18 @@ export default function AdminCamerasPage() {
                 <input value={editForm.rtsp_url} onChange={(e) => setEditForm((p) => (p ? { ...p, rtsp_url: e.target.value } : p))} className={inputCls()} />
               </div>
             )}
-            {editForm.connection_type === "agent" && (
-              <div className="rounded border p-3 bg-gray-50 space-y-2">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={editForm.dual_lens} onChange={(e) => setEditForm((p) => (p ? { ...p, dual_lens: e.target.checked } : p))} />
-                  Câmera de 2 lentes
-                </label>
-                {editForm.dual_lens && (
-                  <select value={editForm.lens_side} onChange={(e) => setEditForm((p) => (p ? { ...p, lens_side: e.target.value as "upper" | "lower" } : p))} className={inputCls()}>
-                    <option value="upper">Lente 1 (superior)</option>
-                    <option value="lower">Lente 2 (inferior)</option>
-                  </select>
-                )}
-              </div>
-            )}
+            <div className="rounded border p-3 bg-gray-50 space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={editForm.dual_lens} onChange={(e) => setEditForm((p) => (p ? { ...p, dual_lens: e.target.checked } : p))} />
+                Câmera de 2 lentes
+              </label>
+              {editForm.dual_lens && (
+                <select value={editForm.lens_side} onChange={(e) => setEditForm((p) => (p ? { ...p, lens_side: e.target.value as "upper" | "lower" } : p))} className={inputCls()}>
+                  <option value="upper">Lente 1 (superior)</option>
+                  <option value="lower">Lente 2 (inferior)</option>
+                </select>
+              )}
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={editForm.is_active} onChange={(e) => setEditForm((p) => (p ? { ...p, is_active: e.target.checked } : p))} />
               Câmera ativa
@@ -635,28 +630,26 @@ export default function AdminCamerasPage() {
               </div>
             )}
 
-            {form.connection_type === "agent" && (
-              <div className="rounded border p-3 bg-gray-50 space-y-2">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.dual_lens}
-                    onChange={(e) => setField("dual_lens", e.target.checked)}
-                  />
-                  Câmera de 2 lentes
-                </label>
-                {form.dual_lens && (
-                  <select
-                    value={form.lens_side}
-                    onChange={(e) => setField("lens_side", e.target.value as "upper" | "lower")}
-                    className={inputCls()}
-                  >
-                    <option value="upper">Lente 1 (superior)</option>
-                    <option value="lower">Lente 2 (inferior)</option>
-                  </select>
-                )}
-              </div>
-            )}
+            <div className="rounded border p-3 bg-gray-50 space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.dual_lens}
+                  onChange={(e) => setField("dual_lens", e.target.checked)}
+                />
+                Câmera de 2 lentes
+              </label>
+              {form.dual_lens && (
+                <select
+                  value={form.lens_side}
+                  onChange={(e) => setField("lens_side", e.target.value as "upper" | "lower")}
+                  className={inputCls()}
+                >
+                  <option value="upper">Lente 1 (superior)</option>
+                  <option value="lower">Lente 2 (inferior)</option>
+                </select>
+              )}
+            </div>
 
             <div className="flex justify-between pt-2">
               <button

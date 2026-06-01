@@ -12,7 +12,7 @@ from app.models.client import Client
 from app.models.occurrence import Occurrence
 from app.models.user import User, UserRole
 from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDetail, OccurrenceSmall
-from app.services.camera_service import generate_agent_token, capture_rtsp_frame
+from app.services.camera_service import generate_agent_token, capture_rtsp_frame, crop_half_frame
 from app.services.storage_service import get_url, latest_frame_exists
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
@@ -141,6 +141,8 @@ def test_camera_connection(
     frame = capture_rtsp_frame(camera.rtsp_url)
     if frame is None:
         raise HTTPException(status_code=503, detail="Não foi possível conectar à câmera RTSP")
+    if camera.dual_lens and camera.lens_side in ("upper", "lower"):
+        frame = crop_half_frame(frame, camera.lens_side)
     return {
         "frame_base64": base64.b64encode(frame).decode(),
         "content_type": "image/jpeg",
