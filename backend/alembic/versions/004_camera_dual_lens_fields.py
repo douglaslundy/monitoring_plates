@@ -1,7 +1,7 @@
 """add camera dual lens fields
 
-Revision ID: 004_camera_dual_lens_fields
-Revises: 003_occurrence_vehicle_fields
+Revision ID: 004
+Revises: 003
 Create Date: 2026-06-01
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "004_camera_dual_lens_fields"
-down_revision = "003_occurrence_vehicle_fields"
+revision = "004"
+down_revision = "003"
 branch_labels = None
 depends_on = None
 
