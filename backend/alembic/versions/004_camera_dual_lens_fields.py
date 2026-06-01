@@ -16,8 +16,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("cameras", sa.Column("dual_lens", sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.add_column("cameras", sa.Column("lens_side", sa.String(length=10), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {c["name"] for c in inspector.get_columns("cameras")}
+    if "dual_lens" not in columns:
+        op.add_column("cameras", sa.Column("dual_lens", sa.Boolean(), nullable=False, server_default=sa.false()))
+    if "lens_side" not in columns:
+        op.add_column("cameras", sa.Column("lens_side", sa.String(length=10), nullable=True))
 
 
 def downgrade() -> None:
