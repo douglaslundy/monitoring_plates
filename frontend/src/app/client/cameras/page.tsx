@@ -5,7 +5,18 @@ import api from "@/lib/api";
 import { Camera } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
 import { Camera as CameraIcon, Video, Cpu, Trash2, Pencil } from "lucide-react";
+
+interface EditForm {
+  name: string;
+  location: string;
+  connection_type: "rtsp" | "agent";
+  rtsp_url: string;
+  dual_lens: boolean;
+  lens_side: "upper" | "lower";
+  is_active: boolean;
+}
 
 export default function ClientCamerasPage() {
   const [cameras, setCameras] = useState<Camera[]>([]);
@@ -19,6 +30,10 @@ export default function ClientCamerasPage() {
   const [dualLens, setDualLens] = useState(false);
   const [lensSide, setLensSide] = useState<"upper" | "lower">("upper");
   const [saving, setSaving] = useState(false);
+  const [editTarget, setEditTarget] = useState<Camera | null>(null);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const fetchCameras = useCallback(async () => {
     setLoading(true);
@@ -87,18 +102,59 @@ export default function ClientCamerasPage() {
     }
   }
 
-  async function handleEdit(cam: Camera) {
-    const newName = window.prompt("Nome da câmera", cam.name);
-    if (!newName) return;
-    const newLocation = window.prompt("Localização", cam.location ?? "") ?? "";
+  function openEdit(cam: Camera) {
+    setEditTarget(cam);
+    setEditForm({
+      name: cam.name,
+      location: cam.location ?? "",
+      connection_type: cam.connection_type,
+      rtsp_url: cam.rtsp_url ?? "",
+      dual_lens: cam.dual_lens ?? false,
+      lens_side: cam.lens_side ?? "upper",
+      is_active: cam.is_active,
+    });
+    setEditError("");
+  }
+
+  function closeEdit() {
+    setEditTarget(null);
+    setEditForm(null);
+    setEditError("");
+  }
+
+  async function handleEditSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editTarget || !editForm) return;
+    if (!editForm.name.trim()) {
+      setEditError("Informe o nome da camera.");
+      return;
+    }
+    if (editForm.connection_type === "rtsp" && !editForm.rtsp_url.trim()) {
+      setEditError("Informe a URL RTSP para camera RTSP.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError("");
     try {
-      await api.patch(`/api/cameras/${cam.id}`, {
-        name: newName,
-        location: newLocation || null,
+      await api.patch(`/api/cameras/${editTarget.id}`, {
+        name: editForm.name.trim(),
+        location: editForm.location.trim() || null,
+        connection_type: editForm.connection_type,
+        rtsp_url: editForm.connection_type === "rtsp" ? editForm.rtsp_url.trim() : null,
+        dual_lens: editForm.connection_type === "agent" ? editForm.dual_lens : false,
+        lens_side:
+          editForm.connection_type === "agent" && editForm.dual_lens
+            ? editForm.lens_side
+            : null,
+        is_active: editForm.is_active,
       });
+      closeEdit();
       await fetchCameras();
-    } catch {
-      setError("Erro ao editar camera.");
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      setEditError(typeof detail === "string" ? detail : "Erro ao editar camera.");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -254,7 +310,7 @@ export default function ClientCamerasPage() {
 
               <p className="text-xs text-muted-foreground">Ultima atividade: {formatLastSeen(cam.last_seen_at)}</p>
               <div className="mt-2 flex gap-3">
-                <button onClick={() => handleEdit(cam)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                <button onClick={() => openEdit(cam)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
                   <Pencil className="h-3 w-3" /> Editar
                 </button>
                 <button onClick={() => handleDelete(cam)} className="text-xs text-red-600 hover:underline flex items-center gap-1">
@@ -265,6 +321,59 @@ export default function ClientCamerasPage() {
           ))}
         </div>
       )}
+
+      <Modal
+        open={!!editTarget && !!editForm}
+        onOpenChange={(o) => {
+          if (!o) closeEdit();
+        }}
+        title="Editar camera"
+      >
+        {editForm && (
+          <form onSubmit={handleEditSave} className="space-y-4">
+            {editError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                {editError}
+              </div>
+            )}
+            <input value={editForm.name} onChange={(e) => setEditForm((p) => (p ? { ...p, name: e.target.value } : p))} placeholder="Nome da camera" className="w-full border rounded-md px-3 py-2 text-sm" />
+            <input value={editForm.location} onChange={(e) => setEditForm((p) => (p ? { ...p, location: e.target.value } : p))} placeholder="Local (opcional)" className="w-full border rounded-md px-3 py-2 text-sm" />
+            <select value={editForm.connection_type} onChange={(e) => setEditForm((p) => (p ? { ...p, connection_type: e.target.value as "rtsp" | "agent" } : p))} className="w-full border rounded-md px-3 py-2 text-sm">
+              <option value="rtsp">RTSP</option>
+              <option value="agent">Agente</option>
+            </select>
+            {editForm.connection_type === "rtsp" && (
+              <input value={editForm.rtsp_url} onChange={(e) => setEditForm((p) => (p ? { ...p, rtsp_url: e.target.value } : p))} placeholder="rtsp://usuario:senha@ip:porta/stream" className="w-full border rounded-md px-3 py-2 text-sm" />
+            )}
+            {editForm.connection_type === "agent" && (
+              <div className="border rounded-md p-3 bg-gray-50">
+                <label className="flex items-center gap-2 text-sm mb-2">
+                  <input type="checkbox" checked={editForm.dual_lens} onChange={(e) => setEditForm((p) => (p ? { ...p, dual_lens: e.target.checked } : p))} />
+                  Camera de 2 lentes
+                </label>
+                {editForm.dual_lens && (
+                  <select value={editForm.lens_side} onChange={(e) => setEditForm((p) => (p ? { ...p, lens_side: e.target.value as "upper" | "lower" } : p))} className="w-full border rounded-md px-3 py-2 text-sm">
+                    <option value="upper">Lente 1 (superior)</option>
+                    <option value="lower">Lente 2 (inferior)</option>
+                  </select>
+                )}
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={editForm.is_active} onChange={(e) => setEditForm((p) => (p ? { ...p, is_active: e.target.checked } : p))} />
+              Camera ativa
+            </label>
+            <div className="flex gap-3">
+              <button type="button" onClick={closeEdit} className="flex-1 py-2 border rounded-lg text-sm hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button type="submit" disabled={editSaving} className="flex-1 py-2 rounded-lg bg-black text-white text-sm disabled:opacity-60">
+                {editSaving ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }
