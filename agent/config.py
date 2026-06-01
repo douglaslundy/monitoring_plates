@@ -24,9 +24,20 @@ def _load() -> dict:
 
 _cfg = _load()
 
+def _parse_camera_source(value):
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        v = value.strip()
+        if v.isdigit():
+            return int(v)
+        return v
+    return value
+
+
 AGENT_TOKEN: str = _cfg["token"]
 API_URL: str = _cfg["server_url"].rstrip("/")
-CAMERA_SOURCE = _cfg.get("camera_rtsp", "0")
-FRAME_INTERVAL: int = int(_cfg.get("frame_interval", 1))
+CAMERA_SOURCE = _parse_camera_source(_cfg.get("camera_rtsp", 0))
+FRAME_INTERVAL: int = max(1, int(_cfg.get("frame_interval", 1)))
 MIN_CONFIDENCE: float = float(_cfg.get("min_confidence", 0.70))
 DEDUP_SECONDS: int = int(_cfg.get("dedup_seconds", 30))

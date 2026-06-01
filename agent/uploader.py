@@ -10,6 +10,8 @@ def heartbeat() -> bool:
             data={"agent_token": AGENT_TOKEN},
             timeout=5,
         )
+        if not res.ok:
+            print(f"[uploader] heartbeat falhou: {res.status_code} {res.text}")
         return res.ok
     except Exception:
         return False
@@ -25,6 +27,8 @@ def send_frame(jpeg_bytes: bytes) -> bool:
                 files={"frame": ("frame.jpg", jpeg_bytes, "image/jpeg")},
                 timeout=10,
             )
+            if not res.ok:
+                print(f"[uploader] envio frame falhou: {res.status_code} {res.text}")
             return res.ok
         except Exception as e:
             if attempt == 2:
