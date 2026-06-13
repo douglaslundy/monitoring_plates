@@ -7,8 +7,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { getMe } from "@/lib/auth";
 import type { UserMe } from "@/lib/auth";
-import type { OccurrenceStats, OccurrenceWithCamera } from "@/types";
-import { Camera, Shield, Activity, BarChart2 } from "lucide-react";
+import type { Camera as CameraType, OccurrenceStats, OccurrenceWithCamera } from "@/types";
+import { Camera as CameraIcon, Shield, Activity, BarChart2 } from "lucide-react";
 
 function BarChart({ data }: { data: { hour: number; count: number }[] }) {
   const max = Math.max(...data.map((d) => d.count), 1);
@@ -39,18 +39,21 @@ export default function ClientDashboard() {
   const [user, setUser] = useState<UserMe | null>(null);
   const [stats, setStats] = useState<OccurrenceStats | null>(null);
   const [feed, setFeed] = useState<OccurrenceWithCamera[]>([]);
+  const [cameras, setCameras] = useState<CameraType[]>([]);
   const [loading, setLoading] = useState(true);
 
   const { lastAlert, isConnected } = useWebSocket(user?.client_id ?? null);
 
   const load = useCallback(async () => {
     try {
-      const [statsRes, feedRes] = await Promise.all([
+      const [statsRes, feedRes, camerasRes] = await Promise.all([
         api.get<OccurrenceStats>("/api/occurrences/stats"),
         api.get<{ items: OccurrenceWithCamera[] }>("/api/occurrences?limit=10"),
+        api.get<CameraType[]>("/api/cameras"),
       ]);
       setStats(statsRes.data);
       setFeed(feedRes.data.items);
+      setCameras(camerasRes.data);
     } catch {
       /* silently ignore */
     } finally {
@@ -65,7 +68,6 @@ export default function ClientDashboard() {
     load();
   }, [load]);
 
-  // Prepend new alerts from WebSocket to feed
   useEffect(() => {
     if (!lastAlert) return;
     const synthetic: OccurrenceWithCamera = {
@@ -90,9 +92,8 @@ export default function ClientDashboard() {
     setFeed((prev) => [synthetic, ...prev].slice(0, 10));
   }, [lastAlert]);
 
-  const camCount = stats
-    ? stats.top_cameras.length
-    : 0;
+  const onlineCount = cameras.filter((camera) => camera.is_online).length;
+  const totalCameras = cameras.length;
 
   return (
     <div className="p-6">
@@ -106,12 +107,11 @@ export default function ClientDashboard() {
             className={`h-2 w-2 rounded-full ${isConnected ? "bg-green-500 animate-pulse" : "bg-gray-300"}`}
           />
           <span className="text-muted-foreground">
-            {isConnected ? "WebSocket conectado" : "Offline"}
+            {isConnected ? "Tempo real conectado" : "Sem conexão em tempo real"}
           </span>
         </div>
       </div>
 
-      {/* Metric cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <MetricCard
           title="Hoje"
@@ -126,10 +126,10 @@ export default function ClientDashboard() {
           description="últimos 7 dias"
         />
         <MetricCard
-          title="Câmeras ativas"
-          value={loading ? "—" : camCount}
-          icon={Camera}
-          description="com ocorrências recentes"
+          title="Câmeras online"
+          value={loading ? "—" : onlineCount}
+          icon={CameraIcon}
+          description={loading ? "carregando" : `${totalCameras} cadastradas`}
         />
         <MetricCard
           title="Top placa"
@@ -144,7 +144,6 @@ export default function ClientDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent feed */}
         <div className="lg:col-span-2 bg-white rounded-xl border shadow-sm p-5">
           <h2 className="font-semibold mb-4">Últimas Ocorrências</h2>
           {loading ? (
@@ -158,10 +157,7 @@ export default function ClientDashboard() {
           ) : (
             <ul className="divide-y">
               {feed.map((occ) => (
-                <li
-                  key={occ.id}
-                  className="py-3 flex items-center gap-3"
-                >
+                <li key={occ.id} className="py-3 flex items-center gap-3">
                   <span className="font-mono text-sm font-bold bg-gray-100 px-2 py-0.5 rounded">
                     {occ.plate}
                   </span>
@@ -178,7 +174,6 @@ export default function ClientDashboard() {
           )}
         </div>
 
-        {/* 24h bar chart */}
         <div className="bg-white rounded-xl border shadow-sm p-5">
           <h2 className="font-semibold mb-1">Detecções por hora</h2>
           <p className="text-xs text-muted-foreground mb-4">Últimas 24 horas</p>

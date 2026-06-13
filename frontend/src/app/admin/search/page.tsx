@@ -108,6 +108,10 @@ export default function AdminSearchPage() {
     [plate, cameraId, dateFrom, dateTo]
   );
 
+  useEffect(() => {
+    search(1);
+  }, [search]);
+
   function exportCsv() {
     const params = new URLSearchParams();
     if (plate.trim()) params.set("plate", plate.trim());
