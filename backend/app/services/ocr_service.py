@@ -27,7 +27,13 @@ class EasyOcrEngine:
     def _get_reader(self):
         if self._reader is None:
             import easyocr
-            self._reader = easyocr.Reader(["pt", "en"], gpu=False)
+            try:
+                import torch
+
+                torch.backends.nnpack.set_flags(False)
+            except Exception:
+                pass
+            self._reader = easyocr.Reader(["pt", "en"], gpu=False, quantize=False, verbose=False)
         return self._reader
 
     def recognize(self, image_bytes: bytes) -> Optional[dict]:

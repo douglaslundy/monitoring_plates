@@ -1,10 +1,11 @@
 from io import BytesIO
 from unittest.mock import patch, MagicMock
+from datetime import datetime, timezone, timedelta
 
 import pytest
 
 from app.core.security import hash_password
-from app.models.camera import Camera
+from app.models.camera import Camera, ConnectionType
 from app.models.client import Client
 from app.models.plan import Plan
 from app.models.user import User, UserRole
@@ -264,3 +265,20 @@ def test_get_camera_por_id_inclui_is_online(client, db, super_admin, tenant_a):
     assert "is_online" in data
     assert "last_occurrences" in data
     assert isinstance(data["last_occurrences"], list)
+
+
+def test_camera_recente_com_last_seen_at_aparece_online(client, db, tenant_a):
+    """A camera with a recent last_seen_at must be serialized as online."""
+    cam = Camera(
+        client_id=tenant_a.id,
+        name="Cam recente",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://example/stream",
+        is_active=True,
+        last_seen_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+    )
+    db.add(cam)
+    db.commit()
+    db.refresh(cam)
+
+    assert cam.is_online is True

@@ -32,7 +32,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
-    command: redis-server --appendonly yes
+    command: redis-server --save "" --appendonly no --stop-writes-on-bgsave-error no
     volumes:
       - redis_data:/data
     networks:
@@ -78,7 +78,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
-    command: celery -A app.workers.frame_processor worker --loglevel=warning -Q frames --concurrency=2
+    command: celery -A app.workers.frame_processor worker --loglevel=warning -Q frames --pool=solo --concurrency=1
     volumes:
       - storage_data:/app/storage
     depends_on:
