@@ -34,11 +34,11 @@
 
 ## Fase 4. Contagem e classificacao
 
-- [ ] Criar evento de passagem de veiculo.
-- [ ] Adicionar classe do veiculo na ocorrencia.
-- [ ] Implementar conteudo agregado por camera e periodo.
-- [ ] Evitar dupla contagem com tracker simples.
-- [ ] Exibir contadores no dashboard.
+- [x] Criar evento de passagem de veiculo.
+- [x] Adicionar classe do veiculo na ocorrencia.
+- [x] Implementar conteudo agregado por camera e periodo.
+- [x] Evitar dupla contagem com tracker simples.
+- [x] Exibir contadores no dashboard.
 
 ## Fase 5. Telemetria e alertas operacionais
 
@@ -76,6 +76,7 @@
 - Alertas em tempo real agora disparam quando a camera entra em estado degradado ou com imagem ruim.
 - O painel live agora exibe saude operacional, fila OCR, FPS medio e latencia media.
 - O backend agora publica alerta de worker atrasado quando a fila OCR acumula acima do limite configurado.
+- O painel do cliente agora exibe fluxo de veiculos por tipo, por hora e a ultima leitura com confianca.
 
 ## Fase 8. Validacao final
 

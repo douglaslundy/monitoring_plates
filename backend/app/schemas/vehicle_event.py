@@ -41,9 +41,20 @@ class HourBucket(BaseModel):
     count: int
 
 
+class LatestVehicleEvent(BaseModel):
+    id: UUID
+    camera_id: UUID
+    camera_name: str
+    camera_location: Optional[str] = None
+    vehicle_type: str
+    confidence: float
+    detected_at: datetime
+
+
 class VehicleEventStats(BaseModel):
     total_today: int
     total_week: int
     by_type: List[VehicleEventTypeCount]
     top_cameras: List[TopVehicleCamera]
     by_hour: List[HourBucket]
+    latest_event: Optional[LatestVehicleEvent] = None

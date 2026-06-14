@@ -11,6 +11,7 @@ from app.models.camera import Camera
 from app.models.user import User, UserRole
 from app.models.vehicle_event import VehicleEvent
 from app.schemas.vehicle_event import (
+    LatestVehicleEvent,
     VehicleEventStats,
     VehicleEventTypeCount,
     TopVehicleCamera,
@@ -76,10 +77,28 @@ def get_stats(
         counts[dt.hour] = counts.get(dt.hour, 0) + 1
     by_hour = [HourBucket(hour=h, count=counts.get(h, 0)) for h in range(24)]
 
+    latest_event_row = (
+        base.order_by(VehicleEvent.detected_at.desc(), VehicleEvent.created_at.desc())
+        .first()
+    )
+    latest_event = None
+    if latest_event_row is not None:
+        camera = db.query(Camera).filter(Camera.id == latest_event_row.camera_id).first()
+        latest_event = LatestVehicleEvent(
+            id=latest_event_row.id,
+            camera_id=latest_event_row.camera_id,
+            camera_name=camera.name if camera else str(latest_event_row.camera_id),
+            camera_location=camera.location if camera else None,
+            vehicle_type=latest_event_row.vehicle_type,
+            confidence=latest_event_row.confidence,
+            detected_at=latest_event_row.detected_at,
+        )
+
     return VehicleEventStats(
         total_today=total_today,
         total_week=total_week,
         by_type=by_type,
         top_cameras=top_cameras,
         by_hour=by_hour,
+        latest_event=latest_event,
     )

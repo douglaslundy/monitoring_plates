@@ -118,6 +118,9 @@ def test_vehicle_stats_endpoint_conta_por_tipo(client, db):
     assert data["total_today"] >= 2
     assert any(item["vehicle_type"] == "car" for item in data["by_type"])
     assert any(item["vehicle_type"] == "motorcycle" for item in data["by_type"])
+    assert data["latest_event"] is not None
+    assert data["latest_event"]["camera_name"] == camera.name
+    assert data["latest_event"]["vehicle_type"] in {"car", "motorcycle"}
 
 
 def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):

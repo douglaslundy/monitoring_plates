@@ -127,6 +127,41 @@ export interface OccurrenceStats {
   by_hour: { hour: number; count: number }[];
 }
 
+export interface VehicleEventTypeCount {
+  vehicle_type: string;
+  count: number;
+}
+
+export interface TopVehicleCamera {
+  camera_id: string;
+  camera_name: string;
+  count: number;
+}
+
+export interface VehicleHourBucket {
+  hour: number;
+  count: number;
+}
+
+export interface LatestVehicleEvent {
+  id: string;
+  camera_id: string;
+  camera_name: string;
+  camera_location: string | null;
+  vehicle_type: string;
+  confidence: number;
+  detected_at: string;
+}
+
+export interface VehicleEventStats {
+  total_today: number;
+  total_week: number;
+  by_type: VehicleEventTypeCount[];
+  top_cameras: TopVehicleCamera[];
+  by_hour: VehicleHourBucket[];
+  latest_event: LatestVehicleEvent | null;
+}
+
 export interface MonitoredPlate {
   id: string;
   client_id: string;
