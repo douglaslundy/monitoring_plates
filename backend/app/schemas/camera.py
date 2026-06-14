@@ -12,6 +12,10 @@ class CameraBase(BaseModel):
     rtsp_url: Optional[str] = None
     dual_lens: bool = False
     lens_side: Optional[str] = None
+    roi_x: Optional[float] = None
+    roi_y: Optional[float] = None
+    roi_width: Optional[float] = None
+    roi_height: Optional[float] = None
     is_active: bool = True
 
 
@@ -26,6 +30,10 @@ class CameraUpdate(BaseModel):
     rtsp_url: Optional[str] = None
     dual_lens: Optional[bool] = None
     lens_side: Optional[str] = None
+    roi_x: Optional[float] = None
+    roi_y: Optional[float] = None
+    roi_width: Optional[float] = None
+    roi_height: Optional[float] = None
     is_active: Optional[bool] = None
 
 

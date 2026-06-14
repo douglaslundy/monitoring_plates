@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timezone, timedelta
 
 import pytest
+from PIL import Image
 
 
 # ── email_service ─────────────────────────────────────────────────────────────
@@ -148,6 +149,19 @@ def test_capture_rtsp_frame_read_fails():
         result = camera_service.capture_rtsp_frame("rtsp://bad/stream")
 
     assert result is None
+
+
+def test_crop_roi_frame_reduz_imagem():
+    from app.services.camera_service import crop_roi_frame
+
+    image = Image.new("RGB", (100, 100), color=(255, 255, 255))
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG")
+
+    cropped = crop_roi_frame(buf.getvalue(), 0.25, 0.25, 0.5, 0.5)
+    result = Image.open(io.BytesIO(cropped))
+
+    assert result.size == (50, 50)
 
 
 # ── storage_service ───────────────────────────────────────────────────────────
@@ -313,6 +327,61 @@ def test_process_frame_cria_ocorrencia(db):
     occ = db.query(Occurrence).filter(Occurrence.plate == "XYZ5678").first()
     assert occ is not None
     assert occ.camera_id == cam.id
+
+
+def test_process_frame_usa_roi_da_camera(db):
+    """process_frame should crop the configured ROI before OCR and vehicle detection."""
+    from app.models.plan import Plan
+    from app.models.client import Client
+    from app.models.camera import Camera, ConnectionType
+    from app.core.database import engine
+    from sqlalchemy.orm import sessionmaker
+    import base64
+
+    plan = Plan(name="P4", max_cameras=1, retention_days=30, email_alerts=False,
+                realtime_alerts=False, price_monthly=0, is_active=True)
+    db.add(plan); db.commit(); db.refresh(plan)
+
+    tenant = Client(name="T4", email="t4@t.com", plan_id=plan.id, is_active=True)
+    db.add(tenant); db.commit(); db.refresh(tenant)
+
+    cam = Camera(
+        client_id=tenant.id,
+        name="C4",
+        location="L4",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://x/s4",
+        is_active=True,
+        roi_x=0.1,
+        roi_y=0.2,
+        roi_width=0.4,
+        roi_height=0.5,
+    )
+    db.add(cam); db.commit(); db.refresh(cam)
+
+    frame_b64 = base64.b64encode(b"fake_frame").decode()
+    worker_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    mock_recognizer = MagicMock()
+    mock_recognizer.recognize.return_value = {"plate": "ROI1234", "confidence": 0.9}
+    mock_vehicle_detector = MagicMock()
+    mock_vehicle_detector.best_detection.return_value = None
+
+    with patch("app.core.database.SessionLocal", worker_session), \
+         patch("app.services.camera_service.crop_roi_frame", return_value=b"roi_frame") as mock_crop, \
+         patch("app.services.ocr_service.recognizer", mock_recognizer), \
+         patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector), \
+         patch("app.services.storage_service.save_bytes", return_value="cameras/test/roi.jpg") as mock_save, \
+         patch("app.services.alert_service.process_alerts"):
+        from app.workers import frame_processor
+        import importlib
+        importlib.reload(frame_processor)
+        frame_processor.process_frame(str(cam.id), frame_b64)
+
+    mock_crop.assert_called_once()
+    mock_vehicle_detector.best_detection.assert_called_once_with(b"roi_frame")
+    mock_recognizer.recognize.assert_called_once_with(b"roi_frame", camera_id=str(cam.id))
+    assert mock_save.call_args is not None
+    assert mock_save.call_args.args[0] == b"roi_frame"
 
 
 def test_process_frame_ocr_none_nao_cria(db):

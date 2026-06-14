@@ -53,7 +53,7 @@
 - [ ] Cachear modelos na inicializacao do worker.
 - [ ] Diminuir inferencia em frames repetidos.
 - [ ] Amostrar frames em cameras de alto volume.
-- [ ] Criar configuracao de ROI por camera.
+- [x] Criar configuracao de ROI por camera.
 - [ ] Exportar eventos para analise externa.
 
 ## Fase 7. Produto e UX
@@ -70,6 +70,7 @@
 - O recarregamento manual restaura o stream sem bloquear o OCR.
 - O preview permanece desacoplado da fila de analise.
 - O dashboard agora exibe FPS efetivo, quadros por minuto e status operacional do preview por camera.
+- O worker aplica ROI configurada na camera antes do detector e do OCR.
 
 ## Fase 8. Validacao final
 

@@ -29,12 +29,17 @@ interface CreateForm {
   rtsp_url: string;
   dual_lens: boolean;
   lens_side: "upper" | "lower";
+  roi_x: string;
+  roi_y: string;
+  roi_width: string;
+  roi_height: string;
 }
 
 interface FormErrors {
   client_id?: string;
   name?: string;
   rtsp_url?: string;
+  roi?: string;
 }
 
 interface EditForm {
@@ -44,6 +49,10 @@ interface EditForm {
   rtsp_url: string;
   dual_lens: boolean;
   lens_side: "upper" | "lower";
+  roi_x: string;
+  roi_y: string;
+  roi_width: string;
+  roi_height: string;
   is_active: boolean;
 }
 
@@ -55,6 +64,10 @@ const emptyForm: CreateForm = {
   rtsp_url: "",
   dual_lens: false,
   lens_side: "upper",
+  roi_x: "",
+  roi_y: "",
+  roi_width: "",
+  roi_height: "",
 };
 
 function validateRtsp(url: string): string {
@@ -63,6 +76,34 @@ function validateRtsp(url: string): string {
     return "Deve começar com rtsp:// ou rtsps://";
   }
   return "";
+}
+
+function validateRoi(form: Pick<CreateForm | EditForm, "roi_x" | "roi_y" | "roi_width" | "roi_height">): string {
+  const values = [form.roi_x, form.roi_y, form.roi_width, form.roi_height];
+  const hasAny = values.some((value) => value.trim().length > 0);
+  if (!hasAny) return "";
+  if (values.some((value) => value.trim().length === 0)) {
+    return "Preencha todos os campos da ROI ou deixe todos vazios.";
+  }
+
+  const numbers = values.map((value) => Number(value));
+  if (numbers.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
+    return "Os valores da ROI devem ficar entre 0 e 1.";
+  }
+  if (numbers[2] <= 0 || numbers[3] <= 0) {
+    return "A largura e a altura da ROI precisam ser maiores que zero.";
+  }
+  if (numbers[0] + numbers[2] > 1 || numbers[1] + numbers[3] > 1) {
+    return "A ROI precisa caber dentro do frame.";
+  }
+  return "";
+}
+
+function parseOptionalFloat(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export default function AdminCamerasPage() {
@@ -116,6 +157,12 @@ export default function AdminCamerasPage() {
         rtsp_url: validateRtsp(value as string),
       }));
     }
+    if (key === "roi_x" || key === "roi_y" || key === "roi_width" || key === "roi_height") {
+      setFormErrors((prev) => ({
+        ...prev,
+        roi: validateRoi({ ...form, [key]: value } as CreateForm),
+      }));
+    }
     if (key === "name") {
       setFormErrors((prev) => ({
         ...prev,
@@ -138,6 +185,8 @@ export default function AdminCamerasPage() {
       const e = validateRtsp(form.rtsp_url);
       if (e) errs.rtsp_url = e;
     }
+    const roiError = validateRoi(form);
+    if (roiError) errs.roi = roiError;
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -156,6 +205,10 @@ export default function AdminCamerasPage() {
         rtsp_url: form.connection_type === "rtsp" ? form.rtsp_url : null,
         dual_lens: form.dual_lens,
         lens_side: form.dual_lens ? form.lens_side : null,
+        roi_x: parseOptionalFloat(form.roi_x),
+        roi_y: parseOptionalFloat(form.roi_y),
+        roi_width: parseOptionalFloat(form.roi_width),
+        roi_height: parseOptionalFloat(form.roi_height),
         is_active: true,
       };
       const res = await api.post<Camera>("/api/cameras", payload);
@@ -195,6 +248,10 @@ export default function AdminCamerasPage() {
       rtsp_url: camera.rtsp_url ?? "",
       dual_lens: camera.dual_lens ?? false,
       lens_side: camera.lens_side ?? "upper",
+      roi_x: camera.roi_x?.toString() ?? "",
+      roi_y: camera.roi_y?.toString() ?? "",
+      roi_width: camera.roi_width?.toString() ?? "",
+      roi_height: camera.roi_height?.toString() ?? "",
       is_active: camera.is_active,
     });
     setEditError("");
@@ -227,6 +284,10 @@ export default function AdminCamerasPage() {
         rtsp_url: editForm.connection_type === "rtsp" ? editForm.rtsp_url.trim() : null,
         dual_lens: editForm.dual_lens,
         lens_side: editForm.dual_lens ? editForm.lens_side : null,
+        roi_x: parseOptionalFloat(editForm.roi_x),
+        roi_y: parseOptionalFloat(editForm.roi_y),
+        roi_width: parseOptionalFloat(editForm.roi_width),
+        roi_height: parseOptionalFloat(editForm.roi_height),
         is_active: editForm.is_active,
       });
       toast("Câmera atualizada");
@@ -487,6 +548,20 @@ export default function AdminCamerasPage() {
                 </select>
               )}
             </div>
+            <div className="rounded border p-3 bg-gray-50 space-y-3">
+              <div>
+                <p className="text-sm font-medium">ROI para detecção</p>
+                <p className="text-xs text-muted-foreground">
+                  Valores entre 0 e 1. Deixe vazio para analisar o frame inteiro.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input placeholder="x" value={editForm.roi_x} onChange={(e) => setEditForm((p) => (p ? { ...p, roi_x: e.target.value } : p))} className={inputCls()} />
+                <input placeholder="y" value={editForm.roi_y} onChange={(e) => setEditForm((p) => (p ? { ...p, roi_y: e.target.value } : p))} className={inputCls()} />
+                <input placeholder="largura" value={editForm.roi_width} onChange={(e) => setEditForm((p) => (p ? { ...p, roi_width: e.target.value } : p))} className={inputCls()} />
+                <input placeholder="altura" value={editForm.roi_height} onChange={(e) => setEditForm((p) => (p ? { ...p, roi_height: e.target.value } : p))} className={inputCls()} />
+              </div>
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={editForm.is_active} onChange={(e) => setEditForm((p) => (p ? { ...p, is_active: e.target.checked } : p))} />
               Câmera ativa
@@ -587,9 +662,12 @@ export default function AdminCamerasPage() {
                 className={inputCls(formErrors.name)}
                 placeholder="Ex: Entrada Principal"
               />
-              {formErrors.name && (
-                <p id="cam-name-err" className="mt-1 text-xs text-red-600">{formErrors.name}</p>
-              )}
+            {formErrors.name && (
+              <p id="cam-name-err" className="mt-1 text-xs text-red-600">{formErrors.name}</p>
+            )}
+            {formErrors.roi && (
+              <p className="text-xs text-red-600">{formErrors.roi}</p>
+            )}
             </div>
 
             <div>
@@ -649,6 +727,41 @@ export default function AdminCamerasPage() {
                   <option value="lower">Lente 2 (inferior)</option>
                 </select>
               )}
+            </div>
+
+            <div className="rounded border p-3 bg-gray-50 space-y-3">
+              <div>
+                <p className="text-sm font-medium">ROI para detecção</p>
+                <p className="text-xs text-muted-foreground">
+                  Valores entre 0 e 1. Deixe vazio para analisar o frame inteiro.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  value={form.roi_x}
+                  onChange={(e) => setField("roi_x", e.target.value)}
+                  className={inputCls()}
+                  placeholder="x"
+                />
+                <input
+                  value={form.roi_y}
+                  onChange={(e) => setField("roi_y", e.target.value)}
+                  className={inputCls()}
+                  placeholder="y"
+                />
+                <input
+                  value={form.roi_width}
+                  onChange={(e) => setField("roi_width", e.target.value)}
+                  className={inputCls()}
+                  placeholder="largura"
+                />
+                <input
+                  value={form.roi_height}
+                  onChange={(e) => setField("roi_height", e.target.value)}
+                  className={inputCls()}
+                  placeholder="altura"
+                />
+              </div>
             </div>
 
             <div className="flex justify-between pt-2">

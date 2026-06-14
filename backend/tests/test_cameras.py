@@ -127,6 +127,38 @@ def test_camera_rtsp_sem_agent_token(client, db, super_admin, tenant_a):
     assert res.json()["agent_token"] is None
 
 
+def test_camera_pode_salvar_roi(client, db, super_admin, tenant_a):
+    """Camera payload should persist ROI fields for the detector pipeline."""
+    token = login(client, "admin@sistema.com")
+    res = client.post(
+        "/api/cameras",
+        json={
+            "client_id": str(tenant_a.id),
+            "name": "Cam ROI",
+            "connection_type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.3/stream",
+            "roi_x": 0.1,
+            "roi_y": 0.2,
+            "roi_width": 0.4,
+            "roi_height": 0.5,
+            "is_active": True,
+        },
+        headers=auth(token),
+    )
+    assert res.status_code == 201
+    data = res.json()
+    assert data["roi_x"] == 0.1
+    assert data["roi_y"] == 0.2
+    assert data["roi_width"] == 0.4
+    assert data["roi_height"] == 0.5
+
+    get_res = client.get(f"/api/cameras/{data['id']}", headers=auth(token))
+    assert get_res.status_code == 200
+    get_data = get_res.json()
+    assert get_data["roi_x"] == 0.1
+    assert get_data["roi_height"] == 0.5
+
+
 def test_dois_agentes_tokens_diferentes(client, db, super_admin, tenant_a):
     """Two agent cameras must have distinct tokens."""
     token = login(client, "admin@sistema.com")

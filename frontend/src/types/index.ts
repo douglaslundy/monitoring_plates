@@ -71,6 +71,10 @@ export interface Camera {
   agent_token: string | null;
   dual_lens: boolean;
   lens_side: "upper" | "lower" | null;
+  roi_x: number | null;
+  roi_y: number | null;
+  roi_width: number | null;
+  roi_height: number | null;
   is_active: boolean;
   last_seen_at: string | null;
   created_at: string;

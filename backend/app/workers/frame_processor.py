@@ -23,6 +23,7 @@ try:
         from app.services.storage_service import save_bytes
         from app.services.alert_service import process_alerts
         from app.models.vehicle_event import VehicleEvent
+        from app.services.camera_service import crop_roi_frame
 
         logger = logging.getLogger(__name__)
         frame_bytes = base64.b64decode(frame_b64)
@@ -33,8 +34,19 @@ try:
             if not camera or not camera.is_active:
                 return
 
-            vehicle = vehicle_detector.best_detection(frame_bytes)
-            ocr_bytes = vehicle.crop_bytes if vehicle is not None else frame_bytes
+            analysis_bytes = frame_bytes
+            roi_values = (camera.roi_x, camera.roi_y, camera.roi_width, camera.roi_height)
+            if all(value is not None for value in roi_values):
+                analysis_bytes = crop_roi_frame(
+                    analysis_bytes,
+                    float(camera.roi_x),
+                    float(camera.roi_y),
+                    float(camera.roi_width),
+                    float(camera.roi_height),
+                )
+
+            vehicle = vehicle_detector.best_detection(analysis_bytes)
+            ocr_bytes = vehicle.crop_bytes if vehicle is not None else analysis_bytes
 
             result = recognizer.recognize(ocr_bytes, camera_id=camera_id)
             if result is None and vehicle is None:
@@ -98,7 +110,7 @@ try:
                     if plan and plan.retention_days:
                         expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
 
-                    image_path = save_bytes(ocr_bytes if vehicle is not None else frame_bytes, camera_id)
+                    image_path = save_bytes(ocr_bytes if vehicle is not None else analysis_bytes, camera_id)
 
                     occ = Occurrence(
                         camera_id=camera.id,
