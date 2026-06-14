@@ -143,6 +143,8 @@ def test_camera_connection(
         raise HTTPException(status_code=503, detail="Não foi possível conectar à câmera RTSP")
     if camera.dual_lens and camera.lens_side in ("upper", "lower"):
         frame = crop_half_frame(frame, camera.lens_side)
+    camera.last_seen_at = datetime.now(timezone.utc)
+    db.commit()
     return {
         "frame_base64": base64.b64encode(frame).decode(),
         "content_type": "image/jpeg",
@@ -166,6 +168,14 @@ def get_camera_last_frame(
     current_user: User = Depends(get_current_user),
 ):
     _get_camera_or_403(camera_id, current_user, db)
+    latest_path = f"cameras/{camera_id}/latest.jpg"
+    if latest_frame_exists(str(camera_id)):
+        return {
+            "image_url": f"{get_url(latest_path)}?t={int(datetime.now(timezone.utc).timestamp())}",
+            "detected_at": None,
+            "plate": None,
+        }
+
     occ = (
         db.query(Occurrence)
         .filter(Occurrence.camera_id == camera_id, Occurrence.image_path.isnot(None))
@@ -173,13 +183,6 @@ def get_camera_last_frame(
         .first()
     )
     if not occ or not occ.image_path:
-        latest_path = f"cameras/{camera_id}/latest.jpg"
-        if latest_frame_exists(str(camera_id)):
-            return {
-                "image_url": f"{get_url(latest_path)}?t={int(datetime.now(timezone.utc).timestamp())}",
-                "detected_at": None,
-                "plate": None,
-            }
         return {"image_url": None, "detected_at": None, "plate": None}
     return {
         "image_url": get_url(occ.image_path),
