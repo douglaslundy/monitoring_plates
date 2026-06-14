@@ -17,8 +17,8 @@ export default function LiveMonitor({
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [streamNonce, setStreamNonce] = useState<Record<string, number>>({});
-  const [streamStatus, setStreamStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [previewStatus, setPreviewStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
 
   const activeCameras = useMemo(
     () => cameras.filter((camera) => camera.is_active),
@@ -31,7 +31,7 @@ export default function LiveMonitor({
     try {
       const res = await api.get<Camera[]>("/api/cameras");
       setCameras(res.data);
-      setStreamStatus((current) => {
+      setPreviewStatus((current) => {
         const next: Record<string, "loading" | "ready" | "error"> = { ...current };
         for (const camera of res.data) {
           next[camera.id] = current[camera.id] ?? "loading";
@@ -49,16 +49,69 @@ export default function LiveMonitor({
     fetchCameras();
   }, [fetchCameras]);
 
-  const reloadStream = useCallback((cameraId: string) => {
-    setStreamStatus((current) => ({ ...current, [cameraId]: "loading" }));
-    setStreamNonce((current) => ({ ...current, [cameraId]: (current[cameraId] ?? 0) + 1 }));
-  }, []);
+  const refreshPreviews = useCallback(async () => {
+    const items = activeCameras.filter((camera) => camera.connection_type === "rtsp" || camera.connection_type === "agent");
+    if (items.length === 0) return;
+
+    try {
+      const results = await Promise.allSettled(
+        items.map(async (camera) => {
+          const response = await api.get<{ image_url: string | null }>(`/api/cameras/${camera.id}/last-frame`);
+          const imageUrl = response.data.image_url;
+          if (!imageUrl) {
+            throw new Error("preview-not-available");
+          }
+          return { cameraId: camera.id, imageUrl };
+        })
+      );
+
+      setPreviewUrls((current) => {
+        const next = { ...current };
+        results.forEach((result) => {
+          if (result.status === "fulfilled") {
+            const delimiter = result.value.imageUrl.includes("?") ? "&" : "?";
+            next[result.value.cameraId] = `${result.value.imageUrl}${delimiter}t=${Date.now()}`;
+          }
+        });
+        return next;
+      });
+
+      setPreviewStatus((current) => {
+        const next = { ...current };
+        results.forEach((result, index) => {
+          const cameraId = items[index]?.id;
+          if (!cameraId) return;
+          next[cameraId] = result.status === "fulfilled" ? "ready" : "error";
+        });
+        return next;
+      });
+      setError("");
+    } catch {
+      setError("Erro ao atualizar previews.");
+      setPreviewStatus((current) => {
+        const next = { ...current };
+        for (const camera of items) {
+          next[camera.id] = "error";
+        }
+        return next;
+      });
+    }
+  }, [activeCameras]);
+
+  useEffect(() => {
+    if (activeCameras.length === 0) return;
+
+    void refreshPreviews();
+    const interval = window.setInterval(() => {
+      void refreshPreviews();
+    }, 1200);
+
+    return () => window.clearInterval(interval);
+  }, [activeCameras.length, refreshPreviews]);
 
   const reloadAllStreams = useCallback(() => {
-    for (const camera of activeCameras) {
-      reloadStream(camera.id);
-    }
-  }, [activeCameras, reloadStream]);
+    void refreshPreviews();
+  }, [refreshPreviews]);
 
   return (
     <div className="p-6">
@@ -94,9 +147,8 @@ export default function LiveMonitor({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {cameras.map((camera) => {
-            const nonce = streamNonce[camera.id] ?? 0;
-            const status = streamStatus[camera.id] ?? "loading";
-            const streamSrc = `/api/cameras/${camera.id}/stream?t=${nonce}`;
+            const status = previewStatus[camera.id] ?? "loading";
+            const streamSrc = previewUrls[camera.id];
 
             return (
               <div key={camera.id} className="border rounded-lg p-3 bg-white shadow-sm">
@@ -111,18 +163,22 @@ export default function LiveMonitor({
                 </div>
 
                 <div className="relative aspect-video rounded border bg-black overflow-hidden mb-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={streamSrc}
-                    alt={`Live ${camera.name}`}
-                    className="h-full w-full object-cover"
-                    onLoad={() => {
-                      setStreamStatus((current) => ({ ...current, [camera.id]: "ready" }));
-                    }}
-                    onError={() => {
-                      setStreamStatus((current) => ({ ...current, [camera.id]: "error" }));
-                    }}
-                  />
+                  {streamSrc ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={streamSrc}
+                      alt={`Live ${camera.name}`}
+                      className="h-full w-full object-cover"
+                      onLoad={() => {
+                        setPreviewStatus((current) => ({ ...current, [camera.id]: "ready" }));
+                      }}
+                      onError={() => {
+                        setPreviewStatus((current) => ({ ...current, [camera.id]: "error" }));
+                      }}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-black via-slate-900 to-zinc-950" />
+                  )}
 
                   {status !== "ready" && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-white px-4 text-center">
@@ -143,7 +199,7 @@ export default function LiveMonitor({
 
                 <div className="flex items-center justify-between">
                   <button
-                    onClick={() => reloadStream(camera.id)}
+                    onClick={() => void refreshPreviews()}
                     className="px-2 py-1 text-xs border rounded inline-flex items-center gap-1"
                   >
                     <RefreshCw className="h-3 w-3" />

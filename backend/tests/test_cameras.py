@@ -267,6 +267,25 @@ def test_get_camera_por_id_inclui_is_online(client, db, super_admin, tenant_a):
     assert isinstance(data["last_occurrences"], list)
 
 
+def test_camera_test_salva_preview_recente(client, db, super_admin, tenant_a):
+    """RTSP camera test should refresh the latest frame used by live preview."""
+    from app.api.routes import cameras as cameras_route
+
+    admin_token = login(client, "admin@sistema.com")
+    cam = client.post(
+        "/api/cameras",
+        json={"client_id": str(tenant_a.id), "name": "Cam preview", "connection_type": "rtsp", "rtsp_url": "rtsp://x", "is_active": True},
+        headers=auth(admin_token),
+    ).json()
+
+    fake_frame = b"\xff\xd8\xff" + b"\x00" * 64
+    with patch.object(cameras_route, "capture_rtsp_frame", return_value=fake_frame), patch.object(cameras_route, "save_latest_frame") as mock_save:
+        res = client.post(f"/api/cameras/{cam['id']}/test", headers=auth(admin_token))
+
+    assert res.status_code == 200
+    mock_save.assert_called_once()
+
+
 def test_camera_recente_com_last_seen_at_aparece_online(client, db, tenant_a):
     """A camera with a recent last_seen_at must be serialized as online."""
     cam = Camera(

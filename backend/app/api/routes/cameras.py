@@ -15,7 +15,7 @@ from app.models.occurrence import Occurrence
 from app.models.user import User, UserRole
 from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDetail, OccurrenceSmall
 from app.services.camera_service import generate_agent_token, capture_rtsp_frame, crop_half_frame
-from app.services.storage_service import get_url, latest_frame_exists, read_file_bytes
+from app.services.storage_service import get_url, latest_frame_exists, read_file_bytes, save_latest_frame
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -155,6 +155,7 @@ def test_camera_connection(
         raise HTTPException(status_code=503, detail="Não foi possível conectar à câmera RTSP")
     if camera.dual_lens and camera.lens_side in ("upper", "lower"):
         frame = crop_half_frame(frame, camera.lens_side)
+    save_latest_frame(frame, str(camera.id))
     camera.last_seen_at = datetime.now(timezone.utc)
     db.commit()
     return {
@@ -221,15 +222,14 @@ async def stream_camera(
         last_status_update = datetime.min.replace(tzinfo=timezone.utc)
         while True:
             image_bytes: bytes | None = None
-            if camera.connection_type == "rtsp":
+            image_bytes = read_file_bytes(latest_path)
+            if image_bytes is None and camera.connection_type == "rtsp":
                 try:
                     image_bytes = await asyncio.to_thread(capture_rtsp_frame, camera.rtsp_url)
                     if image_bytes and camera.dual_lens and camera.lens_side in ("upper", "lower"):
                         image_bytes = await asyncio.to_thread(crop_half_frame, image_bytes, camera.lens_side)
                 except Exception:
                     image_bytes = None
-            else:
-                image_bytes = read_file_bytes(latest_path)
 
             if image_bytes:
                 now = datetime.now(timezone.utc)
@@ -238,7 +238,7 @@ async def stream_camera(
                     db.commit()
                     last_status_update = now
                 yield _multipart_frame(image_bytes)
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.35)
 
     return StreamingResponse(
         frame_generator(),
