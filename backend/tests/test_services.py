@@ -152,9 +152,11 @@ def test_capture_rtsp_frame_read_fails():
 
 # ── storage_service ───────────────────────────────────────────────────────────
 
-def test_save_bytes_local(tmp_path):
+def test_save_bytes_local():
+    storage_root = Path(__file__).resolve().parent.parent / ".test-storage" / "services" / uuid.uuid4().hex
+    storage_root.mkdir(parents=True, exist_ok=True)
     with patch("app.core.config.settings.STORAGE_TYPE", "local"), \
-         patch("app.core.config.settings.STORAGE_PATH", str(tmp_path)):
+         patch("app.core.config.settings.STORAGE_PATH", str(storage_root)):
         from app.services import storage_service
         import importlib
         importlib.reload(storage_service)
@@ -201,21 +203,25 @@ def test_get_url_s3():
     assert "mybucket" in url
 
 
-def test_delete_file_local_existing(tmp_path):
-    target = tmp_path / "img.jpg"
+def test_delete_file_local_existing():
+    target_dir = Path(__file__).resolve().parent.parent / ".test-storage" / "services" / uuid.uuid4().hex
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / "img.jpg"
     target.write_bytes(b"data")
 
     with patch("app.core.config.settings.STORAGE_TYPE", "local"), \
-         patch("app.core.config.settings.STORAGE_PATH", str(tmp_path)):
+         patch("app.core.config.settings.STORAGE_PATH", str(target_dir)):
         from app.services import storage_service
         storage_service.delete_file("img.jpg")
 
     assert not target.exists()
 
 
-def test_delete_file_local_missing(tmp_path):
+def test_delete_file_local_missing():
+    storage_root = Path(__file__).resolve().parent.parent / ".test-storage" / "services" / uuid.uuid4().hex
+    storage_root.mkdir(parents=True, exist_ok=True)
     with patch("app.core.config.settings.STORAGE_TYPE", "local"), \
-         patch("app.core.config.settings.STORAGE_PATH", str(tmp_path)):
+         patch("app.core.config.settings.STORAGE_PATH", str(storage_root)):
         from app.services import storage_service
         storage_service.delete_file("nope.jpg")  # should not raise
 

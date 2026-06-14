@@ -9,6 +9,8 @@ import io
 import sys
 import time
 import types
+import uuid
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -218,10 +220,12 @@ def test_duplicata_em_30s_ignorada(db, plan_and_client_and_camera):
 # ── Full pipeline test ────────────────────────────────────────────────────────
 
 
-def test_pipeline_completo_cria_occurrence(db, plan_and_client_and_camera, tmp_path, monkeypatch):
+def test_pipeline_completo_cria_occurrence(db, plan_and_client_and_camera, monkeypatch):
     """Frame processado pelo pipeline → Occurrence com imagem salva no banco."""
     plan, client, camera = plan_and_client_and_camera
-    monkeypatch.setenv("STORAGE_PATH", str(tmp_path))
+    storage_root = Path(__file__).resolve().parent.parent / ".test-storage" / "ocr" / uuid.uuid4().hex
+    storage_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("STORAGE_PATH", str(storage_root))
     monkeypatch.setenv("STORAGE_TYPE", "local")
 
     # Recarregar settings com novo STORAGE_PATH
@@ -275,9 +279,7 @@ def test_pipeline_completo_cria_occurrence(db, plan_and_client_and_camera, tmp_p
     image_path = save_bytes(frame_bytes, str(camera.id))
     assert image_path != ""
 
-    from pathlib import Path
-
-    assert (Path(str(tmp_path)) / image_path).exists()
+    assert (storage_root / image_path).exists()
 
     occ = Occurrence(
         camera_id=camera.id,

@@ -60,7 +60,7 @@ app = FastAPI(
     description="API para sistema SaaS de monitoramento com reconhecimento de placas",
     version="1.0.0",
     lifespan=lifespan,
-    redirect_slashes=False,
+    redirect_slashes=True,
 )
 
 app.state.limiter = limiter

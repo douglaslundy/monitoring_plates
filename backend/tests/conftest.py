@@ -1,10 +1,19 @@
 import os
+import shutil
+import tempfile
+from pathlib import Path
 
 # Override settings before any app imports
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 os.environ["IS_TESTING"] = "true"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
+_temp_root = Path(__file__).resolve().parent.parent / ".tmp"
+_temp_root.mkdir(parents=True, exist_ok=True)
+os.environ["TMP"] = str(_temp_root)
+os.environ["TEMP"] = str(_temp_root)
+os.environ["TMPDIR"] = str(_temp_root)
+tempfile.tempdir = str(_temp_root)
 
 import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
@@ -27,8 +36,18 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+@pytest.fixture
+def tmp_path():
+    path = Path(tempfile.mkdtemp(dir=_temp_root))
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 @pytest.fixture(autouse=True)
 def setup_db():
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)

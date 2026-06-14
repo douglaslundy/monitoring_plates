@@ -117,15 +117,17 @@ def test_desativar_cliente_desativa_usuarios(client, db, super_admin, test_plan)
     )
     db.add(user)
     db.commit()
+    client_id = db_client.id
+    user_id = user.id
 
-    res = client.delete(f"/api/clients/{db_client.id}", headers=headers)
+    res = client.delete(f"/api/clients/{client_id}", headers=headers)
     assert res.status_code == 204
 
-    db.refresh(db_client)
-    assert db_client.is_active is False
+    refreshed_client = db.query(Client).filter(Client.id == client_id).first()
+    assert refreshed_client is None
 
-    db.refresh(user)
-    assert user.is_active is False
+    refreshed_user = db.query(User).filter(User.id == user_id).first()
+    assert refreshed_user is None
 
 
 def test_acesso_negado_para_client_admin(client, db, test_plan):

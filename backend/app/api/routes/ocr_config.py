@@ -3,6 +3,7 @@ from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+import requests as req
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_super_admin
@@ -123,8 +124,6 @@ async def test_config(
             engine_type=OcrEngineType.plate_recognizer,
             message="API Token e URL são obrigatórios para o Plate Recognizer.",
         )
-
-    import requests as req
 
     try:
         if sample_image:
