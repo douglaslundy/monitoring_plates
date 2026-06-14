@@ -1,4 +1,4 @@
-import type { PlateAlert } from "@/types";
+import type { RealtimeAlert } from "@/types";
 
 export class PlateAlertWebSocket {
   private ws: WebSocket | null = null;
@@ -11,7 +11,7 @@ export class PlateAlertWebSocket {
   ) {}
 
   connect(
-    onAlert: (data: PlateAlert) => void,
+    onAlert: (data: RealtimeAlert) => void,
     onStatusChange: (connected: boolean) => void,
   ): void {
     if (this.closed) return;
@@ -47,8 +47,8 @@ export class PlateAlertWebSocket {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data as string);
-          if (data.type === "plate_alert") {
-            onAlert(data as PlateAlert);
+          if (data.type === "plate_alert" || data.type === "camera_health_alert") {
+            onAlert(data as RealtimeAlert);
           }
         } catch {
           /* ignore malformed messages */

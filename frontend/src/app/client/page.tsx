@@ -69,7 +69,7 @@ export default function ClientDashboard() {
   }, [load]);
 
   useEffect(() => {
-    if (!lastAlert) return;
+    if (!lastAlert || lastAlert.type !== "plate_alert") return;
     const synthetic: OccurrenceWithCamera = {
       id: lastAlert.occurrence_id,
       plate: lastAlert.plate,

@@ -9,7 +9,9 @@ from app.models.camera import Camera
 from app.models.occurrence import Occurrence
 from app.services.camera_service import crop_half_frame
 from app.services.storage_service import save_latest_frame, save_bytes
+from app.services.preview_telemetry_service import record_preview_frame
 from app.services.image_quality_service import record_image_quality
+from app.services.camera_health_alert_service import maybe_publish_camera_health_alert
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -43,6 +45,7 @@ async def upload_frame(
     if image:
         image_bytes = await image.read()
         image_path = save_bytes(image_bytes, str(camera.id))
+        record_preview_frame(str(camera.id))
         record_image_quality(str(camera.id), image_bytes)
 
     occ = Occurrence(
@@ -81,9 +84,11 @@ async def receive_frame(
     if camera.dual_lens and camera.lens_side in ("upper", "lower"):
         frame_bytes = crop_half_frame(frame_bytes, camera.lens_side)
     save_latest_frame(frame_bytes, str(camera.id))
+    record_preview_frame(str(camera.id))
     record_image_quality(str(camera.id), frame_bytes)
     camera.last_seen_at = datetime.now(timezone.utc)
     db.commit()
+    maybe_publish_camera_health_alert(camera)
 
     from app.workers.frame_processor import process_frame
     process_frame.delay(str(camera.id), base64.b64encode(frame_bytes).decode())

@@ -44,7 +44,7 @@
 
 - [ ] Expor metricas de fps, latencia e fila.
 - [ ] Criar healthcheck do pipeline de OCR.
-- [ ] Alertar quando a camera estiver com baixa qualidade.
+- [x] Alertar quando a camera estiver com baixa qualidade.
 - [ ] Alertar quando o worker ficar atrasado.
 - [ ] Alertar quando a taxa de OCR cair abaixo do esperado.
 
@@ -73,6 +73,7 @@
 - O worker aplica ROI configurada na camera antes do detector e do OCR.
 - O dashboard agora exibe telemetria de qualidade da imagem por camera.
 - O dashboard agora exibe um status consolidado do detector por camera com base em online, preview e qualidade.
+- Alertas em tempo real agora disparam quando a camera entra em estado degradado ou com imagem ruim.
 
 ## Fase 8. Validacao final
 

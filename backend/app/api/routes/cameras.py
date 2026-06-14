@@ -19,6 +19,7 @@ from app.services.storage_service import get_url, latest_frame_exists, read_file
 from app.services.detector_health_service import build_detector_health
 from app.services.preview_telemetry_service import get_preview_telemetry, record_preview_frame
 from app.services.image_quality_service import get_image_quality, record_image_quality
+from app.services.camera_health_alert_service import maybe_publish_camera_health_alert
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -180,6 +181,7 @@ def test_camera_connection(
     record_image_quality(str(camera.id), frame)
     camera.last_seen_at = datetime.now(timezone.utc)
     db.commit()
+    maybe_publish_camera_health_alert(camera)
     return {
         "frame_base64": base64.b64encode(frame).decode(),
         "content_type": "image/jpeg",
@@ -261,6 +263,7 @@ async def stream_camera(
                     last_status_update = now
                 record_preview_frame(str(camera.id))
                 record_image_quality(str(camera.id), image_bytes)
+                maybe_publish_camera_health_alert(camera)
                 yield _multipart_frame(image_bytes)
             await asyncio.sleep(0.35)
 

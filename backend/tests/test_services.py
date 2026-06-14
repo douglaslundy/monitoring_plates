@@ -565,3 +565,54 @@ def test_detector_health_reflete_status_e_qualidade():
     assert warning.detector_health_score == 45.0
     assert offline.detector_status == "offline"
     assert offline.detector_health_score == 0.0
+
+
+def test_camera_health_alert_publica_e_aplica_cooldown(monkeypatch):
+    """Camera health alerts should publish once and then respect cooldown for same status."""
+    from app.services import camera_health_alert_service as alert_service
+    from app.services.image_quality_service import ImageQuality
+    from app.services.preview_telemetry_service import PreviewTelemetry
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.store: dict[str, str] = {}
+            self.published: list[tuple[str, str]] = []
+
+        def get(self, key: str):
+            return self.store.get(key)
+
+        def set(self, key: str, value: str, ex: int | None = None):
+            self.store[key] = value
+            return True
+
+        def publish(self, channel: str, message: str):
+            self.published.append((channel, message))
+            return 1
+
+    class CameraStub:
+        id = "cam-1"
+        client_id = "client-1"
+        name = "Cam Principal"
+        location = "Entrada"
+        is_online = True
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(alert_service, "_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(
+        alert_service,
+        "get_preview_telemetry",
+        lambda *_args, **_kwargs: PreviewTelemetry(1.5, 90, 1234.0, 0.8, "streaming"),
+    )
+    monkeypatch.setattr(
+        alert_service,
+        "get_image_quality",
+        lambda *_args, **_kwargs: ImageQuality(31.0, "poor", 8.0, 42.0, 10.0),
+    )
+
+    first = alert_service.maybe_publish_camera_health_alert(CameraStub())
+    second = alert_service.maybe_publish_camera_health_alert(CameraStub())
+
+    assert first is True
+    assert second is False
+    assert len(fake_redis.published) == 1
+    assert fake_redis.published[0][0] == "ws:alerts:client-1"

@@ -2,14 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { X, AlertTriangle } from "lucide-react";
-import type { PlateAlert } from "@/types";
+import type { RealtimeAlert } from "@/types";
 
-interface ActiveAlert extends PlateAlert {
-  alertKey: string;
-}
+type ActiveAlert = RealtimeAlert & { alertKey: string };
 
 interface AlertBannerProps {
-  lastAlert: PlateAlert | null;
+  lastAlert: RealtimeAlert | null;
 }
 
 export function AlertBanner({ lastAlert }: AlertBannerProps) {
@@ -21,7 +19,10 @@ export function AlertBanner({ lastAlert }: AlertBannerProps) {
 
   useEffect(() => {
     if (!lastAlert) return;
-    const alertKey = `${lastAlert.occurrence_id}-${Date.now()}`;
+    const alertKey =
+      lastAlert.type === "plate_alert"
+        ? `${lastAlert.occurrence_id}-${Date.now()}`
+        : `${lastAlert.camera_id}-${Date.now()}`;
     const active: ActiveAlert = { ...lastAlert, alertKey };
 
     setAlerts((prev) => [active, ...prev]);
@@ -41,16 +42,33 @@ export function AlertBanner({ lastAlert }: AlertBannerProps) {
         >
           <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-red-800 text-sm">
-              Placa {a.plate} detectada
-            </p>
-            <p className="text-xs text-red-600 mt-0.5 truncate">
-              {a.camera_name}
-              {a.location ? ` — ${a.location}` : ""}
-            </p>
-            <p className="text-xs text-red-500 mt-0.5">
-              {new Date(a.detected_at).toLocaleTimeString("pt-BR")}
-            </p>
+            {a.type === "plate_alert" ? (
+              <>
+                <p className="font-bold text-red-800 text-sm">
+                  Placa {a.plate} detectada
+                </p>
+                <p className="text-xs text-red-600 mt-0.5 truncate">
+                  {a.camera_name}
+                  {a.location ? ` - ${a.location}` : ""}
+                </p>
+                <p className="text-xs text-red-500 mt-0.5">
+                  {new Date(a.detected_at).toLocaleTimeString("pt-BR")}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-bold text-red-800 text-sm">
+                  Camera {a.camera_name} com problema
+                </p>
+                <p className="text-xs text-red-600 mt-0.5 truncate">
+                  {a.detail}
+                  {a.location ? ` - ${a.location}` : ""}
+                </p>
+                <p className="text-xs text-red-500 mt-0.5">
+                  {new Date(a.detected_at).toLocaleTimeString("pt-BR")}
+                </p>
+              </>
+            )}
           </div>
           <button
             onClick={() => dismiss(a.alertKey)}

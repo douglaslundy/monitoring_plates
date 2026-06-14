@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import { PlateAlertWebSocket } from "@/lib/websocket";
 import { getToken } from "@/lib/auth";
-import type { PlateAlert } from "@/types";
+import type { RealtimeAlert } from "@/types";
 
 export function useWebSocket(clientId: string | null | undefined) {
-  const [lastAlert, setLastAlert] = useState<PlateAlert | null>(null);
+  const [lastAlert, setLastAlert] = useState<RealtimeAlert | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<PlateAlertWebSocket | null>(null);
 

@@ -156,3 +156,19 @@ export interface PlateAlert {
   image_url: string;
   confidence: number;
 }
+
+export interface CameraHealthAlert {
+  type: "camera_health_alert";
+  client_id: string;
+  camera_id: string;
+  camera_name: string;
+  location: string;
+  detected_at: string;
+  detector_status: "warning" | "degraded";
+  detector_health_score: number;
+  preview_status: "offline" | "idle" | "streaming" | "degraded" | "stale";
+  quality_label: "unknown" | "excellent" | "good" | "fair" | "poor";
+  detail: string;
+}
+
+export type RealtimeAlert = PlateAlert | CameraHealthAlert;

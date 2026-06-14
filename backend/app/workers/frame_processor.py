@@ -24,7 +24,9 @@ try:
         from app.services.alert_service import process_alerts
         from app.models.vehicle_event import VehicleEvent
         from app.services.camera_service import crop_roi_frame
+        from app.services.preview_telemetry_service import record_preview_frame
         from app.services.image_quality_service import record_image_quality
+        from app.services.camera_health_alert_service import maybe_publish_camera_health_alert
 
         logger = logging.getLogger(__name__)
         frame_bytes = base64.b64decode(frame_b64)
@@ -46,6 +48,7 @@ try:
                     float(camera.roi_height),
                 )
 
+            record_preview_frame(str(camera.id))
             record_image_quality(str(camera.id), analysis_bytes)
             vehicle = vehicle_detector.best_detection(analysis_bytes)
             ocr_bytes = vehicle.crop_bytes if vehicle is not None else analysis_bytes
@@ -135,6 +138,7 @@ try:
                 vehicle_event.occurrence_id = occ.id if occ is not None else None
 
             db.commit()
+            maybe_publish_camera_health_alert(camera)
         finally:
             db.close()
 
@@ -159,6 +163,7 @@ try:
         from app.models.camera import Camera, ConnectionType
         from app.services.camera_service import capture_rtsp_frame, crop_half_frame
         from app.services.storage_service import save_latest_frame
+        from app.services.preview_telemetry_service import record_preview_frame
 
         logger = logging.getLogger(__name__)
         db = SessionLocal()
@@ -180,6 +185,7 @@ try:
                     if camera.dual_lens and camera.lens_side in ("upper", "lower"):
                         frame_bytes = crop_half_frame(frame_bytes, camera.lens_side)
                     save_latest_frame(frame_bytes, str(camera.id))
+                    record_preview_frame(str(camera.id))
                     camera.last_seen_at = datetime.now(timezone.utc)
                     db.commit()
                     frame_b64 = base64.b64encode(frame_bytes).decode()
