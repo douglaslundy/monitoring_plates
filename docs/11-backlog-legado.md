@@ -7,9 +7,9 @@ Este arquivo concentra as pendências antigas que não fazem parte da entrega pr
 - [x] Detector de veículos, contagem e OCR guiado por recorte
 - [x] Preview ao vivo independente do OCR
 - [x] Suíte backend 100% verde em execução completa
-- [ ] Padronizar compatibilidade de rotas com barra final
-- [ ] Eliminar persistência indevida do banco de teste entre execuções
-- [ ] Desabilitar rate limit em ambiente de teste
+- [x] Padronizar compatibilidade de rotas com barra final
+- [x] Eliminar persistência indevida do banco de teste entre execuções
+- [x] Desabilitar rate limit em ambiente de teste
 - [x] Investigar warnings de bcrypt/passlib na stack de teste
 - [x] Ajustar `pytest-asyncio` para loop scope explícito
 - [x] Neutralizar cache provider do pytest no ambiente de teste
@@ -41,6 +41,14 @@ Sintoma:
 
 Status:
 - Corrigido com limiter no-op quando `IS_TESTING=true`.
+
+### 4.1. Fixture compartilhada do worker
+
+Sintoma:
+- Um teste de `process_frame` precisava neutralizar `db.close()` para não fechar a sessão compartilhada da fixture.
+
+Status:
+- Corrigido no teste usando uma `SessionLocal` própria para o worker, sem acoplar o worker à sessão principal da fixture.
 
 ### 4. Warnings de bcrypt/passlib
 

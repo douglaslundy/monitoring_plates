@@ -279,6 +279,8 @@ def test_process_frame_cria_ocorrencia(db):
     from app.models.client import Client
     from app.models.camera import Camera, ConnectionType
     from app.models.occurrence import Occurrence
+    from app.core.database import engine
+    from sqlalchemy.orm import sessionmaker
     import base64
 
     plan = Plan(name="P2", max_cameras=1, retention_days=30, email_alerts=False,
@@ -297,11 +299,9 @@ def test_process_frame_cria_ocorrencia(db):
 
     mock_recognizer = MagicMock()
     mock_recognizer.recognize.return_value = {"plate": "XYZ5678", "confidence": 0.95}
+    worker_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-    # Prevent the worker from closing the shared test session
-    db.close = lambda: None  # type: ignore[method-assign]
-
-    with patch("app.core.database.SessionLocal", return_value=db), \
+    with patch("app.core.database.SessionLocal", worker_session), \
          patch("app.services.ocr_service.recognizer", mock_recognizer), \
          patch("app.services.storage_service.save_bytes", return_value="cameras/test/img.jpg"), \
          patch("app.services.alert_service.process_alerts"):
