@@ -616,3 +616,82 @@ def test_camera_health_alert_publica_e_aplica_cooldown(monkeypatch):
     assert second is False
     assert len(fake_redis.published) == 1
     assert fake_redis.published[0][0] == "ws:alerts:client-1"
+
+
+def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
+    """Operational metrics should aggregate preview and queue health for the dashboard."""
+    from app.models.plan import Plan
+    from app.models.client import Client
+    from app.models.camera import Camera, ConnectionType
+    from app.models.user import User, UserRole
+    from app.core.security import hash_password
+    from app.services import operational_metrics_service as ops_service
+    from app.services.image_quality_service import ImageQuality
+    from app.services.preview_telemetry_service import PreviewTelemetry
+
+    plan = Plan(
+        name="P-ops",
+        max_cameras=5,
+        retention_days=30,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=0,
+        is_active=True,
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+
+    tenant = Client(name="Ops", email="ops@test.com", plan_id=plan.id, is_active=True)
+    db.add(tenant)
+    db.commit()
+    db.refresh(tenant)
+
+    camera = Camera(
+        client_id=tenant.id,
+        name="Cam Ops",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://example/stream",
+        is_active=True,
+        last_seen_at=datetime.now(timezone.utc),
+    )
+    db.add(camera)
+    db.commit()
+    db.refresh(camera)
+
+    admin = User(
+        email="ops@sistema.com",
+        name="Ops",
+        password_hash=hash_password("Admin@123"),
+        role=UserRole.super_admin,
+        is_active=True,
+    )
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
+
+    class FakeRedis:
+        def llen(self, key: str):
+            return 3 if key == "frames" else 0
+
+    monkeypatch.setattr(ops_service, "_redis_client", lambda: FakeRedis())
+    monkeypatch.setattr(
+        ops_service,
+        "get_preview_telemetry",
+        lambda *_args, **_kwargs: PreviewTelemetry(2.4, 144, 1234.0, 1.8, "streaming"),
+    )
+    monkeypatch.setattr(
+        ops_service,
+        "get_image_quality",
+        lambda *_args, **_kwargs: ImageQuality(84.0, "good", 26.0, 56.0, 20.0),
+    )
+
+    metrics = ops_service.build_operational_metrics(db, admin)
+
+    assert metrics.total_cameras == 1
+    assert metrics.online_cameras == 1
+    assert metrics.streaming_cameras == 1
+    assert metrics.degraded_cameras == 0
+    assert metrics.low_quality_cameras == 0
+    assert metrics.queue_depth == 3
+    assert metrics.operational_status == "healthy"

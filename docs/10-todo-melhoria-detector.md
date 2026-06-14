@@ -42,7 +42,7 @@
 
 ## Fase 5. Telemetria e alertas operacionais
 
-- [ ] Expor metricas de fps, latencia e fila.
+- [x] Expor metricas de fps, latencia e fila.
 - [ ] Criar healthcheck do pipeline de OCR.
 - [x] Alertar quando a camera estiver com baixa qualidade.
 - [ ] Alertar quando o worker ficar atrasado.
@@ -62,7 +62,7 @@
 - [x] Mostrar status do detector por camera.
 - [ ] Mostrar ultima leitura, tipo do veiculo e confianca.
 - [ ] Adicionar graficos de fluxo por hora.
-- [ ] Adicionar painel de saude operacional.
+- [x] Adicionar painel de saude operacional.
 
 ### Status da implementacao atual
 
@@ -74,6 +74,7 @@
 - O dashboard agora exibe telemetria de qualidade da imagem por camera.
 - O dashboard agora exibe um status consolidado do detector por camera com base em online, preview e qualidade.
 - Alertas em tempo real agora disparam quando a camera entra em estado degradado ou com imagem ruim.
+- O painel live agora exibe saude operacional, fila OCR, FPS medio e latencia media.
 
 ## Fase 8. Validacao final
 

@@ -172,3 +172,17 @@ export interface CameraHealthAlert {
 }
 
 export type RealtimeAlert = PlateAlert | CameraHealthAlert;
+
+export interface OperationalMetrics {
+  total_cameras: number;
+  online_cameras: number;
+  streaming_cameras: number;
+  degraded_cameras: number;
+  low_quality_cameras: number;
+  avg_preview_fps: number;
+  avg_preview_latency_seconds: number | null;
+  queue_depth: number;
+  operational_status: "empty" | "offline" | "healthy" | "warning" | "degraded";
+  operational_status_detail: string;
+  generated_at: string;
+}

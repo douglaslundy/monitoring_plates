@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
-import type { Camera } from "@/types";
+import type { Camera, OperationalMetrics } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
+import { MetricCard } from "@/components/ui/MetricCard";
 import { Camera as CameraIcon, RefreshCw, Video, AlertTriangle } from "lucide-react";
 
 export default function LiveMonitor({
@@ -20,6 +21,7 @@ export default function LiveMonitor({
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [previewStatus, setPreviewStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
   const [previewMode, setPreviewMode] = useState<Record<string, "stream" | "fallback">>({});
+  const [metrics, setMetrics] = useState<OperationalMetrics | null>(null);
 
   const activeCameras = useMemo(
     () => cameras.filter((camera) => camera.is_active),
@@ -61,8 +63,12 @@ export default function LiveMonitor({
     }
     setError("");
     try {
-      const res = await api.get<Camera[]>("/api/cameras");
-      setCameras(res.data);
+      const [camRes, metricsRes] = await Promise.all([
+        api.get<Camera[]>("/api/cameras"),
+        api.get<OperationalMetrics>("/api/ops/metrics"),
+      ]);
+      setCameras(camRes.data);
+      setMetrics(metricsRes.data);
     } catch {
       setError("Erro ao carregar cameras.");
     } finally {
@@ -169,6 +175,22 @@ export default function LiveMonitor({
     return "offline";
   };
 
+  const operationalVariant = (status: OperationalMetrics["operational_status"]) => {
+    if (status === "healthy") return "success";
+    if (status === "warning") return "warning";
+    if (status === "degraded") return "danger";
+    if (status === "offline") return "secondary";
+    return "secondary";
+  };
+
+  const operationalLabel = (status: OperationalMetrics["operational_status"]) => {
+    if (status === "healthy") return "saudavel";
+    if (status === "warning") return "atencao";
+    if (status === "degraded") return "degradado";
+    if (status === "offline") return "offline";
+    return "vazio";
+  };
+
   return (
     <div className="p-6">
       <PageHeader title={title} description={description} />
@@ -190,6 +212,44 @@ export default function LiveMonitor({
           Recarregar streams
         </button>
       </div>
+
+      {metrics && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <MetricCard
+            title="Saude operacional"
+            value={operationalLabel(metrics.operational_status)}
+            description={metrics.operational_status_detail}
+            className="col-span-2 lg:col-span-1"
+          />
+          <MetricCard title="Fila OCR" value={metrics.queue_depth} description="frames aguardando" />
+          <MetricCard title="FPS medio" value={metrics.avg_preview_fps.toFixed(1)} description="preview total" />
+          <MetricCard
+            title="Latencia media"
+            value={metrics.avg_preview_latency_seconds === null ? "n/d" : `${metrics.avg_preview_latency_seconds.toFixed(1)}s`}
+            description="tempo do ultimo frame"
+          />
+        </div>
+      )}
+
+      {metrics && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          <Badge variant={operationalVariant(metrics.operational_status)}>
+            Operacao {operationalLabel(metrics.operational_status)}
+          </Badge>
+          <Badge variant="secondary">
+            {metrics.online_cameras}/{metrics.total_cameras} cameras online
+          </Badge>
+          <Badge variant={metrics.degraded_cameras > 0 ? "danger" : "success"}>
+            {metrics.degraded_cameras} degradadas
+          </Badge>
+          <Badge variant={metrics.low_quality_cameras > 0 ? "warning" : "success"}>
+            {metrics.low_quality_cameras} com baixa qualidade
+          </Badge>
+          <Badge variant={metrics.streaming_cameras > 0 ? "success" : "secondary"}>
+            {metrics.streaming_cameras} com stream fluido
+          </Badge>
+        </div>
+      )}
 
       {error && <div className="mb-4 p-3 border rounded text-red-700 bg-red-50">{error}</div>}
 
