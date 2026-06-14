@@ -301,3 +301,40 @@ def test_camera_recente_com_last_seen_at_aparece_online(client, db, tenant_a):
     db.refresh(cam)
 
     assert cam.is_online is True
+
+
+def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_a):
+    """Camera list should expose preview telemetry for the live dashboard."""
+    from app.api.routes import cameras as cameras_route
+    from app.services.preview_telemetry_service import PreviewTelemetry
+
+    admin_token = login(client, "admin@sistema.com")
+    client.post(
+        "/api/cameras",
+        json={
+            "client_id": str(tenant_a.id),
+            "name": "Cam telemetria",
+            "connection_type": "rtsp",
+            "rtsp_url": "rtsp://x",
+            "is_active": True,
+        },
+        headers=auth(admin_token),
+    )
+
+    telemetry = PreviewTelemetry(
+        preview_fps=2.5,
+        preview_frames_last_minute=150,
+        preview_last_frame_at=1234567.0,
+        preview_latency_seconds=1.5,
+        preview_status="streaming",
+    )
+
+    with patch.object(cameras_route, "get_preview_telemetry", return_value=telemetry):
+        res = client.get("/api/cameras", headers=auth(admin_token))
+
+    assert res.status_code == 200
+    data = res.json()[0]
+    assert data["preview_fps"] == 2.5
+    assert data["preview_frames_last_minute"] == 150
+    assert data["preview_latency_seconds"] == 1.5
+    assert data["preview_status"] == "streaming"

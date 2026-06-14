@@ -3,7 +3,7 @@
 ## Fase 0. Baseline e medicao
 
 - [ ] Medir tempo atual de captura, OCR e persistencia por camera.
-- [ ] Registrar fps efetivo do preview.
+- [x] Registrar fps efetivo do preview.
 - [ ] Registrar taxa de sucesso do OCR.
 - [ ] Registrar taxa de falso positivo.
 - [ ] Definir cameras piloto para teste.
@@ -69,6 +69,7 @@
 - Preview ao vivo usa stream MJPEG com fallback automatico para o ultimo frame salvo.
 - O recarregamento manual restaura o stream sem bloquear o OCR.
 - O preview permanece desacoplado da fila de analise.
+- O dashboard agora exibe FPS efetivo, quadros por minuto e status operacional do preview por camera.
 
 ## Fase 8. Validacao final
 

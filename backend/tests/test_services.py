@@ -343,3 +343,87 @@ def test_process_frame_ocr_none_nao_cria(db):
         frame_processor.process_frame(str(cam.id), base64.b64encode(b"x").decode())
 
     assert db.query(Occurrence).count() == 0
+
+
+def test_preview_telemetry_record_and_read(monkeypatch):
+    """Preview telemetry should track recent stream frames and status."""
+    from app.services import preview_telemetry_service as telemetry_service
+
+    class FakePipeline:
+        def __init__(self, store: dict[str, list[tuple[str, float]]], key: str) -> None:
+            self.store = store
+            self.key = key
+            self.ops: list[tuple[str, tuple]] = []
+
+        def zadd(self, key: str, values: dict[str, float]):
+            self.ops.append(("zadd", (key, values)))
+            return self
+
+        def zremrangebyscore(self, key: str, min_score: float, max_score: float):
+            self.ops.append(("zremrangebyscore", (key, min_score, max_score)))
+            return self
+
+        def expire(self, key: str, ttl: int):
+            self.ops.append(("expire", (key, ttl)))
+            return self
+
+        def zcard(self, key: str):
+            self.ops.append(("zcard", (key,)))
+            return self
+
+        def zrevrange(self, key: str, start: int, stop: int, withscores: bool = False):
+            self.ops.append(("zrevrange", (key, start, stop, withscores)))
+            return self
+
+        def execute(self):
+            result = []
+            for op, args in self.ops:
+                if op == "zadd":
+                    key, values = args
+                    bucket = self.store.setdefault(key, [])
+                    for member, score in values.items():
+                        bucket.append((member, float(score)))
+                    bucket.sort(key=lambda item: item[1])
+                    result.append(None)
+                elif op == "zremrangebyscore":
+                    key, min_score, max_score = args
+                    bucket = self.store.setdefault(key, [])
+                    self.store[key] = [
+                        item for item in bucket if not (float(min_score) <= item[1] <= float(max_score))
+                    ]
+                    result.append(None)
+                elif op == "expire":
+                    result.append(True)
+                elif op == "zcard":
+                    key = args[0]
+                    result.append(len(self.store.get(key, [])))
+                elif op == "zrevrange":
+                    key, start, stop, withscores = args
+                    bucket = sorted(self.store.get(key, []), key=lambda item: item[1], reverse=True)
+                    selected = bucket[start : stop + 1 if stop >= 0 else None]
+                    if withscores:
+                        result.append(selected)
+                    else:
+                        result.append([member for member, _ in selected])
+            self.ops.clear()
+            return result
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.store: dict[str, list[tuple[str, float]]] = {}
+
+        def pipeline(self):
+            return FakePipeline(self.store, "")
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(telemetry_service, "_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(telemetry_service, "time", lambda: 1000.0)
+
+    telemetry_service.record_preview_frame("cam-1")
+    telemetry_service.record_preview_frame("cam-1")
+
+    metrics = telemetry_service.get_preview_telemetry("cam-1", is_online=True)
+    assert metrics.preview_frames_last_minute == 2
+    assert metrics.preview_fps == 0.03
+    assert metrics.preview_status == "streaming"
+    assert metrics.preview_latency_seconds == 0.0

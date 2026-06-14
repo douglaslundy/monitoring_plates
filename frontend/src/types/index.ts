@@ -75,6 +75,11 @@ export interface Camera {
   last_seen_at: string | null;
   created_at: string;
   is_online: boolean;
+  preview_fps: number;
+  preview_frames_last_minute: number;
+  preview_last_frame_at: string | null;
+  preview_latency_seconds: number | null;
+  preview_status: "offline" | "idle" | "streaming" | "degraded" | "stale";
 }
 
 export interface Occurrence {

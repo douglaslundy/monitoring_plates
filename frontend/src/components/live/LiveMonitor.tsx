@@ -55,47 +55,68 @@ export default function LiveMonitor({
     }
   }, []);
 
-  const fetchCameras = useCallback(async () => {
-    setLoading(true);
+  const syncCameras = useCallback(async (initial: boolean) => {
+    if (initial) {
+      setLoading(true);
+    }
     setError("");
     try {
       const res = await api.get<Camera[]>("/api/cameras");
       setCameras(res.data);
-      setPreviewStatus((current) => {
-        const next: Record<string, "loading" | "ready" | "error"> = { ...current };
-        for (const camera of res.data) {
-          next[camera.id] = current[camera.id] ?? "loading";
-        }
-        return next;
-      });
-      setPreviewMode((current) => {
-        const next: Record<string, "stream" | "fallback"> = { ...current };
-        for (const camera of res.data) {
-          if (camera.is_active && (camera.connection_type === "rtsp" || camera.connection_type === "agent")) {
-            next[camera.id] = "stream";
-          }
-        }
-        return next;
-      });
-      setPreviewUrls((current) => {
-        const next = { ...current };
-        for (const camera of res.data) {
-          if (camera.is_active && (camera.connection_type === "rtsp" || camera.connection_type === "agent")) {
-            next[camera.id] = buildStreamUrl(camera.id);
-          }
-        }
-        return next;
-      });
     } catch {
       setError("Erro ao carregar cameras.");
     } finally {
-      setLoading(false);
+      if (initial) {
+        setLoading(false);
+      }
     }
   }, [buildStreamUrl]);
 
   useEffect(() => {
-    fetchCameras();
-  }, [fetchCameras]);
+    void syncCameras(true);
+  }, [syncCameras]);
+
+  useEffect(() => {
+    if (cameras.length === 0) return;
+
+    setPreviewMode((current) => {
+      const next: Record<string, "stream" | "fallback"> = { ...current };
+      for (const camera of cameras) {
+        if (camera.is_active && (camera.connection_type === "rtsp" || camera.connection_type === "agent")) {
+          next[camera.id] = current[camera.id] ?? "stream";
+        }
+      }
+      return next;
+    });
+
+    setPreviewStatus((current) => {
+      const next: Record<string, "loading" | "ready" | "error"> = { ...current };
+      for (const camera of cameras) {
+        next[camera.id] = current[camera.id] ?? "loading";
+      }
+      return next;
+    });
+
+    setPreviewUrls((current) => {
+      const next = { ...current };
+      for (const camera of cameras) {
+        if (!next[camera.id] && camera.is_active && (camera.connection_type === "rtsp" || camera.connection_type === "agent")) {
+          next[camera.id] = buildStreamUrl(camera.id);
+        }
+      }
+      return next;
+    });
+  }, [buildStreamUrl, cameras]);
+
+  useEffect(() => {
+    if (activeCameras.length === 0) return;
+
+    const interval = window.setInterval(() => {
+      void syncCameras(false);
+    }, 2500);
+
+    return () => window.clearInterval(interval);
+  }, [activeCameras.length, syncCameras]);
 
   const refreshFallbackPreviews = useCallback(async () => {
     const fallbackItems = activeCameras.filter((camera) => previewMode[camera.id] === "fallback");
@@ -138,7 +159,7 @@ export default function LiveMonitor({
 
       <div className="mb-4 flex flex-wrap gap-2">
         <button
-          onClick={fetchCameras}
+          onClick={() => void syncCameras(true)}
           className="px-3 py-2 rounded border text-sm inline-flex items-center gap-2"
         >
           <RefreshCw className="h-4 w-4" />
@@ -176,9 +197,32 @@ export default function LiveMonitor({
                     <p className="font-medium">{camera.name}</p>
                     <p className="text-xs text-muted-foreground">{camera.location || "Sem local"}</p>
                   </div>
-                  <Badge variant={camera.is_online ? "success" : "secondary"}>
-                    {camera.is_online ? "online" : "offline"}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge variant={camera.is_online ? "success" : "secondary"}>
+                      {camera.is_online ? "online" : "offline"}
+                    </Badge>
+                    <Badge
+                      variant={
+                        camera.preview_status === "streaming"
+                          ? "success"
+                          : camera.preview_status === "degraded"
+                            ? "warning"
+                            : camera.preview_status === "stale"
+                              ? "secondary"
+                              : "info"
+                      }
+                    >
+                      {camera.preview_status === "streaming"
+                        ? "preview fluido"
+                        : camera.preview_status === "degraded"
+                          ? "preview lento"
+                          : camera.preview_status === "stale"
+                            ? "preview parado"
+                            : camera.preview_status === "idle"
+                              ? "aguardando"
+                              : "offline"}
+                    </Badge>
+                  </div>
                 </div>
 
                 <div className="relative aspect-video rounded border bg-black overflow-hidden mb-2">
@@ -230,6 +274,15 @@ export default function LiveMonitor({
                   </button>
                   <span className="text-[11px] text-muted-foreground">
                     {camera.connection_type.toUpperCase()}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+                  <span>{camera.preview_fps.toFixed(1)} fps</span>
+                  <span>{camera.preview_frames_last_minute} quadros/min</span>
+                  <span>
+                    {camera.preview_latency_seconds !== null
+                      ? `${camera.preview_latency_seconds.toFixed(1)}s desde o último frame`
+                      : "sem telemetria"}
                   </span>
                 </div>
               </div>

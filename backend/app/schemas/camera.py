@@ -37,6 +37,11 @@ class CameraRead(CameraBase):
     last_seen_at: Optional[datetime] = None
     created_at: datetime
     is_online: bool = False
+    preview_fps: float = 0.0
+    preview_frames_last_minute: int = 0
+    preview_last_frame_at: Optional[datetime] = None
+    preview_latency_seconds: Optional[float] = None
+    preview_status: str = "offline"
 
 
 class OccurrenceSmall(BaseModel):

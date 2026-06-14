@@ -16,6 +16,7 @@ from app.models.user import User, UserRole
 from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDetail, OccurrenceSmall
 from app.services.camera_service import generate_agent_token, capture_rtsp_frame, crop_half_frame
 from app.services.storage_service import get_url, latest_frame_exists, read_file_bytes, save_latest_frame
+from app.services.preview_telemetry_service import get_preview_telemetry, record_preview_frame
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -39,14 +40,27 @@ def _get_camera_or_403(camera_id: UUID, current_user: User, db: Session) -> Came
     return camera
 
 
+def _serialize_camera(camera: Camera) -> dict:
+    telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
+    payload = CameraRead.model_validate(camera).model_dump()
+    payload.update(telemetry.as_dict())
+    if telemetry.preview_last_frame_at is not None:
+        payload["preview_last_frame_at"] = datetime.fromtimestamp(
+            telemetry.preview_last_frame_at, tz=timezone.utc
+        )
+    return payload
+
+
 @router.get("", response_model=List[CameraRead])
 def list_cameras(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role == UserRole.super_admin:
-        return db.query(Camera).all()
-    return db.query(Camera).filter(Camera.client_id == current_user.client_id).all()
+        cameras = db.query(Camera).all()
+    else:
+        cameras = db.query(Camera).filter(Camera.client_id == current_user.client_id).all()
+    return [_serialize_camera(camera) for camera in cameras]
 
 
 @router.post("", response_model=CameraRead, status_code=201)
@@ -109,7 +123,7 @@ def get_camera(
         .limit(5)
         .all()
     )
-    camera_data = CameraRead.model_validate(camera).model_dump()
+    camera_data = _serialize_camera(camera)
     occ_list = [OccurrenceSmall.model_validate(o).model_dump() for o in occurrences]
     return CameraDetail(**camera_data, last_occurrences=occ_list)
 
@@ -156,6 +170,7 @@ def test_camera_connection(
     if camera.dual_lens and camera.lens_side in ("upper", "lower"):
         frame = crop_half_frame(frame, camera.lens_side)
     save_latest_frame(frame, str(camera.id))
+    record_preview_frame(str(camera.id))
     camera.last_seen_at = datetime.now(timezone.utc)
     db.commit()
     return {
@@ -237,6 +252,7 @@ async def stream_camera(
                     camera.last_seen_at = now
                     db.commit()
                     last_status_update = now
+                record_preview_frame(str(camera.id))
                 yield _multipart_frame(image_bytes)
             await asyncio.sleep(0.35)
 
