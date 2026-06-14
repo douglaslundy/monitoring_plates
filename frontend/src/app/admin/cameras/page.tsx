@@ -344,6 +344,22 @@ export default function AdminCamerasPage() {
       err ? "border-red-400" : "border-gray-300"
     }`;
 
+  const detectorVariant = (status: Camera["detector_status"]) => {
+    if (status === "healthy") return "success";
+    if (status === "warning") return "warning";
+    if (status === "degraded") return "danger";
+    if (status === "idle") return "secondary";
+    return "secondary";
+  };
+
+  const detectorLabel = (status: Camera["detector_status"]) => {
+    if (status === "healthy") return "Saudável";
+    if (status === "warning") return "Atenção";
+    if (status === "degraded") return "Degradado";
+    if (status === "idle") return "Aguardando";
+    return "Offline";
+  };
+
   const online = cameras.filter((c) => c.is_online).length;
 
   return (
@@ -436,7 +452,26 @@ export default function AdminCamerasPage() {
                 <Badge variant={cam.is_active ? "success" : "danger"}>
                   {cam.is_active ? "Ativa" : "Inativa"}
                 </Badge>
+                <Badge
+                  variant={
+                    cam.quality_label === "excellent" || cam.quality_label === "good"
+                      ? "success"
+                      : cam.quality_label === "fair"
+                        ? "warning"
+                        : cam.quality_label === "poor"
+                          ? "danger"
+                          : "secondary"
+                  }
+                >
+                  Qualidade {cam.quality_label === "unknown" ? "indisponível" : `${cam.quality_label} (${cam.quality_score.toFixed(0)})`}
+                </Badge>
+                <Badge variant={detectorVariant(cam.detector_status)}>
+                  Detector {detectorLabel(cam.detector_status)} ({cam.detector_health_score.toFixed(0)})
+                </Badge>
               </div>
+              {cam.detector_status_detail && (
+                <p className="mb-3 text-xs text-muted-foreground">{cam.detector_status_detail}</p>
+              )}
 
               <p className="text-xs text-muted-foreground mb-3">
                 Última atividade: {formatLastSeen(cam.last_seen_at)}

@@ -153,6 +153,22 @@ export default function LiveMonitor({
     }
   }, [activeCameras, restoreStreamPreview]);
 
+  const detectorVariant = (status: Camera["detector_status"]) => {
+    if (status === "healthy") return "success";
+    if (status === "warning") return "warning";
+    if (status === "degraded") return "danger";
+    if (status === "idle") return "secondary";
+    return "secondary";
+  };
+
+  const detectorLabel = (status: Camera["detector_status"]) => {
+    if (status === "healthy") return "saudável";
+    if (status === "warning") return "atenção";
+    if (status === "degraded") return "degradado";
+    if (status === "idle") return "aguardando";
+    return "offline";
+  };
+
   return (
     <div className="p-6">
       <PageHeader title={title} description={description} />
@@ -201,6 +217,9 @@ export default function LiveMonitor({
                     <Badge variant={camera.is_online ? "success" : "secondary"}>
                       {camera.is_online ? "online" : "offline"}
                     </Badge>
+                    <Badge variant={detectorVariant(camera.detector_status)}>
+                      detector {detectorLabel(camera.detector_status)} ({camera.detector_health_score.toFixed(0)})
+                    </Badge>
                     <Badge
                       variant={
                         camera.preview_status === "streaming"
@@ -211,7 +230,7 @@ export default function LiveMonitor({
                               ? "secondary"
                               : "info"
                       }
-                    >
+                      >
                       {camera.preview_status === "streaming"
                         ? "preview fluido"
                         : camera.preview_status === "degraded"
@@ -222,8 +241,27 @@ export default function LiveMonitor({
                               ? "aguardando"
                               : "offline"}
                     </Badge>
+                    <Badge
+                      variant={
+                        camera.quality_label === "excellent" || camera.quality_label === "good"
+                          ? "success"
+                          : camera.quality_label === "fair"
+                            ? "warning"
+                            : camera.quality_label === "poor"
+                              ? "danger"
+                              : "secondary"
+                      }
+                    >
+                      Qualidade{" "}
+                      {camera.quality_label === "unknown"
+                        ? "indisponível"
+                        : `${camera.quality_label} (${camera.quality_score.toFixed(0)})`}
+                    </Badge>
                   </div>
                 </div>
+                {camera.detector_status_detail && (
+                  <p className="mb-2 text-[11px] text-muted-foreground">{camera.detector_status_detail}</p>
+                )}
 
                 <div className="relative aspect-video rounded border bg-black overflow-hidden mb-2">
                   {streamSrc ? (
@@ -285,6 +323,9 @@ export default function LiveMonitor({
                       : "sem telemetria"}
                   </span>
                 </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Blur {camera.blur_score.toFixed(1)} | Brilho {camera.brightness.toFixed(0)} | Contraste {camera.contrast.toFixed(0)}
+                </p>
               </div>
             );
           })}

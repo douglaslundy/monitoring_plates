@@ -50,6 +50,14 @@ class CameraRead(CameraBase):
     preview_last_frame_at: Optional[datetime] = None
     preview_latency_seconds: Optional[float] = None
     preview_status: str = "offline"
+    detector_status: str = "offline"
+    detector_health_score: float = 0.0
+    detector_status_detail: str = ""
+    quality_score: float = 0.0
+    quality_label: str = "unknown"
+    blur_score: float = 0.0
+    brightness: float = 0.0
+    contrast: float = 0.0
 
 
 class OccurrenceSmall(BaseModel):

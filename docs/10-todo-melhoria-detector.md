@@ -59,7 +59,7 @@
 ## Fase 7. Produto e UX
 
 - [x] Melhorar o live para parecer tempo real.
-- [ ] Mostrar status do detector por camera.
+- [x] Mostrar status do detector por camera.
 - [ ] Mostrar ultima leitura, tipo do veiculo e confianca.
 - [ ] Adicionar graficos de fluxo por hora.
 - [ ] Adicionar painel de saude operacional.
@@ -71,6 +71,8 @@
 - O preview permanece desacoplado da fila de analise.
 - O dashboard agora exibe FPS efetivo, quadros por minuto e status operacional do preview por camera.
 - O worker aplica ROI configurada na camera antes do detector e do OCR.
+- O dashboard agora exibe telemetria de qualidade da imagem por camera.
+- O dashboard agora exibe um status consolidado do detector por camera com base em online, preview e qualidade.
 
 ## Fase 8. Validacao final
 

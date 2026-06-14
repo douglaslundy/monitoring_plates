@@ -84,6 +84,14 @@ export interface Camera {
   preview_last_frame_at: string | null;
   preview_latency_seconds: number | null;
   preview_status: "offline" | "idle" | "streaming" | "degraded" | "stale";
+  detector_status: "offline" | "idle" | "healthy" | "warning" | "degraded";
+  detector_health_score: number;
+  detector_status_detail: string;
+  quality_score: number;
+  quality_label: "unknown" | "excellent" | "good" | "fair" | "poor";
+  blur_score: number;
+  brightness: number;
+  contrast: number;
 }
 
 export interface Occurrence {

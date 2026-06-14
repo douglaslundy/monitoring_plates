@@ -339,6 +339,7 @@ def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_
     """Camera list should expose preview telemetry for the live dashboard."""
     from app.api.routes import cameras as cameras_route
     from app.services.preview_telemetry_service import PreviewTelemetry
+    from app.services.image_quality_service import ImageQuality
 
     admin_token = login(client, "admin@sistema.com")
     client.post(
@@ -352,6 +353,10 @@ def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_
         },
         headers=auth(admin_token),
     )
+    cam = db.query(Camera).filter(Camera.name == "Cam telemetria").first()
+    assert cam is not None
+    cam.last_seen_at = datetime.now(timezone.utc)
+    db.commit()
 
     telemetry = PreviewTelemetry(
         preview_fps=2.5,
@@ -360,8 +365,15 @@ def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_
         preview_latency_seconds=1.5,
         preview_status="streaming",
     )
+    quality = ImageQuality(
+        quality_score=81.0,
+        quality_label="good",
+        blur_score=23.5,
+        brightness=54.0,
+        contrast=19.0,
+    )
 
-    with patch.object(cameras_route, "get_preview_telemetry", return_value=telemetry):
+    with patch.object(cameras_route, "get_preview_telemetry", return_value=telemetry), patch.object(cameras_route, "get_image_quality", return_value=quality):
         res = client.get("/api/cameras", headers=auth(admin_token))
 
     assert res.status_code == 200
@@ -370,3 +382,8 @@ def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_
     assert data["preview_frames_last_minute"] == 150
     assert data["preview_latency_seconds"] == 1.5
     assert data["preview_status"] == "streaming"
+    assert data["detector_status"] == "healthy"
+    assert data["detector_health_score"] == 100.0
+    assert data["quality_score"] == 81.0
+    assert data["quality_label"] == "good"
+    assert data["blur_score"] == 23.5

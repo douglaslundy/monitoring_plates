@@ -24,6 +24,7 @@ try:
         from app.services.alert_service import process_alerts
         from app.models.vehicle_event import VehicleEvent
         from app.services.camera_service import crop_roi_frame
+        from app.services.image_quality_service import record_image_quality
 
         logger = logging.getLogger(__name__)
         frame_bytes = base64.b64decode(frame_b64)
@@ -45,6 +46,7 @@ try:
                     float(camera.roi_height),
                 )
 
+            record_image_quality(str(camera.id), analysis_bytes)
             vehicle = vehicle_detector.best_detection(analysis_bytes)
             ocr_bytes = vehicle.crop_bytes if vehicle is not None else analysis_bytes
 

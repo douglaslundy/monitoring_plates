@@ -16,7 +16,9 @@ from app.models.user import User, UserRole
 from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDetail, OccurrenceSmall
 from app.services.camera_service import generate_agent_token, capture_rtsp_frame, crop_half_frame
 from app.services.storage_service import get_url, latest_frame_exists, read_file_bytes, save_latest_frame
+from app.services.detector_health_service import build_detector_health
 from app.services.preview_telemetry_service import get_preview_telemetry, record_preview_frame
+from app.services.image_quality_service import get_image_quality, record_image_quality
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -42,8 +44,12 @@ def _get_camera_or_403(camera_id: UUID, current_user: User, db: Session) -> Came
 
 def _serialize_camera(camera: Camera) -> dict:
     telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
+    quality = get_image_quality(str(camera.id))
+    detector_health = build_detector_health(camera.is_online, telemetry, quality)
     payload = CameraRead.model_validate(camera).model_dump()
     payload.update(telemetry.as_dict())
+    payload.update(quality.as_dict())
+    payload.update(detector_health.as_dict())
     if telemetry.preview_last_frame_at is not None:
         payload["preview_last_frame_at"] = datetime.fromtimestamp(
             telemetry.preview_last_frame_at, tz=timezone.utc
@@ -171,6 +177,7 @@ def test_camera_connection(
         frame = crop_half_frame(frame, camera.lens_side)
     save_latest_frame(frame, str(camera.id))
     record_preview_frame(str(camera.id))
+    record_image_quality(str(camera.id), frame)
     camera.last_seen_at = datetime.now(timezone.utc)
     db.commit()
     return {
@@ -253,6 +260,7 @@ async def stream_camera(
                     db.commit()
                     last_status_update = now
                 record_preview_frame(str(camera.id))
+                record_image_quality(str(camera.id), image_bytes)
                 yield _multipart_frame(image_bytes)
             await asyncio.sleep(0.35)
 

@@ -496,3 +496,72 @@ def test_preview_telemetry_record_and_read(monkeypatch):
     assert metrics.preview_fps == 0.03
     assert metrics.preview_status == "streaming"
     assert metrics.preview_latency_seconds == 0.0
+
+
+def test_image_quality_record_and_read(monkeypatch):
+    """Image quality telemetry should be persisted and read back from Redis."""
+    from app.services import image_quality_service as quality_service
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.store: dict[str, str] = {}
+
+        def set(self, key: str, value: str, ex: int | None = None):
+            self.store[key] = value
+            return True
+
+        def get(self, key: str):
+            return self.store.get(key)
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(quality_service, "_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(
+        quality_service,
+        "analyze_image_quality",
+        lambda _image_bytes: quality_service.ImageQuality(
+            quality_score=72.5,
+            quality_label="good",
+            blur_score=28.0,
+            brightness=58.0,
+            contrast=18.0,
+        ),
+    )
+
+    quality_service.record_image_quality("cam-1", b"frame-bytes")
+    metrics = quality_service.get_image_quality("cam-1")
+
+    assert metrics.quality_score == 72.5
+    assert metrics.quality_label == "good"
+    assert metrics.blur_score == 28.0
+    assert metrics.brightness == 58.0
+    assert metrics.contrast == 18.0
+
+
+def test_detector_health_reflete_status_e_qualidade():
+    """Detector health should combine preview and image quality into one status."""
+    from app.services.detector_health_service import build_detector_health
+    from app.services.image_quality_service import ImageQuality
+    from app.services.preview_telemetry_service import PreviewTelemetry
+
+    healthy = build_detector_health(
+        True,
+        PreviewTelemetry(2.5, 150, 1234.0, 1.2, "streaming"),
+        ImageQuality(82.0, "good", 25.0, 55.0, 18.0),
+    )
+    warning = build_detector_health(
+        True,
+        PreviewTelemetry(2.5, 150, 1234.0, 1.2, "streaming"),
+        ImageQuality(32.0, "poor", 10.0, 40.0, 12.0),
+    )
+    offline = build_detector_health(
+        False,
+        PreviewTelemetry(0.0, 0, None, None, "offline"),
+        ImageQuality(0.0, "unknown", 0.0, 0.0, 0.0),
+    )
+
+    assert healthy.detector_status == "healthy"
+    assert healthy.detector_health_score == 100.0
+    assert warning.detector_status == "warning"
+    assert warning.detector_health_score == 45.0
+    assert offline.detector_status == "offline"
+    assert offline.detector_health_score == 0.0
