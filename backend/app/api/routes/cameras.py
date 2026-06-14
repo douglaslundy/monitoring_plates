@@ -1,8 +1,10 @@
 import base64
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -13,9 +15,19 @@ from app.models.occurrence import Occurrence
 from app.models.user import User, UserRole
 from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDetail, OccurrenceSmall
 from app.services.camera_service import generate_agent_token, capture_rtsp_frame, crop_half_frame
-from app.services.storage_service import get_url, latest_frame_exists
+from app.services.storage_service import get_url, latest_frame_exists, read_file_bytes
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
+
+
+def _multipart_frame(image_bytes: bytes) -> bytes:
+    return (
+        b"--frame\r\n"
+        b"Content-Type: image/jpeg\r\n"
+        + f"Content-Length: {len(image_bytes)}\r\n\r\n".encode()
+        + image_bytes
+        + b"\r\n"
+    )
 
 
 def _get_camera_or_403(camera_id: UUID, current_user: User, db: Session) -> Camera:
@@ -189,3 +201,47 @@ def get_camera_last_frame(
         "detected_at": occ.detected_at,
         "plate": occ.plate,
     }
+
+
+@router.get("/{camera_id}/stream")
+async def stream_camera(
+    camera_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    camera = _get_camera_or_403(camera_id, current_user, db)
+    boundary_headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+
+    async def frame_generator():
+        latest_path = f"cameras/{camera_id}/latest.jpg"
+        last_status_update = datetime.min.replace(tzinfo=timezone.utc)
+        while True:
+            image_bytes: bytes | None = None
+            if camera.connection_type == "rtsp":
+                try:
+                    image_bytes = await asyncio.to_thread(capture_rtsp_frame, camera.rtsp_url)
+                    if image_bytes and camera.dual_lens and camera.lens_side in ("upper", "lower"):
+                        image_bytes = await asyncio.to_thread(crop_half_frame, image_bytes, camera.lens_side)
+                except Exception:
+                    image_bytes = None
+            else:
+                image_bytes = read_file_bytes(latest_path)
+
+            if image_bytes:
+                now = datetime.now(timezone.utc)
+                if camera.connection_type == "rtsp" and now - last_status_update >= timedelta(seconds=30):
+                    camera.last_seen_at = now
+                    db.commit()
+                    last_status_update = now
+                yield _multipart_frame(image_bytes)
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers=boundary_headers,
+    )

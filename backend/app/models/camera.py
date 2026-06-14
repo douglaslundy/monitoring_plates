@@ -46,6 +46,14 @@ class Camera(Base):
 
     @property
     def is_online(self) -> bool:
+        if self.connection_type == ConnectionType.rtsp and self.rtsp_url:
+            try:
+                from app.services.camera_service import check_rtsp_online
+
+                if check_rtsp_online(self.rtsp_url):
+                    return True
+            except Exception:
+                pass
         if self.last_seen_at is None:
             return False
         lsa = self.last_seen_at

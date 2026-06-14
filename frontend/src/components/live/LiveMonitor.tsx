@@ -5,15 +5,7 @@ import api from "@/lib/api";
 import type { Camera } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
-import { Camera as CameraIcon, RefreshCw, Play, Pause } from "lucide-react";
-
-type FrameState = {
-  image?: string;
-  loading?: boolean;
-  error?: string;
-  updatedAt?: number;
-  plate?: string;
-};
+import { Camera as CameraIcon, RefreshCw, Video, AlertTriangle } from "lucide-react";
 
 export default function LiveMonitor({
   title,
@@ -23,13 +15,13 @@ export default function LiveMonitor({
   description: string;
 }) {
   const [cameras, setCameras] = useState<Camera[]>([]);
-  const [frames, setFrames] = useState<Record<string, FrameState>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [streamNonce, setStreamNonce] = useState<Record<string, number>>({});
+  const [streamStatus, setStreamStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
 
-  const rtspCameras = useMemo(
-    () => cameras.filter((c) => c.connection_type === "rtsp" && c.is_active),
+  const activeCameras = useMemo(
+    () => cameras.filter((camera) => camera.is_active),
     [cameras]
   );
 
@@ -39,6 +31,13 @@ export default function LiveMonitor({
     try {
       const res = await api.get<Camera[]>("/api/cameras");
       setCameras(res.data);
+      setStreamStatus((current) => {
+        const next: Record<string, "loading" | "ready" | "error"> = { ...current };
+        for (const camera of res.data) {
+          next[camera.id] = current[camera.id] ?? "loading";
+        }
+        return next;
+      });
     } catch {
       setError("Erro ao carregar cameras.");
     } finally {
@@ -46,101 +45,20 @@ export default function LiveMonitor({
     }
   }, []);
 
-  const testCamera = useCallback(async (cameraId: string) => {
-    setFrames((s) => ({ ...s, [cameraId]: { ...s[cameraId], loading: true, error: "" } }));
-    try {
-      const res = await api.post<{ frame_base64: string; content_type: string }>(
-        `/api/cameras/${cameraId}/test`
-      );
-      setFrames((s) => ({
-        ...s,
-        [cameraId]: {
-          image: `data:${res.data.content_type};base64,${res.data.frame_base64}`,
-          loading: false,
-          updatedAt: Date.now(),
-          error: "",
-        },
-      }));
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      setFrames((s) => ({
-        ...s,
-        [cameraId]: {
-          ...s[cameraId],
-          loading: false,
-          error: typeof detail === "string" ? detail : "Falha ao capturar frame",
-        },
-      }));
-    }
-  }, []);
-
-  const loadAgentLastFrame = useCallback(async (cameraId: string) => {
-    setFrames((s) => ({ ...s, [cameraId]: { ...s[cameraId], loading: true, error: "" } }));
-    try {
-      const res = await api.get<{ image_url: string | null; detected_at: string | null; plate: string | null }>(
-        `/api/cameras/${cameraId}/last-frame`
-      );
-      if (!res.data.image_url) {
-        setFrames((s) => ({
-          ...s,
-          [cameraId]: {
-            ...s[cameraId],
-            loading: false,
-            image: undefined,
-            plate: undefined,
-            updatedAt: undefined,
-            error: "Sem frame recebido ainda",
-          },
-        }));
-        return;
-      }
-      let imgSrc: string | undefined = undefined;
-      if (res.data.image_url) {
-        const blobRes = await api.get(res.data.image_url, { responseType: "blob" });
-        imgSrc = URL.createObjectURL(blobRes.data);
-      }
-      setFrames((s) => ({
-        ...s,
-        [cameraId]: {
-          ...s[cameraId],
-          loading: false,
-          image: imgSrc,
-          plate: res.data.plate || undefined,
-          updatedAt: res.data.detected_at ? new Date(res.data.detected_at).getTime() : Date.now(),
-          error: "",
-        },
-      }));
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      setFrames((s) => ({
-        ...s,
-        [cameraId]: {
-          ...s[cameraId],
-          loading: false,
-          error: typeof detail === "string" ? detail : "Falha ao carregar ultimo frame",
-        },
-      }));
-    }
-  }, []);
-
-  const refreshAll = useCallback(async () => {
-    await Promise.all(
-      cameras.map((c) =>
-        c.connection_type === "rtsp" ? testCamera(c.id) : loadAgentLastFrame(c.id)
-      )
-    );
-  }, [cameras, testCamera, loadAgentLastFrame]);
-
   useEffect(() => {
     fetchCameras();
   }, [fetchCameras]);
 
-  useEffect(() => {
-    if (!autoRefresh) return;
-    refreshAll();
-    const id = setInterval(refreshAll, 7000);
-    return () => clearInterval(id);
-  }, [autoRefresh, refreshAll]);
+  const reloadStream = useCallback((cameraId: string) => {
+    setStreamStatus((current) => ({ ...current, [cameraId]: "loading" }));
+    setStreamNonce((current) => ({ ...current, [cameraId]: (current[cameraId] ?? 0) + 1 }));
+  }, []);
+
+  const reloadAllStreams = useCallback(() => {
+    for (const camera of activeCameras) {
+      reloadStream(camera.id);
+    }
+  }, [activeCameras, reloadStream]);
 
   return (
     <div className="p-6">
@@ -155,18 +73,12 @@ export default function LiveMonitor({
           Atualizar cameras
         </button>
         <button
-          onClick={() => setAutoRefresh((v) => !v)}
-          className="px-3 py-2 rounded border text-sm inline-flex items-center gap-2"
+          onClick={reloadAllStreams}
+          className="px-3 py-2 rounded bg-black text-white text-sm inline-flex items-center gap-2"
+          disabled={activeCameras.length === 0}
         >
-          {autoRefresh ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          {autoRefresh ? "Parar auto refresh" : "Iniciar auto refresh"}
-        </button>
-        <button
-          onClick={refreshAll}
-          className="px-3 py-2 rounded bg-black text-white text-sm"
-          disabled={rtspCameras.length === 0}
-        >
-          Testar todas RTSP
+          <Video className="h-4 w-4" />
+          Recarregar streams
         </button>
       </div>
 
@@ -181,70 +93,66 @@ export default function LiveMonitor({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {cameras.map((cam) => {
-            const frame = frames[cam.id];
+          {cameras.map((camera) => {
+            const nonce = streamNonce[camera.id] ?? 0;
+            const status = streamStatus[camera.id] ?? "loading";
+            const streamSrc = `/api/cameras/${camera.id}/stream?t=${nonce}`;
+
             return (
-              <div key={cam.id} className="border rounded-lg p-3 bg-white">
-                <div className="flex items-center justify-between mb-2">
+              <div key={camera.id} className="border rounded-lg p-3 bg-white shadow-sm">
+                <div className="flex items-center justify-between mb-2 gap-3">
                   <div>
-                    <p className="font-medium">{cam.name}</p>
-                    <p className="text-xs text-muted-foreground">{cam.location || "Sem local"}</p>
+                    <p className="font-medium">{camera.name}</p>
+                    <p className="text-xs text-muted-foreground">{camera.location || "Sem local"}</p>
                   </div>
-                  <Badge variant={cam.is_online ? "success" : "secondary"}>
-                    {cam.is_online ? "online" : "offline"}
+                  <Badge variant={camera.is_online ? "success" : "secondary"}>
+                    {camera.is_online ? "online" : "offline"}
                   </Badge>
                 </div>
 
-                {cam.connection_type !== "rtsp" ? (
-                  <>
-                    <div className="aspect-video rounded border bg-black/5 overflow-hidden mb-2 flex items-center justify-center">
-                      {frame?.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={frame.image} alt={`Frame ${cam.name}`} className="w-full h-full object-cover" />
+                <div className="relative aspect-video rounded border bg-black overflow-hidden mb-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={streamSrc}
+                    alt={`Live ${camera.name}`}
+                    className="h-full w-full object-cover"
+                    onLoad={() => {
+                      setStreamStatus((current) => ({ ...current, [camera.id]: "ready" }));
+                    }}
+                    onError={() => {
+                      setStreamStatus((current) => ({ ...current, [camera.id]: "error" }));
+                    }}
+                  />
+
+                  {status !== "ready" && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-white px-4 text-center">
+                      {status === "loading" ? (
+                        <>
+                          <Video className="h-5 w-5 mb-2 animate-pulse" />
+                          <p className="text-xs">Conectando stream...</p>
+                        </>
                       ) : (
-                        <span className="text-xs text-muted-foreground">Sem frame</span>
+                        <>
+                          <AlertTriangle className="h-5 w-5 mb-2" />
+                          <p className="text-xs">Stream indisponivel</p>
+                        </>
                       )}
                     </div>
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => loadAgentLastFrame(cam.id)}
-                        className="px-2 py-1 text-xs border rounded"
-                        disabled={frame?.loading}
-                      >
-                        {frame?.loading ? "Carregando..." : "Atualizar ultimo frame"}
-                      </button>
-                      <span className="text-[11px] text-muted-foreground">
-                        {frame?.updatedAt ? new Date(frame.updatedAt).toLocaleTimeString("pt-BR") : ""}
-                      </span>
-                    </div>
-                    {frame?.plate && <p className="mt-2 text-xs text-muted-foreground">Ultima placa: {frame.plate}</p>}
-                    {frame?.error && <p className="mt-2 text-xs text-red-600">{frame.error}</p>}
-                  </>
-                ) : (
-                  <>
-                    <div className="aspect-video rounded border bg-black/5 overflow-hidden mb-2 flex items-center justify-center">
-                      {frame?.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={frame.image} alt={`Frame ${cam.name}`} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Sem frame</span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => testCamera(cam.id)}
-                        className="px-2 py-1 text-xs border rounded"
-                        disabled={frame?.loading}
-                      >
-                        {frame?.loading ? "Testando..." : "Testar camera"}
-                      </button>
-                      <span className="text-[11px] text-muted-foreground">
-                        {frame?.updatedAt ? new Date(frame.updatedAt).toLocaleTimeString("pt-BR") : ""}
-                      </span>
-                    </div>
-                    {frame?.error && <p className="mt-2 text-xs text-red-600">{frame.error}</p>}
-                  </>
-                )}
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => reloadStream(camera.id)}
+                    className="px-2 py-1 text-xs border rounded inline-flex items-center gap-1"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Reconectar
+                  </button>
+                  <span className="text-[11px] text-muted-foreground">
+                    {camera.connection_type.toUpperCase()}
+                  </span>
+                </div>
               </div>
             );
           })}

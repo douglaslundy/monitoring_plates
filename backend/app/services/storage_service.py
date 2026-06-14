@@ -93,6 +93,28 @@ def latest_frame_exists(camera_id: str) -> bool:
     return full.exists()
 
 
+def read_file_bytes(path: str) -> bytes | None:
+    if settings.STORAGE_TYPE == "s3":
+        import boto3
+
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=settings.S3_ENDPOINT or None,
+            aws_access_key_id=settings.S3_ACCESS_KEY,
+            aws_secret_access_key=settings.S3_SECRET_KEY,
+        )
+        try:
+            obj = s3.get_object(Bucket=settings.S3_BUCKET, Key=path)
+        except Exception:
+            return None
+        return obj["Body"].read()
+
+    full = Path(settings.STORAGE_PATH) / path
+    if not full.exists():
+        return None
+    return full.read_bytes()
+
+
 def delete_file(path: str) -> None:
     if settings.STORAGE_TYPE == "local":
         full = Path(settings.STORAGE_PATH) / path

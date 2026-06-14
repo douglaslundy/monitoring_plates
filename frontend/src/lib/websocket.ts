@@ -16,9 +16,7 @@ export class PlateAlertWebSocket {
   ): void {
     if (this.closed) return;
 
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_URL || `http://${window.location.hostname}:8000`;
-    const wsBase = apiBase.replace(/^http/, "ws");
+    const wsBase = window.location.origin.replace(/^http/, "ws");
     const url = `${wsBase}/api/ws/${this.clientId}?token=${encodeURIComponent(this.token)}`;
 
     try {

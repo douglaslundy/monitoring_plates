@@ -1,7 +1,12 @@
 import axios from "axios";
 
+function resolveBaseURL(): string {
+  if (typeof window === "undefined") return "";
+  return window.location.origin;
+}
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "",
+  baseURL: resolveBaseURL(),
   headers: { "Content-Type": "application/json" },
 });
 

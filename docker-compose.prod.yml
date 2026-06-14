@@ -130,7 +130,7 @@ services:
     networks:
       - monitoramento_net
     healthcheck:
-      test: ["CMD-SHELL", "nginx -t && curl -f http://localhost/health || exit 1"]
+      test: ["CMD-SHELL", "nginx -t && wget -qO- http://backend:8000/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
