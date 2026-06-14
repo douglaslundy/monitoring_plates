@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.api.deps import get_db, get_current_user
-from app.api.routes import auth, users, clients, cameras, occurrences, plates, alerts, plans, agent, ocr_config
+from app.api.routes import auth, users, clients, cameras, occurrences, plates, alerts, plans, agent, ocr_config, vehicles
 from app.api.routes.ws import router as ws_router
 from app.models.camera import Camera
 from app.models.user import User, UserRole
@@ -128,4 +128,5 @@ app.include_router(alerts.router, prefix="/api")
 app.include_router(plans.router, prefix="/api")
 app.include_router(agent.router, prefix="/api")
 app.include_router(ocr_config.router, prefix="/api")
+app.include_router(vehicles.router, prefix="/api")
 app.include_router(ws_router, prefix="/api")

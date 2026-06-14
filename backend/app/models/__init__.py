@@ -6,6 +6,7 @@ from app.models.monitored_plate import MonitoredPlate
 from app.models.occurrence import Occurrence
 from app.models.alert_sent import AlertSent
 from app.models.ocr_engine_config import OcrEngineConfig
+from app.models.vehicle_event import VehicleEvent
 
 __all__ = [
     "Plan",
@@ -16,4 +17,5 @@ __all__ = [
     "Occurrence",
     "AlertSent",
     "OcrEngineConfig",
+    "VehicleEvent",
 ]

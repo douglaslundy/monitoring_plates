@@ -19,18 +19,13 @@ try:
         from app.models.camera import Camera
         from app.models.occurrence import Occurrence
         from app.services.ocr_service import recognizer
+        from app.services.vehicle_detection_service import vehicle_detector
         from app.services.storage_service import save_bytes
         from app.services.alert_service import process_alerts
+        from app.models.vehicle_event import VehicleEvent
 
         logger = logging.getLogger(__name__)
         frame_bytes = base64.b64decode(frame_b64)
-
-        result = recognizer.recognize(frame_bytes, camera_id=camera_id)
-        if result is None:
-            return
-
-        plate = result["plate"]
-        confidence = result["confidence"]
 
         db = SessionLocal()
         try:
@@ -38,47 +33,94 @@ try:
             if not camera or not camera.is_active:
                 return
 
-            # Deduplication: ignore same plate from same camera in last N seconds
-            cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.AGENT_DEDUP_SECONDS)
-            dup = (
-                db.query(Occurrence)
-                .filter(
-                    Occurrence.camera_id == camera.id,
-                    Occurrence.plate == plate,
-                    Occurrence.detected_at >= cutoff,
-                )
-                .first()
-            )
-            if dup:
-                logger.debug("Dedup: plate=%s camera=%s ignored", plate, camera_id)
+            vehicle = vehicle_detector.best_detection(frame_bytes)
+            ocr_bytes = vehicle.crop_bytes if vehicle is not None else frame_bytes
+
+            result = recognizer.recognize(ocr_bytes, camera_id=camera_id)
+            if result is None and vehicle is None:
                 return
 
-            # expires_at from plan retention
-            client = camera.client
-            plan = client.plan
-            expires_at = None
-            if plan and plan.retention_days:
-                expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
+            plate = result["plate"] if result is not None else None
+            confidence = result["confidence"] if result is not None else 0.0
+            vehicle_type = result.get("vehicle_type") if result is not None else None
+            if vehicle_type is None and vehicle is not None:
+                vehicle_type = vehicle.vehicle_type
 
-            image_path = save_bytes(frame_bytes, camera_id)
+            # Deduplication for vehicle counts: avoid counting the same vehicle signature repeatedly.
+            vehicle_event: VehicleEvent | None = None
+            if vehicle is not None:
+                try:
+                    import redis
 
-            occ = Occurrence(
-                camera_id=camera.id,
-                plate=plate,
-                confidence=confidence,
-                image_path=image_path,
-                expires_at=expires_at,
-                vehicle_type=result.get("vehicle_type"),
-                vehicle_color=result.get("vehicle_color"),
-                vehicle_make_model=result.get("vehicle_make_model"),
-                region_code=result.get("region_code"),
-                ocr_engine_used=result.get("engine"),
-            )
-            db.add(occ)
+                    cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
+                    sig = f"{camera.id}:{vehicle.vehicle_type}:{round(vehicle.bbox_x / 25) * 25}:{round(vehicle.bbox_y / 25) * 25}:{round(vehicle.bbox_w / 25) * 25}:{round(vehicle.bbox_h / 25) * 25}"
+                    cache_key = f"vehicle-event:{sig}"
+                    acquired = cache.set(cache_key, "1", nx=True, ex=12)
+                except Exception as exc:
+                    logger.debug("Vehicle dedup cache unavailable: %s", exc)
+                    acquired = True
+
+                if acquired:
+                    vehicle_event = VehicleEvent(
+                        camera_id=camera.id,
+                        occurrence_id=None,
+                        vehicle_type=vehicle.vehicle_type,
+                        confidence=vehicle.confidence,
+                        bbox_x=vehicle.bbox_x,
+                        bbox_y=vehicle.bbox_y,
+                        bbox_w=vehicle.bbox_w,
+                        bbox_h=vehicle.bbox_h,
+                        image_path=None,
+                    )
+                    db.add(vehicle_event)
+                    db.flush()
+
+            # Deduplication: ignore same plate from same camera in last N seconds
+            occ = None
+            if result is not None and plate is not None:
+                cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.AGENT_DEDUP_SECONDS)
+                dup = (
+                    db.query(Occurrence)
+                    .filter(
+                        Occurrence.camera_id == camera.id,
+                        Occurrence.plate == plate,
+                        Occurrence.detected_at >= cutoff,
+                    )
+                    .first()
+                )
+                if dup:
+                    logger.debug("Dedup: plate=%s camera=%s ignored", plate, camera_id)
+                else:
+                    # expires_at from plan retention
+                    client = camera.client
+                    plan = client.plan
+                    expires_at = None
+                    if plan and plan.retention_days:
+                        expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
+
+                    image_path = save_bytes(ocr_bytes if vehicle is not None else frame_bytes, camera_id)
+
+                    occ = Occurrence(
+                        camera_id=camera.id,
+                        plate=plate,
+                        confidence=confidence,
+                        image_path=image_path,
+                        expires_at=expires_at,
+                        vehicle_type=vehicle_type,
+                        vehicle_color=result.get("vehicle_color"),
+                        vehicle_make_model=result.get("vehicle_make_model"),
+                        region_code=result.get("region_code"),
+                        ocr_engine_used=result.get("engine"),
+                    )
+                    db.add(occ)
+                    db.flush()
+
+                    process_alerts(str(occ.id), db)
+
+            if vehicle_event is not None:
+                vehicle_event.occurrence_id = occ.id if occ is not None else None
+
             db.commit()
-            db.refresh(occ)
-
-            process_alerts(str(occ.id), db)
         finally:
             db.close()
 
