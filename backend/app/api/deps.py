@@ -1,7 +1,7 @@
-from typing import Generator
+from typing import Generator, Optional
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -10,7 +10,7 @@ from app.core.database import SessionLocal
 from app.core.security import decode_token
 from app.models.user import User, UserRole
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 def get_db() -> Generator:
@@ -21,8 +21,15 @@ def get_db() -> Generator:
         db.close()
 
 
+def _extract_token(
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+    auth_token: Optional[str] = Cookie(default=None, alias="auth-token"),
+) -> str | None:
+    return bearer_token or auth_token
+
+
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: str | None = Depends(_extract_token),
     db: Session = Depends(get_db),
 ) -> User:
     credentials_exc = HTTPException(
@@ -30,6 +37,8 @@ def get_current_user(
         detail="Credenciais inválidas",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if not token:
+        raise credentials_exc
     try:
         payload = decode_token(token)
         user_id: str = payload.get("sub")
