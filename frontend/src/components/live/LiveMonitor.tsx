@@ -19,11 +19,41 @@ export default function LiveMonitor({
   const [error, setError] = useState("");
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [previewStatus, setPreviewStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
+  const [previewMode, setPreviewMode] = useState<Record<string, "stream" | "fallback">>({});
 
   const activeCameras = useMemo(
     () => cameras.filter((camera) => camera.is_active),
     [cameras]
   );
+
+  const buildStreamUrl = useCallback((cameraId: string) => {
+    return `/api/cameras/${cameraId}/stream?t=${Date.now()}`;
+  }, []);
+
+  const restoreStreamPreview = useCallback((cameraId: string) => {
+    setPreviewUrls((current) => ({ ...current, [cameraId]: buildStreamUrl(cameraId) }));
+    setPreviewMode((current) => ({ ...current, [cameraId]: "stream" }));
+    setPreviewStatus((current) => ({ ...current, [cameraId]: "loading" }));
+  }, [buildStreamUrl]);
+
+  const loadFallbackPreview = useCallback(async (cameraId: string) => {
+    try {
+      const response = await api.get<{ image_url: string | null }>(`/api/cameras/${cameraId}/last-frame`);
+      const imageUrl = response.data.image_url;
+      if (!imageUrl) {
+        throw new Error("preview-not-available");
+      }
+
+      const delimiter = imageUrl.includes("?") ? "&" : "?";
+      setPreviewUrls((current) => ({ ...current, [cameraId]: `${imageUrl}${delimiter}t=${Date.now()}` }));
+      setPreviewMode((current) => ({ ...current, [cameraId]: "fallback" }));
+      setPreviewStatus((current) => ({ ...current, [cameraId]: "ready" }));
+      return true;
+    } catch {
+      setPreviewStatus((current) => ({ ...current, [cameraId]: "error" }));
+      return false;
+    }
+  }, []);
 
   const fetchCameras = useCallback(async () => {
     setLoading(true);
@@ -38,80 +68,69 @@ export default function LiveMonitor({
         }
         return next;
       });
+      setPreviewMode((current) => {
+        const next: Record<string, "stream" | "fallback"> = { ...current };
+        for (const camera of res.data) {
+          if (camera.is_active && (camera.connection_type === "rtsp" || camera.connection_type === "agent")) {
+            next[camera.id] = "stream";
+          }
+        }
+        return next;
+      });
+      setPreviewUrls((current) => {
+        const next = { ...current };
+        for (const camera of res.data) {
+          if (camera.is_active && (camera.connection_type === "rtsp" || camera.connection_type === "agent")) {
+            next[camera.id] = buildStreamUrl(camera.id);
+          }
+        }
+        return next;
+      });
     } catch {
       setError("Erro ao carregar cameras.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [buildStreamUrl]);
 
   useEffect(() => {
     fetchCameras();
   }, [fetchCameras]);
 
-  const refreshPreviews = useCallback(async () => {
-    const items = activeCameras.filter((camera) => camera.connection_type === "rtsp" || camera.connection_type === "agent");
-    if (items.length === 0) return;
+  const refreshFallbackPreviews = useCallback(async () => {
+    const fallbackItems = activeCameras.filter((camera) => previewMode[camera.id] === "fallback");
+    if (fallbackItems.length === 0) return;
 
-    try {
-      const results = await Promise.allSettled(
-        items.map(async (camera) => {
-          const response = await api.get<{ image_url: string | null }>(`/api/cameras/${camera.id}/last-frame`);
-          const imageUrl = response.data.image_url;
-          if (!imageUrl) {
-            throw new Error("preview-not-available");
-          }
-          return { cameraId: camera.id, imageUrl };
-        })
-      );
+    const results = await Promise.allSettled(fallbackItems.map(async (camera) => {
+      await loadFallbackPreview(camera.id);
+      return camera.id;
+    }));
 
-      setPreviewUrls((current) => {
-        const next = { ...current };
-        results.forEach((result) => {
-          if (result.status === "fulfilled") {
-            const delimiter = result.value.imageUrl.includes("?") ? "&" : "?";
-            next[result.value.cameraId] = `${result.value.imageUrl}${delimiter}t=${Date.now()}`;
-          }
-        });
-        return next;
-      });
-
-      setPreviewStatus((current) => {
-        const next = { ...current };
-        results.forEach((result, index) => {
-          const cameraId = items[index]?.id;
-          if (!cameraId) return;
-          next[cameraId] = result.status === "fulfilled" ? "ready" : "error";
-        });
-        return next;
-      });
-      setError("");
-    } catch {
+    if (results.some((result) => result.status === "rejected")) {
       setError("Erro ao atualizar previews.");
-      setPreviewStatus((current) => {
-        const next = { ...current };
-        for (const camera of items) {
-          next[camera.id] = "error";
-        }
-        return next;
-      });
+    } else {
+      setError("");
     }
-  }, [activeCameras]);
+  }, [activeCameras, loadFallbackPreview, previewMode]);
 
   useEffect(() => {
     if (activeCameras.length === 0) return;
 
-    void refreshPreviews();
     const interval = window.setInterval(() => {
-      void refreshPreviews();
-    }, 1200);
+      void refreshFallbackPreviews();
+    }, 2500);
 
     return () => window.clearInterval(interval);
-  }, [activeCameras.length, refreshPreviews]);
+  }, [activeCameras.length, refreshFallbackPreviews]);
 
   const reloadAllStreams = useCallback(() => {
-    void refreshPreviews();
-  }, [refreshPreviews]);
+    setError("");
+    for (const camera of activeCameras) {
+      if (camera.connection_type === "rtsp" || camera.connection_type === "agent") {
+        restoreStreamPreview(camera.id);
+      }
+    }
+  }, [activeCameras, restoreStreamPreview]);
 
   return (
     <div className="p-6">
@@ -173,6 +192,10 @@ export default function LiveMonitor({
                         setPreviewStatus((current) => ({ ...current, [camera.id]: "ready" }));
                       }}
                       onError={() => {
+                        if (previewMode[camera.id] === "stream") {
+                          void loadFallbackPreview(camera.id);
+                          return;
+                        }
                         setPreviewStatus((current) => ({ ...current, [camera.id]: "error" }));
                       }}
                     />
@@ -199,7 +222,7 @@ export default function LiveMonitor({
 
                 <div className="flex items-center justify-between">
                   <button
-                    onClick={() => void refreshPreviews()}
+                    onClick={() => restoreStreamPreview(camera.id)}
                     className="px-2 py-1 text-xs border rounded inline-flex items-center gap-1"
                   >
                     <RefreshCw className="h-3 w-3" />

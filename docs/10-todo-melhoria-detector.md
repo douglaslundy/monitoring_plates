@@ -10,9 +10,9 @@
 
 ## Fase 1. Separar preview da analise
 
-- [ ] Criar pipeline de preview independente do OCR.
-- [ ] Garantir que o preview sempre sirva o ultimo frame.
-- [ ] Reduzir ou remover fila de frames para visualizacao.
+- [x] Criar pipeline de preview independente do OCR.
+- [x] Garantir que o preview sempre sirva o ultimo frame.
+- [x] Reduzir ou remover fila de frames para visualizacao.
 - [ ] Definir taxa de atualizacao configuravel por camera.
 - [ ] Testar live com latencia menor sem impactar OCR.
 
@@ -58,11 +58,17 @@
 
 ## Fase 7. Produto e UX
 
-- [ ] Melhorar o live para parecer tempo real.
+- [x] Melhorar o live para parecer tempo real.
 - [ ] Mostrar status do detector por camera.
 - [ ] Mostrar ultima leitura, tipo do veiculo e confianca.
 - [ ] Adicionar graficos de fluxo por hora.
 - [ ] Adicionar painel de saude operacional.
+
+### Status da implementacao atual
+
+- Preview ao vivo usa stream MJPEG com fallback automatico para o ultimo frame salvo.
+- O recarregamento manual restaura o stream sem bloquear o OCR.
+- O preview permanece desacoplado da fila de analise.
 
 ## Fase 8. Validacao final
 
@@ -71,4 +77,3 @@
 - [ ] Validar em camera real com placa pequena.
 - [ ] Validar contagem com veiculos diferentes.
 - [ ] Validar consumo de CPU e memoria antes de liberar.
-
