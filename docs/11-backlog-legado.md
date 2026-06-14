@@ -6,11 +6,14 @@ Este arquivo concentra as pendências antigas que não fazem parte da entrega pr
 
 - [x] Detector de veículos, contagem e OCR guiado por recorte
 - [x] Preview ao vivo independente do OCR
-- [ ] Suíte backend 100% verde em execução completa
+- [x] Suíte backend 100% verde em execução completa
 - [ ] Padronizar compatibilidade de rotas com barra final
 - [ ] Eliminar persistência indevida do banco de teste entre execuções
 - [ ] Desabilitar rate limit em ambiente de teste
-- [ ] Investigar warnings de bcrypt/passlib na stack de teste
+- [x] Investigar warnings de bcrypt/passlib na stack de teste
+- [x] Ajustar `pytest-asyncio` para loop scope explícito
+- [x] Neutralizar cache provider do pytest no ambiente de teste
+- [ ] Acompanhar deprecations upstream de `fastapi`, `starlette`, `pytest-asyncio` e `python-jose`
 - [ ] Revisar fixtures legadas que ainda dependem de estado compartilhado
 
 ## Falhas legadas já identificadas
@@ -45,7 +48,23 @@ Sintoma:
 - O backend emite warning de compatibilidade do backend `bcrypt` durante os testes.
 
 Status:
-- Ainda aberto. Não quebra a suíte, mas deve ser saneado.
+- Corrigido com shim de compatibilidade no `backend/app/core/security.py`.
+
+### 5. Cache do pytest no Windows
+
+Sintoma:
+- O `pytest` tentava gravar arquivos de cache em um diretório que passava a falhar com `Permission denied` durante a execução repetida da suíte.
+
+Status:
+- Corrigido desativando o `cacheprovider` na configuração de testes.
+
+### 6. Warnings de deprecation em dependências upstream
+
+Sintoma:
+- A suíte ainda registra warnings de `asyncio.iscoroutinefunction`, `asyncio.get_event_loop_policy` e `datetime.utcnow()` vindos de bibliotecas de terceiros.
+
+Status:
+- Ainda aberto. Não quebra a suíte, mas vale acompanhar em uma atualização coordenada de dependências.
 
 ## Regra de continuidade
 

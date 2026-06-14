@@ -6,6 +6,17 @@ from passlib.context import CryptContext
 
 from app.core.config import settings
 
+try:
+    import bcrypt as _bcrypt
+
+    if not hasattr(_bcrypt, "__about__"):
+        class _About:
+            __version__ = getattr(_bcrypt, "__version__", "0")
+
+        _bcrypt.__about__ = _About()  # type: ignore[attr-defined]
+except Exception:
+    pass
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
