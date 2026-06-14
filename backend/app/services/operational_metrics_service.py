@@ -134,7 +134,7 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
     if online_cameras == 0:
         operational_status = "offline"
         operational_status_detail = "Nenhuma camera online."
-    elif queue_depth >= 20 or degraded_cameras > 0:
+    elif queue_depth >= settings.WORKER_DELAY_QUEUE_THRESHOLD or degraded_cameras > 0:
         operational_status = "degraded"
         operational_status_detail = "Existem cameras degradadas ou fila OCR acumulando."
     elif low_quality_cameras > 0 or (avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0):

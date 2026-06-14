@@ -45,7 +45,7 @@
 - [x] Expor metricas de fps, latencia e fila.
 - [ ] Criar healthcheck do pipeline de OCR.
 - [x] Alertar quando a camera estiver com baixa qualidade.
-- [ ] Alertar quando o worker ficar atrasado.
+- [x] Alertar quando o worker ficar atrasado.
 - [ ] Alertar quando a taxa de OCR cair abaixo do esperado.
 
 ## Fase 6. Otimizacoes adicionais
@@ -75,6 +75,7 @@
 - O dashboard agora exibe um status consolidado do detector por camera com base em online, preview e qualidade.
 - Alertas em tempo real agora disparam quando a camera entra em estado degradado ou com imagem ruim.
 - O painel live agora exibe saude operacional, fila OCR, FPS medio e latencia media.
+- O backend agora publica alerta de worker atrasado quando a fila OCR acumula acima do limite configurado.
 
 ## Fase 8. Validacao final
 

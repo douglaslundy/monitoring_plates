@@ -171,7 +171,16 @@ export interface CameraHealthAlert {
   detail: string;
 }
 
-export type RealtimeAlert = PlateAlert | CameraHealthAlert;
+export interface WorkerDelayAlert {
+  type: "worker_delay_alert";
+  detected_at: string;
+  updated_at: number;
+  queue_depth: number;
+  threshold: number;
+  detail: string;
+}
+
+export type RealtimeAlert = PlateAlert | CameraHealthAlert | WorkerDelayAlert;
 
 export interface OperationalMetrics {
   total_cameras: number;

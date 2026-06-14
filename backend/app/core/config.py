@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     AGENT_FRAME_INTERVAL: int = 1
     AGENT_MIN_CONFIDENCE: float = 0.70
     AGENT_DEDUP_SECONDS: int = 30
+    WORKER_DELAY_QUEUE_THRESHOLD: int = 20
+    WORKER_DELAY_ALERT_COOLDOWN_SECONDS: int = 300
 
     def get_cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]

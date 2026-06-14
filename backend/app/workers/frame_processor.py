@@ -27,6 +27,7 @@ try:
         from app.services.preview_telemetry_service import record_preview_frame
         from app.services.image_quality_service import record_image_quality
         from app.services.camera_health_alert_service import maybe_publish_camera_health_alert
+        from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
 
         logger = logging.getLogger(__name__)
         frame_bytes = base64.b64decode(frame_b64)
@@ -139,6 +140,7 @@ try:
 
             db.commit()
             maybe_publish_camera_health_alert(camera)
+            maybe_publish_worker_delay_alert(db)
         finally:
             db.close()
 
@@ -164,6 +166,7 @@ try:
         from app.services.camera_service import capture_rtsp_frame, crop_half_frame
         from app.services.storage_service import save_latest_frame
         from app.services.preview_telemetry_service import record_preview_frame
+        from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
 
         logger = logging.getLogger(__name__)
         db = SessionLocal()
@@ -192,6 +195,7 @@ try:
                     process_frame.delay(str(camera.id), frame_b64)
                 except Exception as exc:
                     logger.warning("RTSP poll failed camera=%s: %s", camera.id, exc)
+            maybe_publish_worker_delay_alert(db)
         finally:
             db.close()
 

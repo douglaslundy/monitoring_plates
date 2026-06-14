@@ -22,7 +22,9 @@ export function AlertBanner({ lastAlert }: AlertBannerProps) {
     const alertKey =
       lastAlert.type === "plate_alert"
         ? `${lastAlert.occurrence_id}-${Date.now()}`
-        : `${lastAlert.camera_id}-${Date.now()}`;
+        : lastAlert.type === "camera_health_alert"
+          ? `${lastAlert.camera_id}-${Date.now()}`
+          : `worker-delay-${lastAlert.updated_at}-${Date.now()}`;
     const active: ActiveAlert = { ...lastAlert, alertKey };
 
     setAlerts((prev) => [active, ...prev]);
@@ -55,7 +57,7 @@ export function AlertBanner({ lastAlert }: AlertBannerProps) {
                   {new Date(a.detected_at).toLocaleTimeString("pt-BR")}
                 </p>
               </>
-            ) : (
+            ) : a.type === "camera_health_alert" ? (
               <>
                 <p className="font-bold text-red-800 text-sm">
                   Camera {a.camera_name} com problema
@@ -63,6 +65,18 @@ export function AlertBanner({ lastAlert }: AlertBannerProps) {
                 <p className="text-xs text-red-600 mt-0.5 truncate">
                   {a.detail}
                   {a.location ? ` - ${a.location}` : ""}
+                </p>
+                <p className="text-xs text-red-500 mt-0.5">
+                  {new Date(a.detected_at).toLocaleTimeString("pt-BR")}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-bold text-red-800 text-sm">
+                  Worker atrasado
+                </p>
+                <p className="text-xs text-red-600 mt-0.5 truncate">
+                  {a.detail}
                 </p>
                 <p className="text-xs text-red-500 mt-0.5">
                   {new Date(a.detected_at).toLocaleTimeString("pt-BR")}

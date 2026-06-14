@@ -47,7 +47,11 @@ export class PlateAlertWebSocket {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data as string);
-          if (data.type === "plate_alert" || data.type === "camera_health_alert") {
+          if (
+            data.type === "plate_alert" ||
+            data.type === "camera_health_alert" ||
+            data.type === "worker_delay_alert"
+          ) {
             onAlert(data as RealtimeAlert);
           }
         } catch {

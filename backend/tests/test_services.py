@@ -618,6 +618,76 @@ def test_camera_health_alert_publica_e_aplica_cooldown(monkeypatch):
     assert fake_redis.published[0][0] == "ws:alerts:client-1"
 
 
+def test_worker_delay_alert_publica_e_aplica_cooldown(db, monkeypatch):
+    """Worker delay alerts should publish once and then respect cooldown for same queue depth."""
+    from app.models.plan import Plan
+    from app.models.client import Client
+    from app.models.camera import Camera, ConnectionType
+    from app.services import worker_delay_alert_service as alert_service
+
+    plan = Plan(
+        name="P-worker",
+        max_cameras=5,
+        retention_days=30,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=0,
+        is_active=True,
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+
+    tenant = Client(name="Worker", email="worker@test.com", plan_id=plan.id, is_active=True)
+    db.add(tenant)
+    db.commit()
+    db.refresh(tenant)
+
+    camera = Camera(
+        client_id=tenant.id,
+        name="Cam Worker",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://example/stream",
+        is_active=True,
+    )
+    db.add(camera)
+    db.commit()
+    db.refresh(camera)
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.store: dict[str, str] = {}
+            self.published: list[tuple[str, str]] = []
+
+        def llen(self, key: str) -> int:
+            return 25 if key == "frames" else 0
+
+        def get(self, key: str):
+            return self.store.get(key)
+
+        def set(self, key: str, value: str, ex: int | None = None):
+            self.store[key] = value
+            return True
+
+        def publish(self, channel: str, message: str):
+            self.published.append((channel, message))
+            return 1
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(alert_service, "_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(alert_service, "time", lambda: 1000.0)
+
+    first = alert_service.maybe_publish_worker_delay_alert(db)
+    second = alert_service.maybe_publish_worker_delay_alert(db)
+
+    assert first is True
+    assert second is False
+    assert len(fake_redis.published) == 1
+    channel, payload = fake_redis.published[0]
+    assert channel == f"ws:alerts:{tenant.id}"
+    assert "worker_delay_alert" in payload
+
+
 def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
     """Operational metrics should aggregate preview and queue health for the dashboard."""
     from app.models.plan import Plan
