@@ -411,11 +411,14 @@ def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
     try:
         with patch("app.core.database.SessionLocal", return_value=worker_db), mock_query, mock_recognizer as recognizer_mock, mock_save, mock_alerts, mock_redis as redis_from_url:
             redis_from_url.return_value = fake_redis
-            frame_processor.process_frame.run(str(camera_agent_a.id), __import__("base64").b64encode(frame_bytes).decode())
+        frame_processor.process_frame.run(str(camera_agent_a.id), __import__("base64").b64encode(frame_bytes).decode())
 
         recognizer_mock.assert_called_once()
         assert recognizer_mock.call_args.args[0] == b"vehicle-crop"
+        vehicle_event = db.query(VehicleEvent).first()
+        assert vehicle_event is not None
         assert db.query(VehicleEvent).count() == 1
+        assert vehicle_event.image_path == "cameras/test/crop.jpg"
         occ = db.query(Occurrence).first()
         assert occ is not None
         assert occ.vehicle_type == "car"

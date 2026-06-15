@@ -162,6 +162,8 @@ try:
                 maybe_publish_worker_delay_alert(db)
                 return
 
+            event_image_path = save_bytes(vehicle.crop_bytes, camera_id)
+
             ocr_started_at = perf_counter()
             result = recognizer.recognize(vehicle.crop_bytes, camera_id=camera_id)
             ocr_seconds = perf_counter() - ocr_started_at
@@ -237,7 +239,7 @@ try:
                         bbox_y=vehicle.bbox_y,
                         bbox_w=vehicle.bbox_w,
                         bbox_h=vehicle.bbox_h,
-                        image_path=None,
+                        image_path=event_image_path,
                     )
                     db.add(vehicle_event)
                     db.flush()
@@ -267,13 +269,12 @@ try:
                         expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
 
                     persist_started_at = perf_counter()
-                    image_path = save_bytes(vehicle.crop_bytes, camera_id)
 
                     occ = Occurrence(
                         camera_id=camera.id,
                         plate=plate,
                         confidence=confidence,
-                        image_path=image_path,
+                        image_path=event_image_path,
                         expires_at=expires_at,
                         vehicle_type=vehicle_type,
                         vehicle_color=result.get("vehicle_color"),
