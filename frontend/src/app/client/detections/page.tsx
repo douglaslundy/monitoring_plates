@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import api from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -151,22 +150,8 @@ export default function VehicleHistoryPage() {
         description="Consulta os eventos com frame, camera, tipo e periodo."
       />
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-        <span>
-          A página antiga de pesquisa por placas continua disponível, e este histórico mostra os eventos já
-          persistidos.
-        </span>
-        <Link
-          href="/client/search"
-          className="inline-flex items-center rounded-lg border bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
-        >
-          Abrir pesquisa de placas
-        </Link>
-      </div>
-
       <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-        Esta tela mostra eventos ja persistidos. Uma camera pode estar offline agora e ainda assim existir um caminhão
-        registrado anteriormente no historico.
+        Esta tela mostra eventos ja persistidos com imagem, placa, camera, tipo e periodo.
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
