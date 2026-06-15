@@ -41,49 +41,16 @@ class VehicleDetector:
             return self._detect_without_cv2(image)
 
         h, w = image.shape[:2]
-        roi_y = max(0, int(h * 0.30))
-        roi = image[roi_y:, :]
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blurred, 40, 140)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
-        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
         candidates: list[VehicleDetection] = []
-        min_area = max(1200, int(w * h * 0.01))
-        for contour in contours:
-            area = float(cv2.contourArea(contour))
-            if area < min_area:
-                continue
+        primary_y1 = max(0, int(h * 0.30))
+        candidates.extend(self._detect_candidates_in_roi(cv2, image, image[primary_y1:, :], 0, primary_y1, w, h))
 
-            x, y, box_w, box_h = cv2.boundingRect(contour)
-            if box_w < 40 or box_h < 25:
-                continue
-
-            aspect_ratio = box_w / max(box_h, 1)
-            if aspect_ratio < 0.5 or aspect_ratio > 8.0:
-                continue
-
-            global_y = y + roi_y
-            padded = self._pad_box(x, global_y, box_w, box_h, w, h)
-            crop = image[padded[1] : padded[1] + padded[3], padded[0] : padded[0] + padded[2]]
-            crop_bytes = self._encode_jpeg(crop)
-            if crop_bytes is None:
-                continue
-
-            vehicle_type, confidence = self._classify(area, aspect_ratio, padded[2], padded[3], w, h)
-            candidates.append(
-                VehicleDetection(
-                    vehicle_type=vehicle_type,
-                    confidence=confidence,
-                    bbox_x=padded[0],
-                    bbox_y=padded[1],
-                    bbox_w=padded[2],
-                    bbox_h=padded[3],
-                    crop_bytes=crop_bytes,
-                )
-            )
+        focused_x1 = max(0, int(w * 0.08))
+        focused_x2 = min(w, int(w * 0.72))
+        focused_y1 = max(0, int(h * 0.48))
+        focused_roi = image[focused_y1:, focused_x1:focused_x2]
+        if focused_roi.size:
+            candidates.extend(self._detect_candidates_in_roi(cv2, image, focused_roi, focused_x1, focused_y1, w, h))
 
         candidates.sort(key=lambda item: self._score_detection(item, w, h), reverse=True)
         return candidates[:3]
@@ -236,8 +203,68 @@ class VehicleDetector:
         center_y = (detection.bbox_y + detection.bbox_h / 2) / max(frame_h, 1)
 
         center_bonus = 1.0 - min(1.0, abs(center_x - 0.5) * 1.4 + abs(center_y - 0.78) * 1.1)
-        size_bonus = 1.0 - min(1.0, abs(area_ratio - 0.035) / 0.08)
-        return (detection.confidence * 0.5) + (center_bonus * 0.3) + (size_bonus * 0.2)
+        size_bonus = 1.0 - min(1.0, abs(area_ratio - 0.12) / 0.18)
+        huge_penalty = 0.0
+        if detection.bbox_w > frame_w * 0.85:
+            huge_penalty += 0.15
+        if detection.bbox_h > frame_h * 0.85:
+            huge_penalty += 0.15
+        return (detection.confidence * 0.45) + (center_bonus * 0.25) + (size_bonus * 0.30) - huge_penalty
+
+    def _detect_candidates_in_roi(
+        self,
+        cv2,
+        image,
+        roi,
+        roi_x: int,
+        roi_y: int,
+        frame_w: int,
+        frame_h: int,
+    ) -> list[VehicleDetection]:
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blurred, 40, 140)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        candidates: list[VehicleDetection] = []
+        min_area = max(1200, int(frame_w * frame_h * 0.01))
+        for contour in contours:
+            area = float(cv2.contourArea(contour))
+            if area < min_area:
+                continue
+
+            x, y, box_w, box_h = cv2.boundingRect(contour)
+            if box_w < 40 or box_h < 25:
+                continue
+
+            aspect_ratio = box_w / max(box_h, 1)
+            if aspect_ratio < 0.5 or aspect_ratio > 8.0:
+                continue
+
+            global_y = y + roi_y
+            global_x = x + roi_x
+            padded = self._pad_box(global_x, global_y, box_w, box_h, frame_w, frame_h)
+            crop = image[padded[1] : padded[1] + padded[3], padded[0] : padded[0] + padded[2]]
+            crop_bytes = self._encode_jpeg(crop)
+            if crop_bytes is None:
+                continue
+
+            vehicle_type, confidence = self._classify(area, aspect_ratio, padded[2], padded[3], frame_w, frame_h)
+            candidates.append(
+                VehicleDetection(
+                    vehicle_type=vehicle_type,
+                    confidence=confidence,
+                    bbox_x=padded[0],
+                    bbox_y=padded[1],
+                    bbox_w=padded[2],
+                    bbox_h=padded[3],
+                    crop_bytes=crop_bytes,
+                )
+            )
+
+        return candidates
 
     def _connected_components(self, mask) -> list[dict[str, int]]:
         import numpy as np
