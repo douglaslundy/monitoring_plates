@@ -94,9 +94,10 @@ class EasyOcrEngine:
         return round(max(0.0, (size_score * 0.45) + (aspect_score * 0.55)), 3)
 
     def _extract_plate(self, results, started_at: float) -> Optional[dict]:
+        minimum_confidence = min(settings.AGENT_MIN_CONFIDENCE, 0.60)
         for _, text, confidence in results:
             normalized = re.sub(r"[^A-Z0-9]", "", text.upper())
-            if _PLATE_RE.match(normalized) and confidence >= settings.AGENT_MIN_CONFIDENCE:
+            if _PLATE_RE.match(normalized) and confidence >= minimum_confidence:
                 elapsed = time.time() - started_at
                 logger.info("EasyOCR: plate=%s conf=%.2f time=%.2fs", normalized, confidence, elapsed)
                 return {

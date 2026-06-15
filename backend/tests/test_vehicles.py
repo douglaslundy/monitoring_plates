@@ -38,7 +38,7 @@ def test_vehicle_detector_identifica_veiculo_sintetico():
 
     assert detections
     best = detections[0]
-    assert best.vehicle_type in {"car", "motorcycle", "truck"}
+    assert best.vehicle_type == "car"
     assert best.confidence >= 0.5
     assert best.crop_bytes
 

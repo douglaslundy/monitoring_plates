@@ -307,9 +307,9 @@ class VehicleDetector:
         frame_area = float(frame_w * frame_h)
         area_ratio = area / frame_area
 
-        if area_ratio > 0.12 or box_w > frame_w * 0.45:
+        if area_ratio > 0.28 or box_w > frame_w * 0.58 or box_h > frame_h * 0.58:
             vehicle_type = "truck"
-            confidence = min(0.95, 0.55 + area_ratio * 3.0)
+            confidence = min(0.95, 0.58 + area_ratio * 2.5)
         elif aspect_ratio < 1.4 and box_w < frame_w * 0.25 and box_h < frame_h * 0.25:
             vehicle_type = "motorcycle"
             confidence = min(0.93, 0.58 + (1.4 - aspect_ratio) * 0.2 + area_ratio * 5.0)

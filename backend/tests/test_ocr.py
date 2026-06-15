@@ -132,6 +132,17 @@ def test_plate_antigo_detectado(fresh_recognizer):
     assert result["confidence"] >= 0.70
 
 
+def test_plate_com_confidence_moderada_ainda_e_detectada(fresh_recognizer):
+    """Placa válida com confidence moderada ainda deve passar."""
+    patches = _build_sys_patches([(None, "ABC1234", 0.62)])
+    with patch.dict(sys.modules, patches):
+        result = fresh_recognizer.recognize(_make_jpeg("ABC1234"))
+
+    assert result is not None
+    assert result["plate"] == "ABC1234"
+    assert result["confidence"] == 0.62
+
+
 def test_plate_mercosul_detectada(fresh_recognizer):
     """ABC1D23 (Mercosul) → placa detectada."""
     patches = _build_sys_patches([(None, "ABC1D23", 0.88)])
