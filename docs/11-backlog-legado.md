@@ -80,7 +80,7 @@ Sintoma:
 - O dashboard pode mostrar "Sem conexao em tempo real" quando o `clientId` ou o token nao estao disponiveis no momento certo da montagem.
 
 Status:
-- Aberto como melhoria de produto. Precisa de retry, telemetria de conexao e mensagem de erro mais clara.
+- Corrigido no frontend com conexao compartilhada, reconexao automatica e estado explicavel. Falta validacao em VPS.
 
 ### 9. Contagem inflada por veiculo parado
 
@@ -88,7 +88,7 @@ Sintoma:
 - Um veiculo parado em frente a camera pode gerar muitas passagens se o tracker nao persistir bem a identidade.
 
 Status:
-- Aberto como melhoria de contagem. Exige ajuste de tracker, janela de deduplicacao e possivel linha de passagem.
+- Corrigido no worker com tracker curto por camera e janela de deduplicacao espacial/temporal. Falta validar em camera real.
 
 ### 10. Saude operacional degradada sem explicacao clara
 
@@ -112,7 +112,7 @@ Sintoma:
 - Quando a placa falha, o usuario pode nao ver claramente que o veiculo foi capturado.
 
 Status:
-- Aberto como melhoria de produto. Deve existir exibicao do evento do veiculo mesmo sem OCR bem-sucedido.
+- Corrigido no backend para persistir o evento do veiculo mesmo sem placa. Falta a pagina dedicada para ficar visivel no painel.
 
 ### 13. Pagina historica de veiculos por frame
 

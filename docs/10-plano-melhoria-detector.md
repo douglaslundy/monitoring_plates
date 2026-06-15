@@ -277,6 +277,10 @@ Aceite:
 - o dashboard deixa de mostrar "Sem conexao em tempo real" em ambiente saudável;
 - quando houver falha, o motivo fica claro e a reconexao acontece sem acao manual.
 
+Status atual:
+- Implementado no frontend com uma conexao compartilhada por sessao, reconexao automatica e texto de estado explicavel.
+- Ainda precisa de validacao final na VPS para confirmar o upgrade websocket no caminho real.
+
 ### 2. Contagem excessiva de veiculos
 
 Diagnostico provavel:
@@ -298,6 +302,10 @@ Implementacao sugerida:
 Aceite:
 - um carro ou caminhao parado nao gera dezenas de contagens;
 - a contagem semanal fica coerente com o volume real da rua.
+
+Status atual:
+- Implementado no worker com deduplicacao espacial e temporal por camera.
+- Falta validar em camera real se a janela atual cobre bem os casos de parada longa e pequeno deslocamento.
 
 ### 3. Saude operacional "degradado"
 
@@ -342,6 +350,10 @@ Aceite:
 - a fila cai para um nivel estável;
 - o sistema responde em tempo util sem crescer sem limite.
 
+Status atual:
+- Implementado o gate por veiculo candidato e o descarte de frames repetidos.
+- Fica pendente observar cameras de alto volume para decidir se precisamos de amostragem adicional.
+
 ### 5. OCR apenas apos capturar veiculo
 
 Diagnostico provavel:
@@ -361,6 +373,10 @@ Implementacao sugerida:
 Aceite:
 - o OCR roda menos vezes, mas com melhor taxa de acerto;
 - frames vazios nao entram na fila OCR.
+
+Status atual:
+- Implementado no worker: OCR so roda quando o detector encontra um veiculo.
+- Ainda falta refinar o recorte da placa e medir ganho real com imagens de campo.
 
 ### 6. Carro passou, mas nao apareceu
 
@@ -405,13 +421,8 @@ Aceite:
 
 Use estes prompts como tarefas diretas na proxima rodada:
 
-1. "Ajuste o OCR para operar sobre recortes menores e mais provaveis da placa, mantendo o preview independente e medindo o ganho com a mesma imagem de teste da VPS."
-2. "Adicione preprocessamento seletivo no OCR para tentar variantes com resize, contraste e allowlist apenas quando o recorte indicar alta chance de placa."
-3. "Crie um benchmark simples comparando frame inteiro, recorte do veiculo e recorte da regiao dianteira, registrando tempo e resultado de cada tentativa."
-4. "Se a placa continuar parcial, refine o detector para priorizar a parte frontal do veiculo e limitar a area de busca do OCR."
-5. "Atualize o backlog com qualquer falha nova encontrada na VPS e feche cada ajuste com teste automatizado antes de seguir."
-6. "Investigue por que o dashboard mostra 'Sem conexao em tempo real', valide o websocket com token/client_id e implemente reconexao com motivo claro em caso de falha."
-7. "Reduza a contagem duplicada de veiculos parados ajustando o tracker e a janela de deduplicacao por camera."
-8. "Explique e corrija o status degradado da saude operacional, vinculando a causa exata da metrica que disparou o alerta."
-9. "Ataque a fila OCR alta com gate de veiculo, amostragem e descarte de frames repetidos ate ficar controlada."
-10. "Crie a pagina historica de veiculos com frame, data/hora e camera, com filtros por tipo e periodo."
+1. "Explique e corrija o status degradado da saude operacional, vinculando a causa exata da metrica que disparou o alerta."
+2. "Crie a pagina historica de veiculos com frame, data/hora e camera, com filtros por tipo e periodo."
+3. "Adicione filtros por tipo de veiculo, camera e periodo na nova pagina historica."
+4. "Valide em camera real o comportamento do tracker para veiculo parado e ajuste a janela se houver novo excesso de contagem."
+5. "Valide na VPS o websocket realtime, a fila OCR reduzida e a experiencia do painel ao vivo."

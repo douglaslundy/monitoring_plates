@@ -68,14 +68,14 @@
 
 ## Fase 8. Ajustes solicitados pelo dashboard
 
-- [ ] Diagnosticar por que o dashboard mostra "Sem conexao em tempo real".
-- [ ] Implementar reconexao do websocket com mensagem clara de falha.
-- [ ] Corrigir contagem excessiva de veiculos parados em frente a camera.
-- [ ] Ajustar tracker/deduplicacao para nao contar o mesmo veiculo duas vezes.
+- [x] Diagnosticar por que o dashboard mostra "Sem conexao em tempo real".
+- [x] Implementar reconexao do websocket com mensagem clara de falha.
+- [x] Corrigir contagem excessiva de veiculos parados em frente a camera.
+- [x] Ajustar tracker/deduplicacao para nao contar o mesmo veiculo duas vezes.
 - [ ] Explicar e corrigir o status "degradado" da saude operacional.
 - [x] Reduzir a fila OCR para um nivel compativel com tempo real.
 - [x] Gatear OCR para rodar apenas apos capturar um veiculo candidato.
-- [ ] Exibir carros detectados mesmo quando a placa nao for reconhecida.
+- [x] Exibir carros detectados mesmo quando a placa nao for reconhecida.
 - [ ] Criar pagina historica de veiculos com frame, data/hora e camera.
 - [ ] Adicionar filtros por tipo de veiculo, camera e periodo na pagina historica.
 
@@ -111,6 +111,7 @@
 - O realtime do dashboard agora compartilha uma unica conexao por sessao, com reconexao automatica e mensagem de estado clara.
 - O tracker de veiculos agora evita contagem repetida do mesmo alvo parado em frente a camera.
 - O worker de OCR agora dispara somente apos detectar um veiculo candidato, reduzindo a fila de frames sem alvo util.
+- O sistema agora persiste evento de veiculo mesmo quando a placa nao e reconhecida.
 - O OCR da VPS conseguiu abrir o motor, mas ainda nao confirmou placa valida no frame amplo.
 - O recorte da placa retornou texto parcial, indicando que a proxima rodada deve focar em recortes menores e preprocessamento seletivo.
 
