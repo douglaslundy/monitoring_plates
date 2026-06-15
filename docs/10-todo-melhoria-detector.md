@@ -26,12 +26,12 @@
 
 ## Fase 3. OCR guiado por veiculo
 
-- [ ] Ajustar OCR para recortes menores da placa.
+- [x] Ajustar OCR para recortes menores da placa.
 - [x] Reaproveitar o recorte do veiculo como entrada do OCR.
 - [x] Rodar OCR apenas em recortes candidatos.
-- [ ] Implementar score de qualidade do recorte.
+- [x] Implementar score de qualidade do recorte.
 - [ ] Ajustar preprocessamento por tipo de imagem.
-- [ ] Aplicar allowlist de caracteres quando houver alta chance de placa.
+- [x] Aplicar allowlist de caracteres quando houver alta chance de placa.
 - [ ] Medir ganho real de acerto frente ao baseline.
 
 ## Fase 4. Contagem e classificacao
@@ -52,9 +52,9 @@
 
 ## Fase 6. Otimizacoes adicionais
 
-- [ ] Cachear modelos na inicializacao do worker.
+- [x] Cachear modelos na inicializacao do worker.
 - [x] Diminuir inferencia em frames repetidos.
-- [ ] Amostrar frames em cameras de alto volume.
+- [x] Amostrar frames em cameras de alto volume.
 - [x] Criar configuracao de ROI por camera.
 - [x] Exportar eventos para analise externa.
 
@@ -63,7 +63,7 @@
 - [x] Melhorar o live para parecer tempo real.
 - [x] Mostrar status do detector por camera.
 - [x] Mostrar ultima leitura, tipo do veiculo e confianca.
-- [ ] Adicionar graficos de fluxo por hora.
+- [x] Adicionar graficos de fluxo por hora.
 - [x] Adicionar painel de saude operacional.
 
 ## Fase 8. Ajustes solicitados pelo dashboard
@@ -72,12 +72,12 @@
 - [x] Implementar reconexao do websocket com mensagem clara de falha.
 - [x] Corrigir contagem excessiva de veiculos parados em frente a camera.
 - [x] Ajustar tracker/deduplicacao para nao contar o mesmo veiculo duas vezes.
-- [ ] Explicar e corrigir o status "degradado" da saude operacional.
+- [x] Explicar e corrigir o status "degradado" da saude operacional.
 - [x] Reduzir a fila OCR para um nivel compativel com tempo real.
 - [x] Gatear OCR para rodar apenas apos capturar um veiculo candidato.
 - [x] Exibir carros detectados mesmo quando a placa nao for reconhecida.
-- [ ] Criar pagina historica de veiculos com frame, data/hora e camera.
-- [ ] Adicionar filtros por tipo de veiculo, camera e periodo na pagina historica.
+- [x] Criar pagina historica de veiculos com frame, data/hora e camera.
+- [x] Adicionar filtros por tipo de veiculo, camera e periodo na pagina historica.
 
 ### Critérios de aceite da fase
 

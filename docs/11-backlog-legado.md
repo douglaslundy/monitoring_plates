@@ -14,7 +14,7 @@ Este arquivo concentra as pendencias antigas que nao fazem parte da entrega prin
 - [x] Ajustar `pytest-asyncio` para loop scope explicito
 - [x] Neutralizar cache provider do pytest no ambiente de teste
 - [ ] Acompanhar deprecations upstream de `fastapi`, `starlette`, `pytest-asyncio` e `python-jose`
-- [ ] Revisar fixtures legadas que ainda dependem de estado compartilhado
+- [x] Revisar fixtures legadas que ainda dependem de estado compartilhado
 
 ## Falhas legadas ja identificadas
 
