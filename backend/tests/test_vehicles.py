@@ -280,3 +280,54 @@ def test_process_frame_ignora_frame_repetido(db, camera_agent_a):
         assert mock_recognizer.recognize.call_count == 1
     finally:
         worker_db.close()
+
+
+def test_process_frame_nao_duplica_veiculo_parado(db, camera_agent_a):
+    from app.core.database import SessionLocal
+    from app.workers import frame_processor
+    from app.models.vehicle_event import VehicleEvent
+
+    frame_one = _make_vehicle_image()
+    frame_two = _make_vehicle_image()
+
+    fake_detection = MagicMock()
+    fake_detection.crop_bytes = b"vehicle-crop"
+    fake_detection.vehicle_type = "truck"
+    fake_detection.confidence = 0.91
+    fake_detection.bbox_x = 10
+    fake_detection.bbox_y = 20
+    fake_detection.bbox_w = 100
+    fake_detection.bbox_h = 80
+
+    mock_query = patch("app.services.vehicle_detection_service.vehicle_detector.best_detection", return_value=fake_detection)
+    mock_recognizer = patch("app.services.ocr_service.recognizer.recognize", return_value=None)
+    fake_cache_state: dict[str, str] = {}
+
+    class FakeRedis:
+        def get(self, key: str):
+            return fake_cache_state.get(key)
+
+        def set(self, key: str, value: str, ex: int | None = None, nx: bool = False):
+            fake_cache_state[key] = value
+            return True
+
+    worker_db = SessionLocal()
+    try:
+        with (
+            patch("app.core.database.SessionLocal", return_value=worker_db),
+            mock_query,
+            mock_recognizer,
+            patch("redis.from_url", return_value=FakeRedis()),
+            patch("app.services.preview_telemetry_service.record_preview_frame"),
+            patch("app.services.image_quality_service.record_image_quality"),
+            patch("app.services.ocr_pipeline_metrics_service.record_ocr_pipeline_metrics"),
+            patch("app.services.ocr_pipeline_alert_service.maybe_publish_ocr_pipeline_alert"),
+            patch("app.services.camera_health_alert_service.maybe_publish_camera_health_alert"),
+            patch("app.services.worker_delay_alert_service.maybe_publish_worker_delay_alert"),
+        ):
+            frame_processor.process_frame.run(str(camera_agent_a.id), __import__("base64").b64encode(frame_one).decode())
+            frame_processor.process_frame.run(str(camera_agent_a.id), __import__("base64").b64encode(frame_two).decode())
+
+        assert db.query(VehicleEvent).count() == 1
+    finally:
+        worker_db.close()

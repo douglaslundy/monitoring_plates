@@ -1,5 +1,35 @@
 from app.core.config import settings
 
+
+def _vehicle_box_iou(current: dict[str, int], previous: dict[str, int]) -> float:
+    current_x1 = current["bbox_x"]
+    current_y1 = current["bbox_y"]
+    current_x2 = current_x1 + current["bbox_w"]
+    current_y2 = current_y1 + current["bbox_h"]
+
+    previous_x1 = previous["bbox_x"]
+    previous_y1 = previous["bbox_y"]
+    previous_x2 = previous_x1 + previous["bbox_w"]
+    previous_y2 = previous_y1 + previous["bbox_h"]
+
+    inter_x1 = max(current_x1, previous_x1)
+    inter_y1 = max(current_y1, previous_y1)
+    inter_x2 = min(current_x2, previous_x2)
+    inter_y2 = min(current_y2, previous_y2)
+
+    inter_w = max(0, inter_x2 - inter_x1)
+    inter_h = max(0, inter_y2 - inter_y1)
+    intersection = inter_w * inter_h
+    if intersection <= 0:
+        return 0.0
+
+    current_area = current["bbox_w"] * current["bbox_h"]
+    previous_area = previous["bbox_w"] * previous["bbox_h"]
+    union = current_area + previous_area - intersection
+    if union <= 0:
+        return 0.0
+    return intersection / union
+
 try:
     from celery import Celery
 
@@ -11,6 +41,7 @@ try:
     @celery_app.task(name="app.workers.frame_processor.process_frame")
     def process_frame(camera_id: str, frame_b64: str) -> None:
         import base64
+        import json
         import hashlib
         import logging
         import uuid
@@ -99,9 +130,43 @@ try:
                     import redis
 
                     cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
-                    sig = f"{camera.id}:{vehicle.vehicle_type}:{round(vehicle.bbox_x / 25) * 25}:{round(vehicle.bbox_y / 25) * 25}:{round(vehicle.bbox_w / 25) * 25}:{round(vehicle.bbox_h / 25) * 25}"
-                    cache_key = f"vehicle-event:{sig}"
-                    acquired = cache.set(cache_key, "1", nx=True, ex=12)
+                    current_box = {
+                        "bbox_x": int(vehicle.bbox_x),
+                        "bbox_y": int(vehicle.bbox_y),
+                        "bbox_w": int(vehicle.bbox_w),
+                        "bbox_h": int(vehicle.bbox_h),
+                    }
+                    track_key = f"vehicle-track:{camera.id}"
+                    now_ts = datetime.now(timezone.utc).timestamp()
+                    acquired = True
+                    raw_track = cache.get(track_key)
+                    if raw_track:
+                        try:
+                            track = json.loads(raw_track)
+                        except Exception:
+                            track = {}
+
+                        previous_box = track.get("bbox")
+                        previous_type = track.get("vehicle_type")
+                        previous_seen_at = float(track.get("last_seen_at", 0.0) or 0.0)
+                        if (
+                            previous_box
+                            and previous_type == vehicle.vehicle_type
+                            and now_ts - previous_seen_at <= settings.VEHICLE_EVENT_DEDUP_SECONDS
+                            and _vehicle_box_iou(current_box, previous_box) >= 0.35
+                        ):
+                            acquired = False
+
+                    track_payload = {
+                        "vehicle_type": vehicle.vehicle_type,
+                        "bbox": current_box,
+                        "last_seen_at": now_ts,
+                    }
+                    cache.set(
+                        track_key,
+                        json.dumps(track_payload),
+                        ex=max(settings.VEHICLE_EVENT_DEDUP_SECONDS * 2, 120),
+                    )
                 except Exception as exc:
                     logger.debug("Vehicle dedup cache unavailable: %s", exc)
                     acquired = True

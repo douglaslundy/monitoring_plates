@@ -109,6 +109,7 @@
 - O painel do cliente agora exibe fluxo de veiculos por tipo, por hora e a ultima leitura com confianca.
 - O painel do cliente agora permite exportar os eventos de veiculos para analise externa.
 - O realtime do dashboard agora compartilha uma unica conexao por sessao, com reconexao automatica e mensagem de estado clara.
+- O tracker de veiculos agora evita contagem repetida do mesmo alvo parado em frente a camera.
 - O OCR da VPS conseguiu abrir o motor, mas ainda nao confirmou placa valida no frame amplo.
 - O recorte da placa retornou texto parcial, indicando que a proxima rodada deve focar em recortes menores e preprocessamento seletivo.
 
