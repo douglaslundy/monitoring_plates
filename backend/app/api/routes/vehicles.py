@@ -1,8 +1,11 @@
+import csv
+import io
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -101,4 +104,73 @@ def get_stats(
         top_cameras=top_cameras,
         by_hour=by_hour,
         latest_event=latest_event,
+    )
+
+
+@router.get("/export")
+def export_events(
+    camera_id: Optional[UUID] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    vehicle_type: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    camera_ids = _allowed_camera_ids(db, current_user)
+    q = db.query(VehicleEvent)
+
+    if camera_ids is not None:
+        q = q.filter(VehicleEvent.camera_id.in_(camera_ids))
+    if camera_id is not None:
+        q = q.filter(VehicleEvent.camera_id == camera_id)
+    if date_from is not None:
+        q = q.filter(VehicleEvent.detected_at >= date_from)
+    if date_to is not None:
+        q = q.filter(VehicleEvent.detected_at <= date_to)
+    if vehicle_type:
+        q = q.filter(VehicleEvent.vehicle_type == vehicle_type)
+
+    events = q.order_by(VehicleEvent.detected_at.desc(), VehicleEvent.created_at.desc()).limit(10_000).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "ID",
+            "Camera",
+            "Local",
+            "Tipo",
+            "Confiança (%)",
+            "BBox X",
+            "BBox Y",
+            "BBox W",
+            "BBox H",
+            "Detectado em",
+            "Criado em",
+        ]
+    )
+    for event in events:
+        camera = event.camera
+        writer.writerow(
+            [
+                str(event.id),
+                camera.name if camera else "",
+                camera.location if camera else "",
+                event.vehicle_type,
+                f"{event.confidence * 100:.1f}",
+                event.bbox_x,
+                event.bbox_y,
+                event.bbox_w,
+                event.bbox_h,
+                event.detected_at.isoformat() if event.detected_at else "",
+                event.created_at.isoformat() if event.created_at else "",
+            ]
+        )
+
+    output.seek(0)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="vehicle_events_{ts}.csv"'},
     )

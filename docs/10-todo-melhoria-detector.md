@@ -54,13 +54,13 @@
 - [x] Diminuir inferencia em frames repetidos.
 - [ ] Amostrar frames em cameras de alto volume.
 - [x] Criar configuracao de ROI por camera.
-- [ ] Exportar eventos para analise externa.
+- [x] Exportar eventos para analise externa.
 
 ## Fase 7. Produto e UX
 
 - [x] Melhorar o live para parecer tempo real.
 - [x] Mostrar status do detector por camera.
-- [ ] Mostrar ultima leitura, tipo do veiculo e confianca.
+- [x] Mostrar ultima leitura, tipo do veiculo e confianca.
 - [ ] Adicionar graficos de fluxo por hora.
 - [x] Adicionar painel de saude operacional.
 
@@ -82,6 +82,7 @@
 - O sistema agora emite alerta realtime quando a taxa de OCR fica abaixo do esperado.
 - O backend agora publica alerta de worker atrasado quando a fila OCR acumula acima do limite configurado.
 - O painel do cliente agora exibe fluxo de veiculos por tipo, por hora e a ultima leitura com confianca.
+- O painel do cliente agora permite exportar os eventos de veiculos para analise externa.
 
 ## Fase 8. Validacao final
 

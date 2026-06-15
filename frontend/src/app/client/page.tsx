@@ -60,6 +60,8 @@ export default function ClientDashboard() {
   const [feed, setFeed] = useState<OccurrenceWithCamera[]>([]);
   const [cameras, setCameras] = useState<CameraType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportingVehicles, setExportingVehicles] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   const { lastAlert, isConnected } = useWebSocket(user?.client_id ?? null);
 
@@ -79,6 +81,27 @@ export default function ClientDashboard() {
       /* silently ignore */
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const handleExportVehicles = useCallback(async () => {
+    setExportingVehicles(true);
+    setExportError("");
+    try {
+      const response = await api.get<Blob>("/api/vehicles/export", { responseType: "blob" });
+      const blob = new Blob([response.data], { type: "text/csv;charset=utf-8" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `vehicle_events_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setExportError("Nao foi possivel exportar os eventos agora.");
+    } finally {
+      setExportingVehicles(false);
     }
   }, []);
 
@@ -133,6 +156,17 @@ export default function ClientDashboard() {
             {isConnected ? "Tempo real conectado" : "Sem conexão em tempo real"}
           </span>
         </div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => void handleExportVehicles()}
+          disabled={exportingVehicles}
+          className="rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-60"
+        >
+          {exportingVehicles ? "Exportando..." : "Exportar eventos"}
+        </button>
+        {exportError && <p className="text-sm text-red-600">{exportError}</p>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

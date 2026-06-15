@@ -1,3 +1,4 @@
+import csv
 import io
 import uuid
 from datetime import datetime, timezone
@@ -121,6 +122,77 @@ def test_vehicle_stats_endpoint_conta_por_tipo(client, db):
     assert data["latest_event"] is not None
     assert data["latest_event"]["camera_name"] == camera.name
     assert data["latest_event"]["vehicle_type"] in {"car", "motorcycle"}
+
+
+def test_vehicle_export_endpoint_retorna_csv(client, db):
+    from app.models.vehicle_event import VehicleEvent
+
+    suffix = uuid.uuid4().hex[:8]
+    plan = Plan(
+        name=f"Plano-{suffix}",
+        max_cameras=3,
+        retention_days=30,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=99.90,
+        is_active=True,
+    )
+    db.add(plan)
+    db.flush()
+
+    tenant = Client(
+        name=f"Cliente-{suffix}",
+        email=f"cliente-{suffix}@test.com",
+        plan_id=plan.id,
+        is_active=True,
+    )
+    db.add(tenant)
+    db.flush()
+
+    camera = Camera(
+        client_id=tenant.id,
+        name=f"Cam-{suffix}",
+        location="Entrada",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://test/stream",
+        is_active=True,
+    )
+    db.add(camera)
+    db.flush()
+
+    super_admin = User(
+        email=f"sa-export-{suffix}@sistema.com",
+        name="Super Admin",
+        password_hash=hash_password("Admin@123"),
+        role=UserRole.super_admin,
+        is_active=True,
+    )
+    db.add(super_admin)
+    db.add(
+        VehicleEvent(
+            camera_id=camera.id,
+            vehicle_type="truck",
+            confidence=0.88,
+            bbox_x=15,
+            bbox_y=25,
+            bbox_w=120,
+            bbox_h=90,
+            detected_at=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
+
+    r = client.get("/api/vehicles/export", headers=_auth_header(super_admin))
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+    assert "vehicle_events_" in r.headers["content-disposition"]
+
+    reader = csv.DictReader(io.StringIO(r.text))
+    rows = list(reader)
+    assert len(rows) == 1
+    assert rows[0]["Camera"] == camera.name
+    assert rows[0]["Tipo"] == "truck"
+    assert rows[0]["Confiança (%)"] == "88.0"
 
 
 def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
