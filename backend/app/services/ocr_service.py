@@ -51,11 +51,28 @@ class EasyOcrEngine:
             candidates.append(np.repeat(np.repeat(image, 2, axis=0), 2, axis=1))
 
         for candidate in candidates:
-            result = self._extract_plate(reader.readtext(candidate), t0)
+            result = self._extract_plate(reader.readtext(candidate, **self._readtext_kwargs(candidate)), t0)
             if result is not None:
                 return result
 
         return None
+
+    def _readtext_kwargs(self, candidate) -> dict[str, object]:
+        allowlist = settings.OCR_ALLOWLIST.strip()
+        if not allowlist:
+            return {}
+
+        shape = getattr(candidate, "shape", None)
+        if not shape or len(shape) < 2:
+            return {"allowlist": allowlist}
+
+        height = int(shape[0])
+        width = int(shape[1])
+        aspect_ratio = width / max(height, 1)
+        if width >= 80 and 2.0 <= aspect_ratio <= 7.5:
+            return {"allowlist": allowlist}
+
+        return {}
 
     def _extract_plate(self, results, started_at: float) -> Optional[dict]:
         for _, text, confidence in results:

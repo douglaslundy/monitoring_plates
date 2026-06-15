@@ -179,6 +179,18 @@ def test_normalize_remove_caracteres_especiais(fresh_recognizer):
     assert result["plate"] == "ABC1234"
 
 
+def test_allowlist_e_passada_para_recortes_de_placa(fresh_recognizer):
+    """Recortes candidatos devem restringir caracteres ao alfabeto de placas."""
+    patches = _build_sys_patches([(None, "ABC1234", 0.95)])
+    with patch.dict(sys.modules, patches):
+        result = fresh_recognizer.recognize(_make_jpeg("ABC1234"))
+
+    assert result is not None
+    mock_reader = patches["easyocr"].Reader.return_value
+    assert mock_reader.readtext.called
+    assert mock_reader.readtext.call_args.kwargs["allowlist"] == "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+
 # ── Deduplication test ────────────────────────────────────────────────────────
 
 
