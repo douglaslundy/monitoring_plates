@@ -13,6 +13,13 @@ from datetime import datetime, timezone, timedelta
 import pytest
 from PIL import Image
 
+from app.core.security import hash_password
+from app.models.camera import Camera, ConnectionType
+from app.models.client import Client
+from app.models.occurrence import Occurrence
+from app.models.plan import Plan
+from app.models.user import User, UserRole
+
 
 # ── email_service ─────────────────────────────────────────────────────────────
 
@@ -1149,3 +1156,157 @@ def test_operational_metrics_degraded_detail_explains_causa(monkeypatch, db):
     assert "fila OCR" in metrics.operational_status_detail
     assert "taxa de sucesso do OCR" in metrics.operational_status_detail
     assert "baixa qualidade" in metrics.operational_status_detail
+
+
+def test_warm_worker_models_chama_warmup_do_ocr(monkeypatch):
+    from app.workers import frame_processor
+    import importlib
+
+    warmup_called = {"value": False}
+
+    def fake_warm_ocr_models() -> None:
+        warmup_called["value"] = True
+
+    monkeypatch.setattr("app.services.ocr_service.warm_ocr_models", fake_warm_ocr_models)
+    importlib.reload(frame_processor)
+    frame_processor.warm_worker_models()
+
+    assert warmup_called["value"] is True
+
+
+def test_high_volume_sampling_respeita_piloto(monkeypatch, db):
+    from app.core.database import engine
+    from sqlalchemy.orm import sessionmaker
+    from app.models.plan import Plan
+    from app.models.client import Client
+    from app.models.camera import Camera, ConnectionType
+    from app.models.user import User, UserRole
+    from app.workers import frame_processor
+    import importlib
+    import base64
+
+    plan = Plan(
+        name="Sampling",
+        max_cameras=1,
+        retention_days=30,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=0,
+        is_active=True,
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+
+    tenant = Client(name="Tenant Sampling", email="sample@test.com", plan_id=plan.id, is_active=True)
+    db.add(tenant)
+    db.commit()
+    db.refresh(tenant)
+
+    camera = Camera(
+        client_id=tenant.id,
+        name="High Volume",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://example/stream",
+        is_active=True,
+    )
+    db.add(camera)
+    db.commit()
+    db.refresh(camera)
+
+    admin = User(
+        email="sampling@test.com",
+        name="Admin",
+        password_hash=hash_password("Admin@123"),
+        role=UserRole.super_admin,
+        is_active=True,
+    )
+    db.add(admin)
+    db.commit()
+
+    mock_recognizer = MagicMock()
+    mock_recognizer.recognize.return_value = {"plate": "ABC1234", "confidence": 0.95}
+    mock_vehicle_detector = MagicMock()
+    mock_detection = MagicMock()
+    mock_detection.crop_bytes = b"vehicle-crop"
+    mock_detection.vehicle_type = "car"
+    mock_detection.confidence = 0.9
+    mock_detection.bbox_x = 10
+    mock_detection.bbox_y = 20
+    mock_detection.bbox_w = 100
+    mock_detection.bbox_h = 80
+    mock_vehicle_detector.best_detection.return_value = mock_detection
+
+    fake_store: dict[str, int] = {"calls": 0}
+
+    class FakeRedis:
+        def get(self, key: str):
+            if key.endswith(":last-digest"):
+                return None
+            return fake_store.get(key)
+
+        def set(self, key: str, value: str, ex: int | None = None, nx: bool = False):
+            fake_store[key] = fake_store.get(key, 0) + 1
+            return True
+
+        def incr(self, key: str):
+            fake_store[key] = fake_store.get(key, 0) + 1
+            return fake_store[key]
+
+        def expire(self, key: str, ttl: int):
+            return True
+
+        def pipeline(self):
+            return self
+
+        def zadd(self, key: str, values: dict[str, float]):
+            return self
+
+        def zremrangebyscore(self, key: str, min_score: float, max_score: float):
+            return self
+
+        def zcard(self, key: str):
+            return 30
+
+        def zrevrange(self, key: str, start: int, end: int, withscores: bool = False):
+            return [("x", 1.0)]
+
+        def hgetall(self, key: str):
+            return {}
+
+        def hset(self, key: str, mapping: dict[str, object]):
+            return True
+
+        def hincrby(self, key: str, field: str, amount: int = 1):
+            return 1
+
+        def hincrbyfloat(self, key: str, field: str, amount: float):
+            return 1.0
+
+        def execute(self):
+            return []
+
+    worker_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    monkeypatch.setattr(frame_processor, "_is_pilot_camera", lambda _camera_id: False)
+    monkeypatch.setattr(frame_processor.settings, "HIGH_VOLUME_PREVIEW_FPS_THRESHOLD", 18)
+    monkeypatch.setattr(frame_processor.settings, "HIGH_VOLUME_SAMPLE_EVERY", 3)
+
+    with (
+        patch("app.core.database.SessionLocal", worker_session),
+        patch("app.services.ocr_service.recognizer", mock_recognizer),
+        patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector),
+        patch("app.services.storage_service.save_bytes", return_value="cameras/test/sample.jpg"),
+        patch("app.services.alert_service.process_alerts"),
+        patch("app.services.preview_telemetry_service.get_preview_telemetry", return_value=type("T", (), {"preview_frames_last_minute": 30, "preview_status": "streaming", "preview_fps": 2.0, "preview_last_frame_at": 1.0, "preview_latency_seconds": 1.0})()),
+        patch("app.services.preview_telemetry_service._redis_client", return_value=FakeRedis()),
+        patch("app.services.image_quality_service._redis_client", return_value=FakeRedis()),
+        patch("app.services.ocr_pipeline_metrics_service._redis_client", return_value=FakeRedis()),
+        patch("app.services.ocr_pipeline_alert_service._redis_client", return_value=FakeRedis()),
+        patch("app.services.worker_delay_alert_service._redis_client", return_value=FakeRedis()),
+        patch("redis.from_url", return_value=FakeRedis()),
+    ):
+        frame_processor.process_frame(str(camera.id), base64.b64encode(b"fake_frame").decode())
+        frame_processor.process_frame(str(camera.id), base64.b64encode(b"fake_frame").decode())
+        frame_processor.process_frame(str(camera.id), base64.b64encode(b"fake_frame").decode())
+
+    assert mock_vehicle_detector.best_detection.call_count == 1

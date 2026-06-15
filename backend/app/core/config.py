@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     AGENT_MIN_CONFIDENCE: float = 0.70
     AGENT_DEDUP_SECONDS: int = 30
     VEHICLE_EVENT_DEDUP_SECONDS: int = 45
+    PILOT_CAMERA_IDS: str = ""
+    HIGH_VOLUME_PREVIEW_FPS_THRESHOLD: int = 18
+    HIGH_VOLUME_SAMPLE_EVERY: int = 3
     WORKER_DELAY_QUEUE_THRESHOLD: int = 20
     WORKER_DELAY_ALERT_COOLDOWN_SECONDS: int = 300
     OCR_PIPELINE_ALERT_COOLDOWN_SECONDS: int = 300
@@ -34,6 +37,9 @@ class Settings(BaseSettings):
 
     def get_cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+
+    def get_pilot_camera_ids(self) -> List[str]:
+        return [camera_id.strip() for camera_id in self.PILOT_CAMERA_IDS.split(",") if camera_id.strip()]
 
 
 settings = Settings()

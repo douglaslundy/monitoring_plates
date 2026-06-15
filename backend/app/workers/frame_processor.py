@@ -30,6 +30,37 @@ def _vehicle_box_iou(current: dict[str, int], previous: dict[str, int]) -> float
         return 0.0
     return intersection / union
 
+
+def _is_pilot_camera(camera_id: str) -> bool:
+    return camera_id in settings.get_pilot_camera_ids()
+
+
+def _should_sample_high_volume_frame(camera_id: str, preview_frames_last_minute: int) -> bool:
+    if _is_pilot_camera(camera_id):
+        return True
+    if preview_frames_last_minute < settings.HIGH_VOLUME_PREVIEW_FPS_THRESHOLD:
+        return True
+    sample_every = max(1, settings.HIGH_VOLUME_SAMPLE_EVERY)
+    try:
+        import redis
+
+        cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        counter_key = f"camera-frame:{camera_id}:sample-seq"
+        counter = int(cache.incr(counter_key))
+        cache.expire(counter_key, 300)
+        return counter % sample_every == 0
+    except Exception:
+        return True
+
+
+def warm_worker_models() -> None:
+    try:
+        from app.services.ocr_service import warm_ocr_models
+
+        warm_ocr_models()
+    except Exception:
+        pass
+
 try:
     from celery import Celery
 
@@ -37,6 +68,10 @@ try:
         "frame_processor", broker=settings.REDIS_URL, backend=settings.REDIS_URL
     )
     celery_app.conf.task_routes = {"app.workers.frame_processor.*": {"queue": "frames"}}
+
+    @celery_app.on_after_configure.connect
+    def _warm_up_worker_models(*_args, **_kwargs) -> None:
+        warm_worker_models()
 
     @celery_app.task(name="app.workers.frame_processor.process_frame")
     def process_frame(camera_id: str, frame_b64: str) -> None:
@@ -63,6 +98,7 @@ try:
         from app.services.ocr_pipeline_alert_service import maybe_publish_ocr_pipeline_alert
         from app.services.camera_health_alert_service import maybe_publish_camera_health_alert
         from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
+        from app.services.preview_telemetry_service import get_preview_telemetry
 
         logger = logging.getLogger(__name__)
         frame_bytes = base64.b64decode(frame_b64)
@@ -86,6 +122,16 @@ try:
 
             record_preview_frame(str(camera.id))
             record_image_quality(str(camera.id), analysis_bytes)
+            preview_telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
+            if not _should_sample_high_volume_frame(str(camera.id), preview_telemetry.preview_frames_last_minute):
+                logger.debug(
+                    "High-volume frame sampled camera=%s frames_last_minute=%s",
+                    camera.id,
+                    preview_telemetry.preview_frames_last_minute,
+                )
+                maybe_publish_camera_health_alert(camera)
+                maybe_publish_worker_delay_alert(db)
+                return
 
             try:
                 import redis

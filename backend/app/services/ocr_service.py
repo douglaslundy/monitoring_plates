@@ -51,7 +51,8 @@ class EasyOcrEngine:
             candidates.append(np.repeat(np.repeat(image, 2, axis=0), 2, axis=1))
 
         for candidate in candidates:
-            result = self._extract_plate(reader.readtext(candidate, **self._readtext_kwargs(candidate)), t0)
+            readtext_kwargs = self._readtext_kwargs(candidate)
+            result = self._extract_plate(reader.readtext(candidate, **readtext_kwargs), t0)
             if result is not None:
                 return result
 
@@ -62,6 +63,10 @@ class EasyOcrEngine:
         if not allowlist:
             return {}
 
+        score = self._candidate_quality_score(candidate)
+        if score < 0.48:
+            return {}
+
         shape = getattr(candidate, "shape", None)
         if not shape or len(shape) < 2:
             return {"allowlist": allowlist}
@@ -69,10 +74,24 @@ class EasyOcrEngine:
         height = int(shape[0])
         width = int(shape[1])
         aspect_ratio = width / max(height, 1)
-        if width >= 80 and 2.0 <= aspect_ratio <= 7.5:
+        if width >= 64 and 2.0 <= aspect_ratio <= 7.8:
             return {"allowlist": allowlist}
 
         return {}
+
+    def _candidate_quality_score(self, candidate) -> float:
+        shape = getattr(candidate, "shape", None)
+        if not shape or len(shape) < 2:
+            return 0.0
+
+        height = max(1, int(shape[0]))
+        width = max(1, int(shape[1]))
+        aspect_ratio = width / height
+        size_score = min(1.0, (width * height) / 60000.0)
+        aspect_score = 1.0 - min(1.0, abs(aspect_ratio - 4.0) / 4.0)
+        if width < 64 or height < 18:
+            return round(max(0.0, (size_score * 0.4) + (aspect_score * 0.6) - 0.2), 3)
+        return round(max(0.0, (size_score * 0.45) + (aspect_score * 0.55)), 3)
 
     def _extract_plate(self, results, started_at: float) -> Optional[dict]:
         for _, text, confidence in results:
@@ -124,6 +143,8 @@ class EasyOcrEngine:
             image[int(h * 0.2) : int(h * 0.85), int(w * 0.1) : int(w * 0.95)],
             image[int(h * 0.45) : int(h * 0.9), int(w * 0.05) : int(w * 0.7)],
             image[int(h * 0.3) : int(h * 0.8), int(w * 0.2) : int(w * 0.95)],
+            image[int(h * 0.55) : int(h * 0.82), int(w * 0.18) : int(w * 0.82)],
+            image[int(h * 0.62) : int(h * 0.88), int(w * 0.22) : int(w * 0.78)],
         ]
         for crop in crops:
             add(crop)
@@ -132,6 +153,12 @@ class EasyOcrEngine:
         add(np.repeat(np.repeat(image, 3, axis=0), 3, axis=1))
 
         return candidates
+
+    def warmup(self) -> None:
+        try:
+            self._get_reader()
+        except Exception:
+            return
 
     def _decode_image(self, image_bytes: bytes):
         import numpy as np
@@ -202,6 +229,10 @@ class PlateRecognizer(EasyOcrEngine):
     """Backward-compatible alias kept for tests and older imports."""
 
     pass
+
+
+def warm_ocr_models() -> None:
+    _easyocr_engine.warmup()
 
 
 # ─── Plate Recognizer ─────────────────────────────────────────────────────────
