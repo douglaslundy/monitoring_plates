@@ -53,6 +53,14 @@ class CameraRead(CameraBase):
     detector_status: str = "offline"
     detector_health_score: float = 0.0
     detector_status_detail: str = ""
+    ocr_pipeline_status: str = "idle"
+    ocr_pipeline_health_score: float = 0.0
+    ocr_pipeline_status_detail: str = ""
+    ocr_attempts: int = 0
+    ocr_success_rate: Optional[float] = None
+    ocr_false_positive_rate: Optional[float] = None
+    avg_ocr_seconds: Optional[float] = None
+    last_attempt_at: Optional[datetime] = None
     quality_score: float = 0.0
     quality_label: str = "unknown"
     blur_score: float = 0.0

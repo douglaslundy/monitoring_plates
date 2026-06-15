@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.models.camera import Camera
 from app.models.user import User, UserRole
 from app.services.detector_health_service import build_detector_health
+from app.services.ocr_pipeline_health_service import build_ocr_pipeline_health
 from app.services.ocr_pipeline_metrics_service import get_ocr_pipeline_metrics
 from app.services.image_quality_service import get_image_quality
 from app.services.preview_telemetry_service import get_preview_telemetry
@@ -31,6 +32,12 @@ class OperationalMetrics:
     avg_persistence_seconds: float | None
     avg_ocr_success_rate: float | None
     avg_ocr_false_positive_rate: float | None
+    ocr_pipeline_healthy_cameras: int
+    ocr_pipeline_warning_cameras: int
+    ocr_pipeline_degraded_cameras: int
+    ocr_pipeline_idle_cameras: int
+    ocr_pipeline_status: str
+    ocr_pipeline_status_detail: str
     queue_depth: int
     operational_status: str
     operational_status_detail: str
@@ -50,6 +57,12 @@ class OperationalMetrics:
             "avg_persistence_seconds": self.avg_persistence_seconds,
             "avg_ocr_success_rate": self.avg_ocr_success_rate,
             "avg_ocr_false_positive_rate": self.avg_ocr_false_positive_rate,
+            "ocr_pipeline_healthy_cameras": self.ocr_pipeline_healthy_cameras,
+            "ocr_pipeline_warning_cameras": self.ocr_pipeline_warning_cameras,
+            "ocr_pipeline_degraded_cameras": self.ocr_pipeline_degraded_cameras,
+            "ocr_pipeline_idle_cameras": self.ocr_pipeline_idle_cameras,
+            "ocr_pipeline_status": self.ocr_pipeline_status,
+            "ocr_pipeline_status_detail": self.ocr_pipeline_status_detail,
             "queue_depth": self.queue_depth,
             "operational_status": self.operational_status,
             "operational_status_detail": self.operational_status_detail,
@@ -110,6 +123,12 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
             avg_persistence_seconds=None,
             avg_ocr_success_rate=None,
             avg_ocr_false_positive_rate=None,
+            ocr_pipeline_healthy_cameras=0,
+            ocr_pipeline_warning_cameras=0,
+            ocr_pipeline_degraded_cameras=0,
+            ocr_pipeline_idle_cameras=0,
+            ocr_pipeline_status="empty",
+            ocr_pipeline_status_detail="Nenhuma camera disponivel para avaliacao do OCR.",
             queue_depth=_queue_depth(),
             operational_status="empty",
             operational_status_detail="Nenhuma camera disponivel para analise.",
@@ -130,11 +149,16 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
     total_capture_seconds = 0.0
     total_ocr_seconds = 0.0
     total_persistence_seconds = 0.0
+    ocr_pipeline_healthy_cameras = 0
+    ocr_pipeline_warning_cameras = 0
+    ocr_pipeline_degraded_cameras = 0
+    ocr_pipeline_idle_cameras = 0
 
     for camera in cameras:
         telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
         quality = get_image_quality(str(camera.id))
         ocr_metrics = get_ocr_pipeline_metrics(str(camera.id))
+        ocr_health = build_ocr_pipeline_health(ocr_metrics)
         health = build_detector_health(camera.is_online, telemetry, quality)
 
         if camera.is_online:
@@ -145,6 +169,14 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
             degraded_cameras += 1
         if quality.quality_label in {"fair", "poor"}:
             low_quality_cameras += 1
+        if ocr_health.ocr_pipeline_status == "healthy":
+            ocr_pipeline_healthy_cameras += 1
+        elif ocr_health.ocr_pipeline_status == "warning":
+            ocr_pipeline_warning_cameras += 1
+        elif ocr_health.ocr_pipeline_status == "degraded":
+            ocr_pipeline_degraded_cameras += 1
+        else:
+            ocr_pipeline_idle_cameras += 1
 
         fps_values.append(telemetry.preview_fps)
         if telemetry.preview_latency_seconds is not None:
@@ -175,6 +207,18 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
     avg_ocr_false_positive_rate = (
         round(ocr_false_positives_total / ocr_attempts_total, 3) if ocr_attempts_total else None
     )
+
+    ocr_pipeline_status = "healthy"
+    ocr_pipeline_status_detail = "Pipeline OCR sem alertas."
+    if ocr_pipeline_degraded_cameras > 0:
+        ocr_pipeline_status = "degraded"
+        ocr_pipeline_status_detail = "Ha cameras com OCR degradado."
+    elif ocr_pipeline_warning_cameras > 0:
+        ocr_pipeline_status = "warning"
+        ocr_pipeline_status_detail = "Ha cameras com OCR em atencao."
+    elif ocr_pipeline_idle_cameras == len(cameras):
+        ocr_pipeline_status = "idle"
+        ocr_pipeline_status_detail = "Ainda nao ha leituras suficientes do OCR."
 
     operational_status = "healthy"
     operational_status_detail = "Operacao dentro do esperado."
@@ -207,6 +251,12 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
         avg_persistence_seconds=avg_persistence_seconds,
         avg_ocr_success_rate=avg_ocr_success_rate,
         avg_ocr_false_positive_rate=avg_ocr_false_positive_rate,
+        ocr_pipeline_healthy_cameras=ocr_pipeline_healthy_cameras,
+        ocr_pipeline_warning_cameras=ocr_pipeline_warning_cameras,
+        ocr_pipeline_degraded_cameras=ocr_pipeline_degraded_cameras,
+        ocr_pipeline_idle_cameras=ocr_pipeline_idle_cameras,
+        ocr_pipeline_status=ocr_pipeline_status,
+        ocr_pipeline_status_detail=ocr_pipeline_status_detail,
         queue_depth=queue_depth,
         operational_status=operational_status,
         operational_status_detail=operational_status_detail,

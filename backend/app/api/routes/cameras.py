@@ -17,6 +17,8 @@ from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDet
 from app.services.camera_service import generate_agent_token, capture_rtsp_frame, crop_half_frame
 from app.services.storage_service import get_url, latest_frame_exists, read_file_bytes, save_latest_frame
 from app.services.detector_health_service import build_detector_health
+from app.services.ocr_pipeline_health_service import build_ocr_pipeline_health
+from app.services.ocr_pipeline_metrics_service import get_ocr_pipeline_metrics
 from app.services.preview_telemetry_service import get_preview_telemetry, record_preview_frame
 from app.services.image_quality_service import get_image_quality, record_image_quality
 from app.services.camera_health_alert_service import maybe_publish_camera_health_alert
@@ -46,14 +48,21 @@ def _get_camera_or_403(camera_id: UUID, current_user: User, db: Session) -> Came
 def _serialize_camera(camera: Camera) -> dict:
     telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
     quality = get_image_quality(str(camera.id))
+    ocr_metrics = get_ocr_pipeline_metrics(str(camera.id))
+    ocr_health = build_ocr_pipeline_health(ocr_metrics)
     detector_health = build_detector_health(camera.is_online, telemetry, quality)
     payload = CameraRead.model_validate(camera).model_dump()
     payload.update(telemetry.as_dict())
+    payload.update(ocr_health.as_dict())
     payload.update(quality.as_dict())
     payload.update(detector_health.as_dict())
     if telemetry.preview_last_frame_at is not None:
         payload["preview_last_frame_at"] = datetime.fromtimestamp(
             telemetry.preview_last_frame_at, tz=timezone.utc
+        )
+    if ocr_health.last_attempt_at is not None:
+        payload["last_attempt_at"] = datetime.fromtimestamp(
+            ocr_health.last_attempt_at, tz=timezone.utc
         )
     return payload
 

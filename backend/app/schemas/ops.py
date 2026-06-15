@@ -19,6 +19,12 @@ class OpsMetricsRead(BaseModel):
     avg_persistence_seconds: float | None
     avg_ocr_success_rate: float | None
     avg_ocr_false_positive_rate: float | None
+    ocr_pipeline_healthy_cameras: int
+    ocr_pipeline_warning_cameras: int
+    ocr_pipeline_degraded_cameras: int
+    ocr_pipeline_idle_cameras: int
+    ocr_pipeline_status: str
+    ocr_pipeline_status_detail: str
     queue_depth: int
     operational_status: str
     operational_status_detail: str

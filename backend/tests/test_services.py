@@ -628,6 +628,76 @@ def test_ocr_pipeline_metrics_record_and_read(monkeypatch):
     assert metrics.ocr_false_positive_rate == 0.5
 
 
+def test_ocr_pipeline_health_classifica_estado(monkeypatch):
+    """OCR pipeline health should classify idle, warning and degraded states."""
+    from app.services import ocr_pipeline_health_service as health_service
+    from app.services.ocr_pipeline_metrics_service import OcrPipelineMetrics
+
+    monkeypatch.setattr(health_service, "time", lambda: 1000.0)
+
+    idle = health_service.build_ocr_pipeline_health(
+        OcrPipelineMetrics(
+            capture_attempts=0,
+            capture_successes=0,
+            capture_failures=0,
+            ocr_attempts=0,
+            ocr_successes=0,
+            ocr_failures=0,
+            ocr_false_positives=0,
+            persistence_attempts=0,
+            avg_capture_seconds=None,
+            avg_ocr_seconds=None,
+            avg_persistence_seconds=None,
+            capture_success_rate=None,
+            ocr_success_rate=None,
+            ocr_false_positive_rate=None,
+            last_attempt_at=None,
+        )
+    )
+    warning = health_service.build_ocr_pipeline_health(
+        OcrPipelineMetrics(
+            capture_attempts=3,
+            capture_successes=3,
+            capture_failures=0,
+            ocr_attempts=3,
+            ocr_successes=2,
+            ocr_failures=1,
+            ocr_false_positives=1,
+            persistence_attempts=2,
+            avg_capture_seconds=0.2,
+            avg_ocr_seconds=1.2,
+            avg_persistence_seconds=0.1,
+            capture_success_rate=1.0,
+            ocr_success_rate=0.67,
+            ocr_false_positive_rate=0.33,
+            last_attempt_at=995.0,
+        )
+    )
+    degraded = health_service.build_ocr_pipeline_health(
+        OcrPipelineMetrics(
+            capture_attempts=5,
+            capture_successes=4,
+            capture_failures=1,
+            ocr_attempts=5,
+            ocr_successes=1,
+            ocr_failures=4,
+            ocr_false_positives=2,
+            persistence_attempts=1,
+            avg_capture_seconds=0.4,
+            avg_ocr_seconds=3.0,
+            avg_persistence_seconds=0.2,
+            capture_success_rate=0.8,
+            ocr_success_rate=0.2,
+            ocr_false_positive_rate=0.4,
+            last_attempt_at=999.0,
+        )
+    )
+
+    assert idle.ocr_pipeline_status == "idle"
+    assert warning.ocr_pipeline_status == "warning"
+    assert degraded.ocr_pipeline_status == "degraded"
+
+
 def test_detector_health_reflete_status_e_qualidade():
     """Detector health should combine preview and image quality into one status."""
     from app.services.detector_health_service import build_detector_health
@@ -865,7 +935,7 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
             capture_success_rate=0.917,
             ocr_success_rate=0.7,
             ocr_false_positive_rate=0.1,
-            last_attempt_at=1234.0,
+            last_attempt_at=datetime.now(timezone.utc).timestamp(),
         ),
     )
 
@@ -881,5 +951,10 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
     assert metrics.avg_persistence_seconds == 0.12
     assert metrics.avg_ocr_success_rate == 0.7
     assert metrics.avg_ocr_false_positive_rate == 0.1
+    assert metrics.ocr_pipeline_status == "healthy"
+    assert metrics.ocr_pipeline_healthy_cameras == 1
+    assert metrics.ocr_pipeline_warning_cameras == 0
+    assert metrics.ocr_pipeline_degraded_cameras == 0
+    assert metrics.ocr_pipeline_idle_cameras == 0
     assert metrics.queue_depth == 3
     assert metrics.operational_status == "healthy"

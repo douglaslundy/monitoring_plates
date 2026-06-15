@@ -175,6 +175,22 @@ export default function LiveMonitor({
     return "offline";
   };
 
+  const ocrVariant = (status: Camera["ocr_pipeline_status"] | OperationalMetrics["ocr_pipeline_status"]) => {
+    if (status === "healthy") return "success";
+    if (status === "warning") return "warning";
+    if (status === "degraded") return "danger";
+    if (status === "idle") return "secondary";
+    return "secondary";
+  };
+
+  const ocrLabel = (status: Camera["ocr_pipeline_status"] | OperationalMetrics["ocr_pipeline_status"]) => {
+    if (status === "healthy") return "saudavel";
+    if (status === "warning") return "atencao";
+    if (status === "degraded") return "degradado";
+    if (status === "idle") return "aguardando";
+    return "vazio";
+  };
+
   const operationalVariant = (status: OperationalMetrics["operational_status"]) => {
     if (status === "healthy") return "success";
     if (status === "warning") return "warning";
@@ -261,6 +277,24 @@ export default function LiveMonitor({
       )}
 
       {metrics && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <MetricCard
+            title="Saude OCR"
+            value={ocrLabel(metrics.ocr_pipeline_status)}
+            description={metrics.ocr_pipeline_status_detail}
+            className="col-span-2 lg:col-span-1"
+          />
+          <MetricCard title="OCR saudavel" value={metrics.ocr_pipeline_healthy_cameras} description="cameras" />
+          <MetricCard
+            title="OCR em alerta"
+            value={metrics.ocr_pipeline_warning_cameras + metrics.ocr_pipeline_degraded_cameras}
+            description="cameras"
+          />
+          <MetricCard title="OCR aguardando" value={metrics.ocr_pipeline_idle_cameras} description="sem leitura ainda" />
+        </div>
+      )}
+
+      {metrics && (
         <div className="flex flex-wrap gap-2 mb-6">
           <Badge variant={operationalVariant(metrics.operational_status)}>
             Operacao {operationalLabel(metrics.operational_status)}
@@ -308,6 +342,9 @@ export default function LiveMonitor({
                     </Badge>
                     <Badge variant={detectorVariant(camera.detector_status)}>
                       detector {detectorLabel(camera.detector_status)} ({camera.detector_health_score.toFixed(0)})
+                    </Badge>
+                    <Badge variant={ocrVariant(camera.ocr_pipeline_status)}>
+                      OCR {ocrLabel(camera.ocr_pipeline_status)} ({camera.ocr_pipeline_health_score.toFixed(0)})
                     </Badge>
                     <Badge
                       variant={

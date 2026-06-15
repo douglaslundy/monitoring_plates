@@ -183,6 +183,7 @@ Registrar por camera:
 - taxa de falsos positivos;
 - tamanho da fila;
 - numero de frames descartados.
+- estado do healthcheck do pipeline de OCR.
 
 ## Melhorias de valor agregado
 

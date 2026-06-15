@@ -87,6 +87,14 @@ export interface Camera {
   detector_status: "offline" | "idle" | "healthy" | "warning" | "degraded";
   detector_health_score: number;
   detector_status_detail: string;
+  ocr_pipeline_status: "idle" | "healthy" | "warning" | "degraded";
+  ocr_pipeline_health_score: number;
+  ocr_pipeline_status_detail: string;
+  ocr_attempts: number;
+  ocr_success_rate: number | null;
+  ocr_false_positive_rate: number | null;
+  avg_ocr_seconds: number | null;
+  last_attempt_at: string | null;
   quality_score: number;
   quality_label: "unknown" | "excellent" | "good" | "fair" | "poor";
   blur_score: number;
@@ -230,6 +238,12 @@ export interface OperationalMetrics {
   avg_persistence_seconds: number | null;
   avg_ocr_success_rate: number | null;
   avg_ocr_false_positive_rate: number | null;
+  ocr_pipeline_healthy_cameras: number;
+  ocr_pipeline_warning_cameras: number;
+  ocr_pipeline_degraded_cameras: number;
+  ocr_pipeline_idle_cameras: number;
+  ocr_pipeline_status: "empty" | "idle" | "healthy" | "warning" | "degraded";
+  ocr_pipeline_status_detail: string;
   queue_depth: number;
   operational_status: "empty" | "offline" | "healthy" | "warning" | "degraded";
   operational_status_detail: string;

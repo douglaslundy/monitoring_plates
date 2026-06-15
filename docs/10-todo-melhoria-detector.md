@@ -43,7 +43,7 @@
 ## Fase 5. Telemetria e alertas operacionais
 
 - [x] Expor metricas de fps, latencia e fila.
-- [ ] Criar healthcheck do pipeline de OCR.
+- [x] Criar healthcheck do pipeline de OCR.
 - [x] Alertar quando a camera estiver com baixa qualidade.
 - [x] Alertar quando o worker ficar atrasado.
 - [ ] Alertar quando a taxa de OCR cair abaixo do esperado.
@@ -76,6 +76,7 @@
 - Alertas em tempo real agora disparam quando a camera entra em estado degradado ou com imagem ruim.
 - O painel live agora exibe saude operacional, fila OCR, FPS medio e latencia media.
 - O painel live agora exibe tambem captura media, OCR medio, persistencia media e taxa de sucesso do OCR.
+- O painel live agora exibe tambem o healthcheck do pipeline de OCR por camera e no resumo geral.
 - O backend agora publica alerta de worker atrasado quando a fila OCR acumula acima do limite configurado.
 - O painel do cliente agora exibe fluxo de veiculos por tipo, por hora e a ultima leitura com confianca.
 

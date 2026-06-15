@@ -61,3 +61,4 @@ def test_ops_metrics_endpoint_retorna_resumo_operacional(client, db):
     assert data["total_cameras"] == 1
     assert "queue_depth" in data
     assert "operational_status" in data
+    assert "ocr_pipeline_status" in data

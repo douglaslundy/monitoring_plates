@@ -340,6 +340,7 @@ def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_
     from app.api.routes import cameras as cameras_route
     from app.services.preview_telemetry_service import PreviewTelemetry
     from app.services.image_quality_service import ImageQuality
+    from app.services.ocr_pipeline_metrics_service import OcrPipelineMetrics
 
     admin_token = login(client, "admin@sistema.com")
     client.post(
@@ -372,8 +373,25 @@ def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_
         brightness=54.0,
         contrast=19.0,
     )
+    ocr_metrics = OcrPipelineMetrics(
+        capture_attempts=4,
+        capture_successes=4,
+        capture_failures=0,
+        ocr_attempts=4,
+        ocr_successes=3,
+        ocr_failures=1,
+        ocr_false_positives=0,
+        persistence_attempts=3,
+        avg_capture_seconds=0.18,
+        avg_ocr_seconds=0.42,
+        avg_persistence_seconds=0.11,
+        capture_success_rate=1.0,
+        ocr_success_rate=0.75,
+        ocr_false_positive_rate=0.0,
+        last_attempt_at=datetime.now(timezone.utc).timestamp(),
+    )
 
-    with patch.object(cameras_route, "get_preview_telemetry", return_value=telemetry), patch.object(cameras_route, "get_image_quality", return_value=quality):
+    with patch.object(cameras_route, "get_preview_telemetry", return_value=telemetry), patch.object(cameras_route, "get_image_quality", return_value=quality), patch.object(cameras_route, "get_ocr_pipeline_metrics", return_value=ocr_metrics):
         res = client.get("/api/cameras", headers=auth(admin_token))
 
     assert res.status_code == 200
@@ -382,6 +400,9 @@ def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_
     assert data["preview_frames_last_minute"] == 150
     assert data["preview_latency_seconds"] == 1.5
     assert data["preview_status"] == "streaming"
+    assert data["ocr_pipeline_status"] == "healthy"
+    assert data["ocr_pipeline_health_score"] == 100.0
+    assert data["ocr_attempts"] == 4
     assert data["detector_status"] == "healthy"
     assert data["detector_health_score"] == 100.0
     assert data["quality_score"] == 81.0
