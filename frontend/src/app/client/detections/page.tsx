@@ -150,6 +150,11 @@ export default function VehicleHistoryPage() {
         description="Consulta os eventos com frame, camera, tipo e periodo."
       />
 
+      <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        Esta tela mostra eventos ja persistidos. Uma camera pode estar offline agora e ainda assim existir um caminhão
+        registrado anteriormente no historico.
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard
           title="Hoje"
@@ -334,8 +339,9 @@ export default function VehicleHistoryPage() {
                       loading="lazy"
                     />
                   ) : (
-                    <div className="flex h-full items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 text-white/60">
+                    <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 text-white/60">
                       <CameraIcon className="h-10 w-10" aria-hidden="true" />
+                      <span className="text-xs">Sem imagem capturada</span>
                     </div>
                   )}
                 </div>
@@ -398,8 +404,9 @@ export default function VehicleHistoryPage() {
                   className="max-h-[420px] w-full object-contain"
                 />
               ) : (
-                <div className="flex h-64 items-center justify-center text-white/60">
+                <div className="flex h-64 flex-col items-center justify-center gap-2 text-white/60">
                   <CameraIcon className="h-12 w-12" />
+                  <p className="text-sm">Sem imagem capturada para este evento</p>
                 </div>
               )}
             </div>

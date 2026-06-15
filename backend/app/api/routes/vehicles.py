@@ -43,7 +43,7 @@ def _filter_query(
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
 ):
-    q = db.query(VehicleEvent).options(joinedload(VehicleEvent.camera))
+    q = db.query(VehicleEvent).options(joinedload(VehicleEvent.camera), joinedload(VehicleEvent.occurrence))
     if camera_ids is not None:
         q = q.filter(VehicleEvent.camera_id.in_(camera_ids))
     if camera_id is not None:
@@ -59,6 +59,9 @@ def _filter_query(
 
 def _serialize_event(event: VehicleEvent) -> VehicleEventWithCamera:
     camera = event.camera
+    image_path = event.image_path
+    if not image_path and event.occurrence and event.occurrence.image_path:
+        image_path = event.occurrence.image_path
     return VehicleEventWithCamera(
         id=event.id,
         camera_id=event.camera_id,
@@ -69,10 +72,10 @@ def _serialize_event(event: VehicleEvent) -> VehicleEventWithCamera:
         bbox_y=event.bbox_y,
         bbox_w=event.bbox_w,
         bbox_h=event.bbox_h,
-        image_path=event.image_path,
+        image_path=image_path,
         detected_at=event.detected_at,
         created_at=event.created_at,
-        image_url=get_url(event.image_path) if event.image_path else "",
+        image_url=get_url(image_path) if image_path else "",
         camera=VehicleCameraMin(
             id=camera.id if camera else event.camera_id,
             name=camera.name if camera else "Desconhecida",

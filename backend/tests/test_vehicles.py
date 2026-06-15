@@ -197,6 +197,7 @@ def test_vehicle_export_endpoint_retorna_csv(client, db):
 
 def test_vehicle_list_endpoint_retorna_historico_paginado(client, db):
     from app.models.vehicle_event import VehicleEvent
+    from app.models.occurrence import Occurrence
 
     suffix = uuid.uuid4().hex[:8]
     plan = Plan(
@@ -239,6 +240,15 @@ def test_vehicle_list_endpoint_retorna_historico_paginado(client, db):
         is_active=True,
     )
     db.add(super_admin)
+    occurrence = Occurrence(
+        camera_id=camera.id,
+        plate="ABC1234",
+        image_path=f"cameras/{camera.id}/occ.jpg",
+        confidence=0.95,
+        detected_at=datetime.now(timezone.utc),
+    )
+    db.add(occurrence)
+    db.flush()
     db.add_all(
         [
             VehicleEvent(
@@ -263,6 +273,17 @@ def test_vehicle_list_endpoint_retorna_historico_paginado(client, db):
                 image_path=f"cameras/{camera.id}/truck.jpg",
                 detected_at=datetime.now(timezone.utc),
             ),
+            VehicleEvent(
+                camera_id=camera.id,
+                vehicle_type="car",
+                confidence=0.81,
+                bbox_x=22,
+                bbox_y=34,
+                bbox_w=132,
+                bbox_h=96,
+                occurrence_id=occurrence.id,
+                detected_at=datetime.now(timezone.utc),
+            ),
         ]
     )
     db.commit()
@@ -281,6 +302,85 @@ def test_vehicle_list_endpoint_retorna_historico_paginado(client, db):
     assert item["vehicle_type"] == "truck"
     assert item["camera"]["name"] == camera.name
     assert item["image_url"].endswith(f"cameras/{camera.id}/truck.jpg")
+
+
+def test_vehicle_list_endpoint_usa_imagem_da_ocorrencia_como_fallback(client, db):
+    from app.models.vehicle_event import VehicleEvent
+    from app.models.occurrence import Occurrence
+
+    suffix = uuid.uuid4().hex[:8]
+    plan = Plan(
+        name=f"Plano-{suffix}",
+        max_cameras=3,
+        retention_days=30,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=99.90,
+        is_active=True,
+    )
+    db.add(plan)
+    db.flush()
+
+    tenant = Client(
+        name=f"Cliente-{suffix}",
+        email=f"cliente-{suffix}@test.com",
+        plan_id=plan.id,
+        is_active=True,
+    )
+    db.add(tenant)
+    db.flush()
+
+    camera = Camera(
+        client_id=tenant.id,
+        name=f"Cam-{suffix}",
+        location="Entrada",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://test/stream",
+        is_active=True,
+    )
+    db.add(camera)
+    db.flush()
+
+    occurrence = Occurrence(
+        camera_id=camera.id,
+        plate="ABC1234",
+        image_path=f"cameras/{camera.id}/occurrence.jpg",
+        confidence=0.97,
+        detected_at=datetime.now(timezone.utc),
+    )
+    db.add(occurrence)
+    db.flush()
+
+    vehicle_event = VehicleEvent(
+        camera_id=camera.id,
+        occurrence_id=occurrence.id,
+        vehicle_type="truck",
+        confidence=0.88,
+        bbox_x=20,
+        bbox_y=30,
+        bbox_w=140,
+        bbox_h=100,
+        image_path=None,
+        detected_at=datetime.now(timezone.utc),
+    )
+    db.add(vehicle_event)
+    db.commit()
+
+    super_admin = User(
+        email=f"sa-fallback-{suffix}@sistema.com",
+        name="Super Admin",
+        password_hash=hash_password("Admin@123"),
+        role=UserRole.super_admin,
+        is_active=True,
+    )
+    db.add(super_admin)
+    db.commit()
+
+    r = client.get("/api/vehicles", headers=_auth_header(super_admin))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 1
+    assert data["items"][0]["image_url"].endswith(f"cameras/{camera.id}/occurrence.jpg")
 
 
 def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
