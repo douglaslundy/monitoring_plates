@@ -13,6 +13,7 @@ try:
         import base64
         import logging
         import uuid
+        from time import perf_counter
         from datetime import datetime, timezone, timedelta
 
         from app.core.database import SessionLocal
@@ -26,6 +27,7 @@ try:
         from app.services.camera_service import crop_roi_frame
         from app.services.preview_telemetry_service import record_preview_frame
         from app.services.image_quality_service import record_image_quality
+        from app.services.ocr_pipeline_metrics_service import record_ocr_pipeline_metrics
         from app.services.camera_health_alert_service import maybe_publish_camera_health_alert
         from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
 
@@ -54,7 +56,15 @@ try:
             vehicle = vehicle_detector.best_detection(analysis_bytes)
             ocr_bytes = vehicle.crop_bytes if vehicle is not None else analysis_bytes
 
+            ocr_started_at = perf_counter()
             result = recognizer.recognize(ocr_bytes, camera_id=camera_id)
+            ocr_seconds = perf_counter() - ocr_started_at
+            record_ocr_pipeline_metrics(
+                str(camera.id),
+                ocr_seconds=ocr_seconds,
+                ocr_success=result is not None,
+                false_positive=result is not None and vehicle is None,
+            )
             if result is None and vehicle is None:
                 return
 
@@ -95,6 +105,7 @@ try:
 
             # Deduplication: ignore same plate from same camera in last N seconds
             occ = None
+            persistence_seconds: float | None = None
             if result is not None and plate is not None:
                 cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.AGENT_DEDUP_SECONDS)
                 dup = (
@@ -116,6 +127,7 @@ try:
                     if plan and plan.retention_days:
                         expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
 
+                    persist_started_at = perf_counter()
                     image_path = save_bytes(ocr_bytes if vehicle is not None else analysis_bytes, camera_id)
 
                     occ = Occurrence(
@@ -134,11 +146,17 @@ try:
                     db.flush()
 
                     process_alerts(str(occ.id), db)
+                    persistence_seconds = perf_counter() - persist_started_at
 
             if vehicle_event is not None:
                 vehicle_event.occurrence_id = occ.id if occ is not None else None
 
             db.commit()
+            if persistence_seconds is not None:
+                record_ocr_pipeline_metrics(
+                    str(camera.id),
+                    persistence_seconds=persistence_seconds,
+                )
             maybe_publish_camera_health_alert(camera)
             maybe_publish_worker_delay_alert(db)
         finally:
@@ -159,6 +177,7 @@ try:
     def poll_rtsp_cameras() -> None:
         import base64
         import logging
+        from time import perf_counter
         from datetime import datetime, timezone
 
         from app.core.database import SessionLocal
@@ -166,6 +185,7 @@ try:
         from app.services.camera_service import capture_rtsp_frame, crop_half_frame
         from app.services.storage_service import save_latest_frame
         from app.services.preview_telemetry_service import record_preview_frame
+        from app.services.ocr_pipeline_metrics_service import record_ocr_pipeline_metrics
         from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
 
         logger = logging.getLogger(__name__)
@@ -182,7 +202,14 @@ try:
             )
             for camera in cameras:
                 try:
+                    capture_started_at = perf_counter()
                     frame_bytes = capture_rtsp_frame(camera.rtsp_url)
+                    capture_seconds = perf_counter() - capture_started_at
+                    record_ocr_pipeline_metrics(
+                        str(camera.id),
+                        capture_seconds=capture_seconds,
+                        capture_success=frame_bytes is not None,
+                    )
                     if frame_bytes is None:
                         continue
                     if camera.dual_lens and camera.lens_side in ("upper", "lower"):

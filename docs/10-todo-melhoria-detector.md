@@ -2,10 +2,10 @@
 
 ## Fase 0. Baseline e medicao
 
-- [ ] Medir tempo atual de captura, OCR e persistencia por camera.
+- [x] Medir tempo atual de captura, OCR e persistencia por camera.
 - [x] Registrar fps efetivo do preview.
-- [ ] Registrar taxa de sucesso do OCR.
-- [ ] Registrar taxa de falso positivo.
+- [x] Registrar taxa de sucesso do OCR.
+- [x] Registrar taxa de falso positivo.
 - [ ] Definir cameras piloto para teste.
 
 ## Fase 1. Separar preview da analise
@@ -75,6 +75,7 @@
 - O dashboard agora exibe um status consolidado do detector por camera com base em online, preview e qualidade.
 - Alertas em tempo real agora disparam quando a camera entra em estado degradado ou com imagem ruim.
 - O painel live agora exibe saude operacional, fila OCR, FPS medio e latencia media.
+- O painel live agora exibe tambem captura media, OCR medio, persistencia media e taxa de sucesso do OCR.
 - O backend agora publica alerta de worker atrasado quando a fila OCR acumula acima do limite configurado.
 - O painel do cliente agora exibe fluxo de veiculos por tipo, por hora e a ultima leitura com confianca.
 

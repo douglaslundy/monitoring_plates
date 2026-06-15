@@ -14,6 +14,11 @@ class OpsMetricsRead(BaseModel):
     low_quality_cameras: int
     avg_preview_fps: float
     avg_preview_latency_seconds: float | None
+    avg_capture_seconds: float | None
+    avg_ocr_seconds: float | None
+    avg_persistence_seconds: float | None
+    avg_ocr_success_rate: float | None
+    avg_ocr_false_positive_rate: float | None
     queue_depth: int
     operational_status: str
     operational_status_detail: str

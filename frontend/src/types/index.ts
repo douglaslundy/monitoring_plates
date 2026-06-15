@@ -225,6 +225,11 @@ export interface OperationalMetrics {
   low_quality_cameras: number;
   avg_preview_fps: number;
   avg_preview_latency_seconds: number | null;
+  avg_capture_seconds: number | null;
+  avg_ocr_seconds: number | null;
+  avg_persistence_seconds: number | null;
+  avg_ocr_success_rate: number | null;
+  avg_ocr_false_positive_rate: number | null;
   queue_depth: number;
   operational_status: "empty" | "offline" | "healthy" | "warning" | "degraded";
   operational_status_detail: string;

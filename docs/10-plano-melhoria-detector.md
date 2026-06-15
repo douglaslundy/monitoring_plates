@@ -175,7 +175,9 @@ Comportamento:
 Registrar por camera:
 
 - fps efetivo;
+- tempo medio de captura;
 - tempo medio de OCR;
+- tempo medio de persistencia;
 - tempo medio de deteccao;
 - taxa de sucesso do reconhecimento;
 - taxa de falsos positivos;
@@ -248,4 +250,3 @@ Prioridade de implementacao:
 4. medir qualidade e performance;
 5. adicionar contagem/classificacao;
 6. criar dashboard e alertas inteligentes.
-

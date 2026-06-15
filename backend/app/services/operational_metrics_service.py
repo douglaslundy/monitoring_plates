@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.models.camera import Camera
 from app.models.user import User, UserRole
 from app.services.detector_health_service import build_detector_health
+from app.services.ocr_pipeline_metrics_service import get_ocr_pipeline_metrics
 from app.services.image_quality_service import get_image_quality
 from app.services.preview_telemetry_service import get_preview_telemetry
 
@@ -25,6 +26,11 @@ class OperationalMetrics:
     low_quality_cameras: int
     avg_preview_fps: float
     avg_preview_latency_seconds: float | None
+    avg_capture_seconds: float | None
+    avg_ocr_seconds: float | None
+    avg_persistence_seconds: float | None
+    avg_ocr_success_rate: float | None
+    avg_ocr_false_positive_rate: float | None
     queue_depth: int
     operational_status: str
     operational_status_detail: str
@@ -39,6 +45,11 @@ class OperationalMetrics:
             "low_quality_cameras": self.low_quality_cameras,
             "avg_preview_fps": self.avg_preview_fps,
             "avg_preview_latency_seconds": self.avg_preview_latency_seconds,
+            "avg_capture_seconds": self.avg_capture_seconds,
+            "avg_ocr_seconds": self.avg_ocr_seconds,
+            "avg_persistence_seconds": self.avg_persistence_seconds,
+            "avg_ocr_success_rate": self.avg_ocr_success_rate,
+            "avg_ocr_false_positive_rate": self.avg_ocr_false_positive_rate,
             "queue_depth": self.queue_depth,
             "operational_status": self.operational_status,
             "operational_status_detail": self.operational_status_detail,
@@ -94,6 +105,11 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
             low_quality_cameras=0,
             avg_preview_fps=0.0,
             avg_preview_latency_seconds=None,
+            avg_capture_seconds=None,
+            avg_ocr_seconds=None,
+            avg_persistence_seconds=None,
+            avg_ocr_success_rate=None,
+            avg_ocr_false_positive_rate=None,
             queue_depth=_queue_depth(),
             operational_status="empty",
             operational_status_detail="Nenhuma camera disponivel para analise.",
@@ -106,10 +122,19 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
     low_quality_cameras = 0
     fps_values: list[float] = []
     latency_values: list[float] = []
+    capture_attempts_total = 0
+    ocr_attempts_total = 0
+    ocr_successes_total = 0
+    ocr_false_positives_total = 0
+    persistence_attempts_total = 0
+    total_capture_seconds = 0.0
+    total_ocr_seconds = 0.0
+    total_persistence_seconds = 0.0
 
     for camera in cameras:
         telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
         quality = get_image_quality(str(camera.id))
+        ocr_metrics = get_ocr_pipeline_metrics(str(camera.id))
         health = build_detector_health(camera.is_online, telemetry, quality)
 
         if camera.is_online:
@@ -124,10 +149,32 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
         fps_values.append(telemetry.preview_fps)
         if telemetry.preview_latency_seconds is not None:
             latency_values.append(telemetry.preview_latency_seconds)
+        capture_attempts_total += ocr_metrics.capture_attempts
+        ocr_attempts_total += ocr_metrics.ocr_attempts
+        ocr_successes_total += ocr_metrics.ocr_successes
+        ocr_false_positives_total += ocr_metrics.ocr_false_positives
+        persistence_attempts_total += ocr_metrics.persistence_attempts
+
+        total_capture_seconds += ocr_metrics.avg_capture_seconds * ocr_metrics.capture_attempts if ocr_metrics.avg_capture_seconds is not None else 0.0
+        total_ocr_seconds += ocr_metrics.avg_ocr_seconds * ocr_metrics.ocr_attempts if ocr_metrics.avg_ocr_seconds is not None else 0.0
+        total_persistence_seconds += (
+            ocr_metrics.avg_persistence_seconds * ocr_metrics.persistence_attempts
+            if ocr_metrics.avg_persistence_seconds is not None
+            else 0.0
+        )
 
     queue_depth = _queue_depth()
     avg_preview_fps = round(mean(fps_values), 2) if fps_values else 0.0
     avg_preview_latency_seconds = round(mean(latency_values), 2) if latency_values else None
+    avg_capture_seconds = round(total_capture_seconds / capture_attempts_total, 3) if capture_attempts_total else None
+    avg_ocr_seconds = round(total_ocr_seconds / ocr_attempts_total, 3) if ocr_attempts_total else None
+    avg_persistence_seconds = (
+        round(total_persistence_seconds / persistence_attempts_total, 3) if persistence_attempts_total else None
+    )
+    avg_ocr_success_rate = round(ocr_successes_total / ocr_attempts_total, 3) if ocr_attempts_total else None
+    avg_ocr_false_positive_rate = (
+        round(ocr_false_positives_total / ocr_attempts_total, 3) if ocr_attempts_total else None
+    )
 
     operational_status = "healthy"
     operational_status_detail = "Operacao dentro do esperado."
@@ -137,6 +184,12 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
     elif queue_depth >= settings.WORKER_DELAY_QUEUE_THRESHOLD or degraded_cameras > 0:
         operational_status = "degraded"
         operational_status_detail = "Existem cameras degradadas ou fila OCR acumulando."
+    elif avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.35:
+        operational_status = "degraded"
+        operational_status_detail = "A taxa de sucesso do OCR esta muito baixa."
+    elif avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.6:
+        operational_status = "warning"
+        operational_status_detail = "A taxa de sucesso do OCR precisa de ajuste."
     elif low_quality_cameras > 0 or (avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0):
         operational_status = "warning"
         operational_status_detail = "Algumas cameras estao com qualidade ou latencia abaixo do ideal."
@@ -149,6 +202,11 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
         low_quality_cameras=low_quality_cameras,
         avg_preview_fps=avg_preview_fps,
         avg_preview_latency_seconds=avg_preview_latency_seconds,
+        avg_capture_seconds=avg_capture_seconds,
+        avg_ocr_seconds=avg_ocr_seconds,
+        avg_persistence_seconds=avg_persistence_seconds,
+        avg_ocr_success_rate=avg_ocr_success_rate,
+        avg_ocr_false_positive_rate=avg_ocr_false_positive_rate,
         queue_depth=queue_depth,
         operational_status=operational_status,
         operational_status_detail=operational_status_detail,

@@ -232,6 +232,35 @@ export default function LiveMonitor({
       )}
 
       {metrics && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <MetricCard
+            title="Captura media"
+            value={metrics.avg_capture_seconds === null ? "n/d" : `${metrics.avg_capture_seconds.toFixed(3)}s`}
+            description="tempo medio de recepcao"
+          />
+          <MetricCard
+            title="OCR medio"
+            value={metrics.avg_ocr_seconds === null ? "n/d" : `${metrics.avg_ocr_seconds.toFixed(3)}s`}
+            description="tempo medio de leitura"
+          />
+          <MetricCard
+            title="Persistencia media"
+            value={metrics.avg_persistence_seconds === null ? "n/d" : `${metrics.avg_persistence_seconds.toFixed(3)}s`}
+            description="tempo medio de escrita"
+          />
+          <MetricCard
+            title="Sucesso OCR"
+            value={metrics.avg_ocr_success_rate === null ? "n/d" : `${(metrics.avg_ocr_success_rate * 100).toFixed(0)}%`}
+            description={
+              metrics.avg_ocr_false_positive_rate === null
+                ? "taxa de falso positivo indisponivel"
+                : `${(metrics.avg_ocr_false_positive_rate * 100).toFixed(0)}% de falso positivo`
+            }
+          />
+        </div>
+      )}
+
+      {metrics && (
         <div className="flex flex-wrap gap-2 mb-6">
           <Badge variant={operationalVariant(metrics.operational_status)}>
             Operacao {operationalLabel(metrics.operational_status)}

@@ -537,6 +537,97 @@ def test_image_quality_record_and_read(monkeypatch):
     assert metrics.contrast == 18.0
 
 
+def test_ocr_pipeline_metrics_record_and_read(monkeypatch):
+    """OCR pipeline telemetry should aggregate capture, OCR and persistence timings."""
+    from app.services import ocr_pipeline_metrics_service as pipeline_service
+
+    class FakePipeline:
+        def __init__(self, store: dict[str, dict[str, str]], key: str) -> None:
+            self.store = store
+            self.key = key
+            self.ops: list[tuple[str, tuple]] = []
+
+        def hincrby(self, key: str, field: str, amount: int = 1):
+            self.ops.append(("hincrby", (key, field, amount)))
+            return self
+
+        def hincrbyfloat(self, key: str, field: str, amount: float):
+            self.ops.append(("hincrbyfloat", (key, field, amount)))
+            return self
+
+        def hset(self, key: str, mapping: dict[str, float]):
+            self.ops.append(("hset", (key, mapping)))
+            return self
+
+        def expire(self, key: str, ttl: int):
+            self.ops.append(("expire", (key, ttl)))
+            return self
+
+        def execute(self):
+            bucket = self.store.setdefault(self.key, {})
+            for op, args in self.ops:
+                if op == "hincrby":
+                    _, field, amount = args
+                    bucket[field] = str(int(bucket.get(field, "0")) + int(amount))
+                elif op == "hincrbyfloat":
+                    _, field, amount = args
+                    bucket[field] = str(float(bucket.get(field, "0")) + float(amount))
+                elif op == "hset":
+                    _, mapping = args
+                    for field, value in mapping.items():
+                        bucket[field] = str(value)
+            self.ops.clear()
+            return True
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.store: dict[str, dict[str, str]] = {}
+
+        def pipeline(self):
+            return FakePipeline(self.store, "camera-telemetry:cam-1:ocr-pipeline")
+
+        def hgetall(self, key: str):
+            return self.store.get(key, {})
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(pipeline_service, "_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(pipeline_service, "time", lambda: 1000.0)
+
+    pipeline_service.record_ocr_pipeline_metrics(
+        "cam-1",
+        capture_seconds=0.4,
+        capture_success=True,
+        ocr_seconds=0.2,
+        ocr_success=True,
+        persistence_seconds=0.1,
+    )
+    pipeline_service.record_ocr_pipeline_metrics(
+        "cam-1",
+        capture_seconds=0.6,
+        capture_success=False,
+        ocr_seconds=0.4,
+        ocr_success=False,
+        false_positive=True,
+    )
+
+    metrics = pipeline_service.get_ocr_pipeline_metrics("cam-1")
+
+    assert metrics.capture_attempts == 2
+    assert metrics.capture_successes == 1
+    assert metrics.capture_failures == 1
+    assert metrics.ocr_attempts == 2
+    assert metrics.ocr_successes == 1
+    assert metrics.ocr_failures == 1
+    assert metrics.ocr_false_positives == 1
+    assert metrics.persistence_attempts == 1
+    assert metrics.avg_capture_seconds == 0.5
+    assert metrics.avg_ocr_seconds == 0.3
+    assert metrics.avg_persistence_seconds == 0.1
+    assert metrics.capture_success_rate == 0.5
+    assert metrics.ocr_success_rate == 0.5
+    assert metrics.ocr_false_positive_rate == 0.5
+
+
 def test_detector_health_reflete_status_e_qualidade():
     """Detector health should combine preview and image quality into one status."""
     from app.services.detector_health_service import build_detector_health
@@ -697,6 +788,7 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
     from app.core.security import hash_password
     from app.services import operational_metrics_service as ops_service
     from app.services.image_quality_service import ImageQuality
+    from app.services.ocr_pipeline_metrics_service import OcrPipelineMetrics
     from app.services.preview_telemetry_service import PreviewTelemetry
 
     plan = Plan(
@@ -755,6 +847,27 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
         "get_image_quality",
         lambda *_args, **_kwargs: ImageQuality(84.0, "good", 26.0, 56.0, 20.0),
     )
+    monkeypatch.setattr(
+        ops_service,
+        "get_ocr_pipeline_metrics",
+        lambda *_args, **_kwargs: OcrPipelineMetrics(
+            capture_attempts=12,
+            capture_successes=11,
+            capture_failures=1,
+            ocr_attempts=10,
+            ocr_successes=7,
+            ocr_failures=3,
+            ocr_false_positives=1,
+            persistence_attempts=7,
+            avg_capture_seconds=0.21,
+            avg_ocr_seconds=0.44,
+            avg_persistence_seconds=0.12,
+            capture_success_rate=0.917,
+            ocr_success_rate=0.7,
+            ocr_false_positive_rate=0.1,
+            last_attempt_at=1234.0,
+        ),
+    )
 
     metrics = ops_service.build_operational_metrics(db, admin)
 
@@ -763,5 +876,10 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
     assert metrics.streaming_cameras == 1
     assert metrics.degraded_cameras == 0
     assert metrics.low_quality_cameras == 0
+    assert metrics.avg_capture_seconds == 0.21
+    assert metrics.avg_ocr_seconds == 0.44
+    assert metrics.avg_persistence_seconds == 0.12
+    assert metrics.avg_ocr_success_rate == 0.7
+    assert metrics.avg_ocr_false_positive_rate == 0.1
     assert metrics.queue_depth == 3
     assert metrics.operational_status == "healthy"
