@@ -50,10 +50,8 @@ def _serialize_camera(camera: Camera) -> dict:
     quality = get_image_quality(str(camera.id))
     ocr_metrics = get_ocr_pipeline_metrics(str(camera.id))
     ocr_health = build_ocr_pipeline_health(ocr_metrics)
-    camera_online = camera.is_online or telemetry.preview_status != "offline"
-    detector_health = build_detector_health(camera_online, telemetry, quality)
+    detector_health = build_detector_health(camera.is_online, telemetry, quality)
     payload = CameraRead.model_validate(camera).model_dump()
-    payload["is_online"] = camera_online
     payload.update(telemetry.as_dict())
     payload.update(ocr_health.as_dict())
     payload.update(quality.as_dict())
@@ -215,9 +213,9 @@ def get_camera_last_frame(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _get_camera_or_403(camera_id, current_user, db)
+    camera = _get_camera_or_403(camera_id, current_user, db)
     latest_path = f"cameras/{camera_id}/latest.jpg"
-    if latest_frame_exists(str(camera_id)):
+    if camera.is_online and latest_frame_exists(str(camera_id)):
         return {
             "image_url": f"{get_url(latest_path)}?t={int(datetime.now(timezone.utc).timestamp())}",
             "detected_at": None,
@@ -257,7 +255,8 @@ async def stream_camera(
         last_status_update = datetime.min.replace(tzinfo=timezone.utc)
         while True:
             image_bytes: bytes | None = None
-            image_bytes = read_file_bytes(latest_path)
+            if camera.is_online:
+                image_bytes = read_file_bytes(latest_path)
             if image_bytes is None and camera.connection_type == "rtsp":
                 try:
                     image_bytes = await asyncio.to_thread(capture_rtsp_frame, camera.rtsp_url)

@@ -535,7 +535,7 @@ def test_preview_telemetry_record_and_read(monkeypatch):
     assert metrics.preview_latency_seconds == 0.0
 
     metrics_offline = telemetry_service.get_preview_telemetry("cam-1", is_online=False)
-    assert metrics_offline.preview_status == "streaming"
+    assert metrics_offline.preview_status == "offline"
 
 
 def test_image_quality_record_and_read(monkeypatch):
@@ -819,11 +819,6 @@ def test_detector_health_reflete_status_e_qualidade():
         PreviewTelemetry(2.5, 150, 1234.0, 1.2, "streaming"),
         ImageQuality(32.0, "poor", 10.0, 40.0, 12.0),
     )
-    preview_online = build_detector_health(
-        False,
-        PreviewTelemetry(2.5, 150, 1234.0, 1.2, "streaming"),
-        ImageQuality(82.0, "good", 25.0, 55.0, 18.0),
-    )
     offline = build_detector_health(
         False,
         PreviewTelemetry(0.0, 0, None, None, "offline"),
@@ -834,7 +829,6 @@ def test_detector_health_reflete_status_e_qualidade():
     assert healthy.detector_health_score == 100.0
     assert warning.detector_status == "warning"
     assert warning.detector_health_score == 45.0
-    assert preview_online.detector_status == "healthy"
     assert offline.detector_status == "offline"
     assert offline.detector_health_score == 0.0
 
@@ -1053,8 +1047,8 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
     metrics = ops_service.build_operational_metrics(db, admin)
 
     assert metrics.total_cameras == 1
-    assert metrics.online_cameras == 1
-    assert metrics.streaming_cameras == 1
+    assert metrics.online_cameras == 0
+    assert metrics.streaming_cameras == 0
     assert metrics.degraded_cameras == 0
     assert metrics.low_quality_cameras == 0
     assert metrics.avg_capture_seconds == 0.21

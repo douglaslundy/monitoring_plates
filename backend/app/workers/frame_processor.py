@@ -360,8 +360,17 @@ try:
                 )
                 .all()
             )
+            queue_depth = _queue_depth()
             for camera in cameras:
                 try:
+                    if queue_depth >= settings.WORKER_DELAY_QUEUE_THRESHOLD and not _is_pilot_camera(str(camera.id)):
+                        logger.debug(
+                            "Skipping RTSP capture due backlog camera=%s queue_depth=%s",
+                            camera.id,
+                            queue_depth,
+                        )
+                        maybe_publish_worker_delay_alert(db)
+                        continue
                     capture_started_at = perf_counter()
                     frame_bytes = capture_rtsp_frame(camera.rtsp_url)
                     capture_seconds = perf_counter() - capture_started_at
@@ -403,6 +412,7 @@ try:
                         continue
                     frame_b64 = base64.b64encode(frame_bytes).decode()
                     process_frame.delay(str(camera.id), frame_b64)
+                    queue_depth = _queue_depth()
                 except Exception as exc:
                     logger.warning("RTSP poll failed camera=%s: %s", camera.id, exc)
             maybe_publish_worker_delay_alert(db)

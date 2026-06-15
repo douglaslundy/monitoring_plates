@@ -213,12 +213,11 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
         quality = get_image_quality(str(camera.id))
         ocr_metrics = get_ocr_pipeline_metrics(str(camera.id))
         ocr_health = build_ocr_pipeline_health(ocr_metrics)
-        camera_online = camera.is_online or telemetry.preview_status != "offline"
-        health = build_detector_health(camera_online, telemetry, quality)
+        health = build_detector_health(camera.is_online, telemetry, quality)
 
-        if camera_online:
+        if camera.is_online:
             online_cameras += 1
-        if telemetry.preview_status == "streaming":
+        if camera.is_online and telemetry.preview_status == "streaming":
             streaming_cameras += 1
         if health.detector_status == "degraded":
             degraded_cameras += 1

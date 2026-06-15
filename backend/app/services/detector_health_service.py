@@ -26,7 +26,7 @@ def build_detector_health(
     preview: PreviewTelemetry,
     quality: ImageQuality,
 ) -> DetectorHealth:
-    if preview.preview_status == "offline":
+    if not is_online or preview.preview_status == "offline":
         return DetectorHealth(
             detector_status="offline",
             detector_health_score=0.0,

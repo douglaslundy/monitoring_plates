@@ -352,6 +352,30 @@ def test_camera_test_salva_preview_recente(client, db, super_admin, tenant_a):
     mock_save.assert_called_once()
 
 
+def test_camera_last_frame_nao_mostra_frame_velho_quando_offline(client, db, super_admin, tenant_a):
+    """An offline camera must not expose an old latest frame as if it were live."""
+    from app.api.routes import cameras as cameras_route
+
+    admin_token = login(client, "admin@sistema.com")
+    cam = client.post(
+        "/api/cameras",
+        json={"client_id": str(tenant_a.id), "name": "Cam offline", "connection_type": "rtsp", "rtsp_url": "rtsp://x", "is_active": True},
+        headers=auth(admin_token),
+    ).json()
+
+    camera = db.query(Camera).filter(Camera.id == UUID(cam["id"])).first()
+    assert camera is not None
+    camera.last_seen_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    db.commit()
+
+    with patch.object(cameras_route, "latest_frame_exists", return_value=True):
+        res = client.get(f"/api/cameras/{cam['id']}/last-frame", headers=auth(admin_token))
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["image_url"] is None
+
+
 def test_camera_recente_com_last_seen_at_aparece_online(client, db, tenant_a):
     """A camera with a recent last_seen_at must be serialized as online."""
     cam = Camera(

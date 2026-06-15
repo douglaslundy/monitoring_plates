@@ -108,14 +108,16 @@ def get_preview_telemetry(camera_id: str, is_online: bool) -> PreviewTelemetry:
     if last_frame_at is not None:
         preview_latency_seconds = max(0.0, now - last_frame_at)
 
-    if frames_last_minute <= 0:
-        preview_status = "idle" if is_online else "offline"
-    elif preview_latency_seconds is not None and preview_latency_seconds <= DEGRADED_SECONDS:
-        preview_status = "streaming"
-    elif preview_latency_seconds is not None and preview_latency_seconds <= STALE_SECONDS:
-        preview_status = "degraded"
-    else:
-        preview_status = "stale"
+    preview_status = "offline"
+    if is_online:
+        if frames_last_minute <= 0:
+            preview_status = "idle"
+        elif preview_latency_seconds is not None and preview_latency_seconds <= DEGRADED_SECONDS:
+            preview_status = "streaming"
+        elif preview_latency_seconds is not None and preview_latency_seconds <= STALE_SECONDS:
+            preview_status = "degraded"
+        else:
+            preview_status = "stale"
 
     preview_fps = round(float(frames_last_minute) / WINDOW_SECONDS, 2)
     return PreviewTelemetry(
