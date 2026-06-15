@@ -105,6 +105,60 @@ def _queue_depth() -> int:
     return 0
 
 
+def _format_ratio(value: float | None) -> str | None:
+    if value is None:
+        return None
+    return f"{value * 100:.0f}%"
+
+
+def _sentence_case(text: str) -> str:
+    if not text:
+        return text
+    return text[0].upper() + text[1:]
+
+
+def _build_operational_detail(
+    *,
+    online_cameras: int,
+    degraded_cameras: int,
+    low_quality_cameras: int,
+    queue_depth: int,
+    avg_preview_latency_seconds: float | None,
+    avg_ocr_success_rate: float | None,
+) -> str:
+    if online_cameras == 0:
+        return "Nenhuma camera online."
+
+    reasons: list[str] = []
+    if degraded_cameras > 0:
+        reasons.append(f"{degraded_cameras} camera(s) com detector degradado")
+    if queue_depth >= settings.WORKER_DELAY_QUEUE_THRESHOLD:
+        reasons.append(
+            f"fila OCR em {queue_depth} frames (limite {settings.WORKER_DELAY_QUEUE_THRESHOLD})"
+        )
+    if avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.35:
+        ratio = _format_ratio(avg_ocr_success_rate)
+        if ratio:
+            reasons.append(f"taxa de sucesso do OCR em {ratio}")
+    if low_quality_cameras > 0:
+        reasons.append(f"{low_quality_cameras} camera(s) com baixa qualidade")
+    if avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0:
+        reasons.append(f"latencia media do preview em {avg_preview_latency_seconds:.1f}s")
+
+    if reasons:
+        return _sentence_case("; ".join(reasons)) + "."
+
+    if avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.6:
+        ratio = _format_ratio(avg_ocr_success_rate)
+        if ratio:
+            return f"Taxa de sucesso do OCR abaixo do ideal ({ratio})."
+    if low_quality_cameras > 0 or (
+        avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0
+    ):
+        return "Algumas cameras estao com qualidade ou latencia abaixo do ideal."
+    return "Operacao dentro do esperado."
+
+
 def build_operational_metrics(db: Session, current_user: User) -> OperationalMetrics:
     cameras = _camera_scope_query(db, current_user)
     now = datetime.now(timezone.utc)
@@ -227,16 +281,42 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
         operational_status_detail = "Nenhuma camera online."
     elif queue_depth >= settings.WORKER_DELAY_QUEUE_THRESHOLD or degraded_cameras > 0:
         operational_status = "degraded"
-        operational_status_detail = "Existem cameras degradadas ou fila OCR acumulando."
+        operational_status_detail = _build_operational_detail(
+            online_cameras=online_cameras,
+            degraded_cameras=degraded_cameras,
+            low_quality_cameras=low_quality_cameras,
+            queue_depth=queue_depth,
+            avg_preview_latency_seconds=avg_preview_latency_seconds,
+            avg_ocr_success_rate=avg_ocr_success_rate,
+        )
     elif avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.35:
         operational_status = "degraded"
-        operational_status_detail = "A taxa de sucesso do OCR esta muito baixa."
+        operational_status_detail = _build_operational_detail(
+            online_cameras=online_cameras,
+            degraded_cameras=degraded_cameras,
+            low_quality_cameras=low_quality_cameras,
+            queue_depth=queue_depth,
+            avg_preview_latency_seconds=avg_preview_latency_seconds,
+            avg_ocr_success_rate=avg_ocr_success_rate,
+        )
     elif avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.6:
         operational_status = "warning"
-        operational_status_detail = "A taxa de sucesso do OCR precisa de ajuste."
+        ratio = _format_ratio(avg_ocr_success_rate)
+        operational_status_detail = (
+            f"Taxa de sucesso do OCR abaixo do ideal ({ratio})."
+            if ratio
+            else "A taxa de sucesso do OCR precisa de ajuste."
+        )
     elif low_quality_cameras > 0 or (avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0):
         operational_status = "warning"
-        operational_status_detail = "Algumas cameras estao com qualidade ou latencia abaixo do ideal."
+        details: list[str] = []
+        if low_quality_cameras > 0:
+            details.append(f"{low_quality_cameras} camera(s) com baixa qualidade")
+        if avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0:
+            details.append(f"latencia media do preview em {avg_preview_latency_seconds:.1f}s")
+        operational_status_detail = (
+            _sentence_case("; ".join(details)) + "." if details else "Algumas cameras estao com qualidade ou latencia abaixo do ideal."
+        )
 
     return OperationalMetrics(
         total_cameras=len(cameras),

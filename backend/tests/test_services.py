@@ -1053,3 +1053,99 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
     assert metrics.ocr_pipeline_idle_cameras == 0
     assert metrics.queue_depth == 3
     assert metrics.operational_status == "healthy"
+
+
+def test_operational_metrics_degraded_detail_explains_causa(monkeypatch, db):
+    from app.services import operational_metrics_service as ops_service
+    from app.services.image_quality_service import ImageQuality
+    from app.services.preview_telemetry_service import PreviewTelemetry
+    from app.services.ocr_pipeline_metrics_service import OcrPipelineMetrics
+    from app.core.security import hash_password
+    from app.models.plan import Plan
+    from app.models.client import Client
+    from app.models.camera import Camera, ConnectionType
+    from app.models.user import User, UserRole
+
+    plan = Plan(
+        name="Ops",
+        max_cameras=5,
+        retention_days=30,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=0,
+        is_active=True,
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+
+    tenant = Client(name="Cliente Ops", email="ops@test.com", plan_id=plan.id, is_active=True)
+    db.add(tenant)
+    db.commit()
+    db.refresh(tenant)
+
+    camera = Camera(
+        client_id=tenant.id,
+        name="Cam Ops",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://example/stream",
+        is_active=True,
+        last_seen_at=datetime.now(timezone.utc),
+    )
+    db.add(camera)
+    db.commit()
+
+    admin = User(
+        email="ops-degraded@sistema.com",
+        name="Ops",
+        password_hash=hash_password("Admin@123"),
+        role=UserRole.super_admin,
+        is_active=True,
+    )
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
+
+    class FakeRedis:
+        def llen(self, key: str):
+            return 25 if key == "frames" else 0
+
+    monkeypatch.setattr(ops_service, "_redis_client", lambda: FakeRedis())
+    monkeypatch.setattr(
+        ops_service,
+        "get_preview_telemetry",
+        lambda *_args, **_kwargs: PreviewTelemetry(1.2, 12, 1234.0, 5.4, "degraded"),
+    )
+    monkeypatch.setattr(
+        ops_service,
+        "get_image_quality",
+        lambda *_args, **_kwargs: ImageQuality(44.0, "poor", 12.0, 35.0, 10.0),
+    )
+    monkeypatch.setattr(
+        ops_service,
+        "get_ocr_pipeline_metrics",
+        lambda *_args, **_kwargs: OcrPipelineMetrics(
+            capture_attempts=8,
+            capture_successes=6,
+            capture_failures=2,
+            ocr_attempts=8,
+            ocr_successes=2,
+            ocr_failures=6,
+            ocr_false_positives=1,
+            persistence_attempts=2,
+            avg_capture_seconds=0.33,
+            avg_ocr_seconds=2.2,
+            avg_persistence_seconds=0.11,
+            capture_success_rate=0.75,
+            ocr_success_rate=0.25,
+            ocr_false_positive_rate=0.125,
+            last_attempt_at=datetime.now(timezone.utc).timestamp(),
+        ),
+    )
+
+    metrics = ops_service.build_operational_metrics(db, admin)
+
+    assert metrics.operational_status == "degraded"
+    assert "fila OCR" in metrics.operational_status_detail
+    assert "taxa de sucesso do OCR" in metrics.operational_status_detail
+    assert "baixa qualidade" in metrics.operational_status_detail
