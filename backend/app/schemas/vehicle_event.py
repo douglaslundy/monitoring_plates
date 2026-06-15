@@ -25,6 +25,24 @@ class VehicleEventRead(VehicleEventBase):
     created_at: datetime
 
 
+class VehicleCameraMin(BaseModel):
+    id: UUID
+    name: str
+    location: Optional[str] = None
+
+
+class VehicleEventWithCamera(VehicleEventRead):
+    image_url: str
+    camera: VehicleCameraMin
+
+
+class VehicleEventPage(BaseModel):
+    items: List[VehicleEventWithCamera]
+    total: int
+    page: int
+    pages: int
+
+
 class VehicleEventTypeCount(BaseModel):
     vehicle_type: str
     count: int

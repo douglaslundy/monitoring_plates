@@ -195,6 +195,94 @@ def test_vehicle_export_endpoint_retorna_csv(client, db):
     assert rows[0]["Confiança (%)"] == "88.0"
 
 
+def test_vehicle_list_endpoint_retorna_historico_paginado(client, db):
+    from app.models.vehicle_event import VehicleEvent
+
+    suffix = uuid.uuid4().hex[:8]
+    plan = Plan(
+        name=f"Plano-{suffix}",
+        max_cameras=3,
+        retention_days=30,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=99.90,
+        is_active=True,
+    )
+    db.add(plan)
+    db.flush()
+
+    tenant = Client(
+        name=f"Cliente-{suffix}",
+        email=f"cliente-{suffix}@test.com",
+        plan_id=plan.id,
+        is_active=True,
+    )
+    db.add(tenant)
+    db.flush()
+
+    camera = Camera(
+        client_id=tenant.id,
+        name=f"Cam-{suffix}",
+        location="Entrada",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://test/stream",
+        is_active=True,
+    )
+    db.add(camera)
+    db.flush()
+
+    super_admin = User(
+        email=f"sa-list-{suffix}@sistema.com",
+        name="Super Admin",
+        password_hash=hash_password("Admin@123"),
+        role=UserRole.super_admin,
+        is_active=True,
+    )
+    db.add(super_admin)
+    db.add_all(
+        [
+            VehicleEvent(
+                camera_id=camera.id,
+                vehicle_type="car",
+                confidence=0.93,
+                bbox_x=12,
+                bbox_y=24,
+                bbox_w=110,
+                bbox_h=90,
+                image_path=f"cameras/{camera.id}/car.jpg",
+                detected_at=datetime.now(timezone.utc),
+            ),
+            VehicleEvent(
+                camera_id=camera.id,
+                vehicle_type="truck",
+                confidence=0.88,
+                bbox_x=20,
+                bbox_y=30,
+                bbox_w=140,
+                bbox_h=100,
+                image_path=f"cameras/{camera.id}/truck.jpg",
+                detected_at=datetime.now(timezone.utc),
+            ),
+        ]
+    )
+    db.commit()
+
+    r = client.get(
+        "/api/vehicles?vehicle_type=truck&limit=1&page=1",
+        headers=_auth_header(super_admin),
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 1
+    assert data["page"] == 1
+    assert data["pages"] == 1
+    assert len(data["items"]) == 1
+    item = data["items"][0]
+    assert item["vehicle_type"] == "truck"
+    assert item["camera"]["name"] == camera.name
+    assert item["image_url"].endswith(f"cameras/{camera.id}/truck.jpg")
+
+
 def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
     from app.core.database import SessionLocal
     from app.workers import frame_processor

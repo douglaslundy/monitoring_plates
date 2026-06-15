@@ -171,6 +171,36 @@ export interface VehicleEventStats {
   latest_event: LatestVehicleEvent | null;
 }
 
+export interface VehicleCameraMin {
+  id: string;
+  name: string;
+  location: string | null;
+}
+
+export interface VehicleEventWithCamera {
+  id: string;
+  camera_id: string;
+  occurrence_id: string | null;
+  vehicle_type: string;
+  confidence: number;
+  bbox_x: number;
+  bbox_y: number;
+  bbox_w: number;
+  bbox_h: number;
+  image_path: string | null;
+  image_url: string;
+  detected_at: string;
+  created_at: string;
+  camera: VehicleCameraMin;
+}
+
+export interface VehicleEventPage {
+  items: VehicleEventWithCamera[];
+  total: number;
+  page: number;
+  pages: number;
+}
+
 export interface MonitoredPlate {
   id: string;
   client_id: string;

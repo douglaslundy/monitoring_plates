@@ -44,7 +44,7 @@ const ADMIN_NAV: NavItem[] = [
 
 export const CLIENT_NAV: NavItem[] = [
   { href: "/client", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/client/detections", label: "Deteccoes", icon: Search },
+  { href: "/client/detections", label: "Historico", icon: Search },
   { href: "/client/alerts", label: "Alertas", icon: Bell },
   { href: "/client/cameras", label: "Cameras", icon: Camera },
   { href: "/client/live", label: "Live", icon: Radio },
