@@ -16,6 +16,7 @@ class CameraBase(BaseModel):
     roi_y: Optional[float] = None
     roi_width: Optional[float] = None
     roi_height: Optional[float] = None
+    preview_refresh_seconds: float = 2.5
     is_active: bool = True
 
 
@@ -34,6 +35,7 @@ class CameraUpdate(BaseModel):
     roi_y: Optional[float] = None
     roi_width: Optional[float] = None
     roi_height: Optional[float] = None
+    preview_refresh_seconds: Optional[float] = None
     is_active: Optional[bool] = None
 
 

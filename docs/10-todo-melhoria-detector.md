@@ -13,7 +13,7 @@
 - [x] Criar pipeline de preview independente do OCR.
 - [x] Garantir que o preview sempre sirva o ultimo frame.
 - [x] Reduzir ou remover fila de frames para visualizacao.
-- [ ] Definir taxa de atualizacao configuravel por camera.
+- [x] Definir taxa de atualizacao configuravel por camera.
 - [ ] Testar live com latencia menor sem impactar OCR.
 
 ## Fase 2. Detector de veiculos
@@ -69,6 +69,7 @@
 - Preview ao vivo usa stream MJPEG com fallback automatico para o ultimo frame salvo.
 - O recarregamento manual restaura o stream sem bloquear o OCR.
 - O preview permanece desacoplado da fila de analise.
+- A taxa de atualizacao do live agora pode ser ajustada por camera.
 - O dashboard agora exibe FPS efetivo, quadros por minuto e status operacional do preview por camera.
 - O worker aplica ROI configurada na camera antes do detector e do OCR.
 - O dashboard agora exibe telemetria de qualidade da imagem por camera.

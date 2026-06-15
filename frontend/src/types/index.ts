@@ -75,6 +75,7 @@ export interface Camera {
   roi_y: number | null;
   roi_width: number | null;
   roi_height: number | null;
+  preview_refresh_seconds: number;
   is_active: boolean;
   last_seen_at: string | null;
   created_at: string;

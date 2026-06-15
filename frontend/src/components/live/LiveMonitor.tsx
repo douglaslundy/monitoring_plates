@@ -38,6 +38,11 @@ export default function LiveMonitor({
     setPreviewStatus((current) => ({ ...current, [cameraId]: "loading" }));
   }, [buildStreamUrl]);
 
+  const previewIntervalMs = useCallback((camera: Camera) => {
+    const seconds = camera.preview_refresh_seconds > 0 ? camera.preview_refresh_seconds : 2.5;
+    return Math.max(500, Math.round(seconds * 1000));
+  }, []);
+
   const loadFallbackPreview = useCallback(async (cameraId: string) => {
     try {
       const response = await api.get<{ image_url: string | null }>(`/api/cameras/${cameraId}/last-frame`);
@@ -124,31 +129,23 @@ export default function LiveMonitor({
     return () => window.clearInterval(interval);
   }, [activeCameras.length, syncCameras]);
 
-  const refreshFallbackPreviews = useCallback(async () => {
-    const fallbackItems = activeCameras.filter((camera) => previewMode[camera.id] === "fallback");
-    if (fallbackItems.length === 0) return;
-
-    const results = await Promise.allSettled(fallbackItems.map(async (camera) => {
-      await loadFallbackPreview(camera.id);
-      return camera.id;
-    }));
-
-    if (results.some((result) => result.status === "rejected")) {
-      setError("Erro ao atualizar previews.");
-    } else {
-      setError("");
-    }
-  }, [activeCameras, loadFallbackPreview, previewMode]);
-
   useEffect(() => {
     if (activeCameras.length === 0) return;
 
-    const interval = window.setInterval(() => {
-      void refreshFallbackPreviews();
-    }, 2500);
+    const timers = activeCameras
+      .filter((camera) => previewMode[camera.id] === "fallback")
+      .map((camera) =>
+        window.setInterval(() => {
+          void loadFallbackPreview(camera.id);
+        }, previewIntervalMs(camera))
+      );
 
-    return () => window.clearInterval(interval);
-  }, [activeCameras.length, refreshFallbackPreviews]);
+    return () => {
+      for (const timer of timers) {
+        window.clearInterval(timer);
+      }
+    };
+  }, [activeCameras, loadFallbackPreview, previewIntervalMs, previewMode]);
 
   const reloadAllStreams = useCallback(() => {
     setError("");
@@ -345,6 +342,9 @@ export default function LiveMonitor({
                     </Badge>
                     <Badge variant={ocrVariant(camera.ocr_pipeline_status)}>
                       OCR {ocrLabel(camera.ocr_pipeline_status)} ({camera.ocr_pipeline_health_score.toFixed(0)})
+                    </Badge>
+                    <Badge variant="secondary">
+                      live {camera.preview_refresh_seconds.toFixed(1)}s
                     </Badge>
                     <Badge
                       variant={

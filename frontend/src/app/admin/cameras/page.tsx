@@ -27,6 +27,7 @@ interface CreateForm {
   location: string;
   connection_type: "rtsp" | "agent";
   rtsp_url: string;
+  preview_refresh_seconds: string;
   dual_lens: boolean;
   lens_side: "upper" | "lower";
   roi_x: string;
@@ -47,6 +48,7 @@ interface EditForm {
   location: string;
   connection_type: "rtsp" | "agent";
   rtsp_url: string;
+  preview_refresh_seconds: string;
   dual_lens: boolean;
   lens_side: "upper" | "lower";
   roi_x: string;
@@ -62,6 +64,7 @@ const emptyForm: CreateForm = {
   location: "",
   connection_type: "rtsp",
   rtsp_url: "",
+  preview_refresh_seconds: "2.5",
   dual_lens: false,
   lens_side: "upper",
   roi_x: "",
@@ -104,6 +107,11 @@ function parseOptionalFloat(value: string): number | null {
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parsePreviewRefreshSeconds(value: string): number {
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 2.5;
 }
 
 export default function AdminCamerasPage() {
@@ -203,6 +211,7 @@ export default function AdminCamerasPage() {
         location: form.location || null,
         connection_type: form.connection_type,
         rtsp_url: form.connection_type === "rtsp" ? form.rtsp_url : null,
+        preview_refresh_seconds: parsePreviewRefreshSeconds(form.preview_refresh_seconds),
         dual_lens: form.dual_lens,
         lens_side: form.dual_lens ? form.lens_side : null,
         roi_x: parseOptionalFloat(form.roi_x),
@@ -246,6 +255,7 @@ export default function AdminCamerasPage() {
       location: camera.location ?? "",
       connection_type: camera.connection_type,
       rtsp_url: camera.rtsp_url ?? "",
+      preview_refresh_seconds: camera.preview_refresh_seconds?.toString() ?? "2.5",
       dual_lens: camera.dual_lens ?? false,
       lens_side: camera.lens_side ?? "upper",
       roi_x: camera.roi_x?.toString() ?? "",
@@ -282,6 +292,7 @@ export default function AdminCamerasPage() {
         location: editForm.location.trim() || null,
         connection_type: editForm.connection_type,
         rtsp_url: editForm.connection_type === "rtsp" ? editForm.rtsp_url.trim() : null,
+        preview_refresh_seconds: parsePreviewRefreshSeconds(editForm.preview_refresh_seconds),
         dual_lens: editForm.dual_lens,
         lens_side: editForm.dual_lens ? editForm.lens_side : null,
         roi_x: parseOptionalFloat(editForm.roi_x),
@@ -468,6 +479,12 @@ export default function AdminCamerasPage() {
                 <Badge variant={detectorVariant(cam.detector_status)}>
                   Detector {detectorLabel(cam.detector_status)} ({cam.detector_health_score.toFixed(0)})
                 </Badge>
+                <Badge variant="secondary">
+                  <span className="flex items-center gap-1">
+                    <Video className="h-3 w-3" aria-hidden="true" />
+                    Live {cam.preview_refresh_seconds.toFixed(1)}s
+                  </span>
+                </Badge>
               </div>
               {cam.detector_status_detail && (
                 <p className="mb-3 text-xs text-muted-foreground">{cam.detector_status_detail}</p>
@@ -571,6 +588,17 @@ export default function AdminCamerasPage() {
                 <input value={editForm.rtsp_url} onChange={(e) => setEditForm((p) => (p ? { ...p, rtsp_url: e.target.value } : p))} className={inputCls()} />
               </div>
             )}
+            <div>
+              <label className="block text-sm font-medium mb-1">Atualização do live (segundos)</label>
+              <input
+                type="number"
+                min="0.5"
+                step="0.1"
+                value={editForm.preview_refresh_seconds}
+                onChange={(e) => setEditForm((p) => (p ? { ...p, preview_refresh_seconds: e.target.value } : p))}
+                className={inputCls()}
+              />
+            </div>
             <div className="rounded border p-3 bg-gray-50 space-y-2">
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={editForm.dual_lens} onChange={(e) => setEditForm((p) => (p ? { ...p, dual_lens: e.target.checked } : p))} />
@@ -742,6 +770,24 @@ export default function AdminCamerasPage() {
                 )}
               </div>
             )}
+
+            <div>
+              <label htmlFor="cam-preview-refresh" className="block text-sm font-medium mb-1">
+                Atualização do live (segundos)
+              </label>
+              <input
+                id="cam-preview-refresh"
+                type="number"
+                min="0.5"
+                step="0.1"
+                value={form.preview_refresh_seconds}
+                onChange={(e) => setField("preview_refresh_seconds", e.target.value)}
+                className={inputCls()}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Frequência de recarga do preview ao vivo desta câmera.
+              </p>
+            </div>
 
             <div className="rounded border p-3 bg-gray-50 space-y-2">
               <label className="flex items-center gap-2 text-sm">

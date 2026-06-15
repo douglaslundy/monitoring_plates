@@ -137,6 +137,7 @@ def test_camera_pode_salvar_roi(client, db, super_admin, tenant_a):
             "name": "Cam ROI",
             "connection_type": "rtsp",
             "rtsp_url": "rtsp://192.168.1.3/stream",
+            "preview_refresh_seconds": 3.5,
             "roi_x": 0.1,
             "roi_y": 0.2,
             "roi_width": 0.4,
@@ -147,6 +148,7 @@ def test_camera_pode_salvar_roi(client, db, super_admin, tenant_a):
     )
     assert res.status_code == 201
     data = res.json()
+    assert data["preview_refresh_seconds"] == 3.5
     assert data["roi_x"] == 0.1
     assert data["roi_y"] == 0.2
     assert data["roi_width"] == 0.4
@@ -155,8 +157,40 @@ def test_camera_pode_salvar_roi(client, db, super_admin, tenant_a):
     get_res = client.get(f"/api/cameras/{data['id']}", headers=auth(token))
     assert get_res.status_code == 200
     get_data = get_res.json()
+    assert get_data["preview_refresh_seconds"] == 3.5
     assert get_data["roi_x"] == 0.1
     assert get_data["roi_height"] == 0.5
+
+
+def test_camera_pode_atualizar_preview_refresh_seconds(client, db, super_admin, tenant_a):
+    """Camera update should persist the configured live refresh interval."""
+    token = login(client, "admin@sistema.com")
+    create_res = client.post(
+        "/api/cameras",
+        json={
+            "client_id": str(tenant_a.id),
+            "name": "Cam Refresh",
+            "connection_type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.4/stream",
+            "preview_refresh_seconds": 2.5,
+            "is_active": True,
+        },
+        headers=auth(token),
+    )
+    assert create_res.status_code == 201
+    camera_id = create_res.json()["id"]
+
+    update_res = client.put(
+        f"/api/cameras/{camera_id}",
+        json={"preview_refresh_seconds": 4.25},
+        headers=auth(token),
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["preview_refresh_seconds"] == 4.25
+
+    get_res = client.get(f"/api/cameras/{camera_id}", headers=auth(token))
+    assert get_res.status_code == 200
+    assert get_res.json()["preview_refresh_seconds"] == 4.25
 
 
 def test_dois_agentes_tokens_diferentes(client, db, super_admin, tenant_a):

@@ -1,7 +1,7 @@
 import enum
 import uuid
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Float
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Float, text
 from sqlalchemy import Uuid
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -41,6 +41,7 @@ class Camera(Base):
     roi_y = Column(Float, nullable=True)
     roi_width = Column(Float, nullable=True)
     roi_height = Column(Float, nullable=True)
+    preview_refresh_seconds = Column(Float, nullable=False, default=2.5, server_default=text("2.5"))
     is_active = Column(Boolean, nullable=False, default=True)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -13,6 +13,7 @@ interface EditForm {
   location: string;
   connection_type: "rtsp" | "agent";
   rtsp_url: string;
+  preview_refresh_seconds: string;
   dual_lens: boolean;
   lens_side: "upper" | "lower";
   is_active: boolean;
@@ -27,6 +28,7 @@ export default function ClientCamerasPage() {
   const [location, setLocation] = useState("");
   const [connectionType, setConnectionType] = useState<"rtsp" | "agent">("rtsp");
   const [rtspUrl, setRtspUrl] = useState("");
+  const [previewRefreshSeconds, setPreviewRefreshSeconds] = useState("2.5");
   const [dualLens, setDualLens] = useState(false);
   const [lensSide, setLensSide] = useState<"upper" | "lower">("upper");
   const [saving, setSaving] = useState(false);
@@ -72,6 +74,7 @@ export default function ClientCamerasPage() {
         location: location.trim() || null,
         connection_type: connectionType,
         rtsp_url: connectionType === "rtsp" ? rtspUrl.trim() : null,
+        preview_refresh_seconds: Number(previewRefreshSeconds) > 0 ? Number(previewRefreshSeconds) : 2.5,
         dual_lens: dualLens,
         lens_side: dualLens ? lensSide : null,
         is_active: true,
@@ -81,6 +84,7 @@ export default function ClientCamerasPage() {
       setLocation("");
       setConnectionType("rtsp");
       setRtspUrl("");
+      setPreviewRefreshSeconds("2.5");
       setDualLens(false);
       setLensSide("upper");
       await fetchCameras();
@@ -109,6 +113,7 @@ export default function ClientCamerasPage() {
       location: cam.location ?? "",
       connection_type: cam.connection_type,
       rtsp_url: cam.rtsp_url ?? "",
+      preview_refresh_seconds: cam.preview_refresh_seconds?.toString() ?? "2.5",
       dual_lens: cam.dual_lens ?? false,
       lens_side: cam.lens_side ?? "upper",
       is_active: cam.is_active,
@@ -141,6 +146,8 @@ export default function ClientCamerasPage() {
         location: editForm.location.trim() || null,
         connection_type: editForm.connection_type,
         rtsp_url: editForm.connection_type === "rtsp" ? editForm.rtsp_url.trim() : null,
+        preview_refresh_seconds:
+          Number(editForm.preview_refresh_seconds) > 0 ? Number(editForm.preview_refresh_seconds) : 2.5,
         dual_lens: editForm.dual_lens,
         lens_side: editForm.dual_lens ? editForm.lens_side : null,
         is_active: editForm.is_active,
@@ -202,6 +209,15 @@ export default function ClientCamerasPage() {
               className="w-full border rounded-md px-3 py-2 text-sm"
             />
           )}
+          <input
+            type="number"
+            min="0.5"
+            step="0.1"
+            value={previewRefreshSeconds}
+            onChange={(e) => setPreviewRefreshSeconds(e.target.value)}
+            placeholder="Atualizacao do live (segundos)"
+            className="w-full border rounded-md px-3 py-2 text-sm"
+          />
           <div className="col-span-1 md:col-span-2 border rounded-md p-3 bg-gray-50">
             <label className="flex items-center gap-2 text-sm mb-2">
               <input type="checkbox" checked={dualLens} onChange={(e) => setDualLens(e.target.checked)} />
@@ -340,6 +356,15 @@ export default function ClientCamerasPage() {
             {editForm.connection_type === "rtsp" && (
               <input value={editForm.rtsp_url} onChange={(e) => setEditForm((p) => (p ? { ...p, rtsp_url: e.target.value } : p))} placeholder="rtsp://usuario:senha@ip:porta/stream" className="w-full border rounded-md px-3 py-2 text-sm" />
             )}
+            <input
+              type="number"
+              min="0.5"
+              step="0.1"
+              value={editForm.preview_refresh_seconds}
+              onChange={(e) => setEditForm((p) => (p ? { ...p, preview_refresh_seconds: e.target.value } : p))}
+              placeholder="Atualizacao do live (segundos)"
+              className="w-full border rounded-md px-3 py-2 text-sm"
+            />
             <div className="border rounded-md p-3 bg-gray-50">
               <label className="flex items-center gap-2 text-sm mb-2">
                 <input type="checkbox" checked={editForm.dual_lens} onChange={(e) => setEditForm((p) => (p ? { ...p, dual_lens: e.target.checked } : p))} />
