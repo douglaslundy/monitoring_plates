@@ -148,6 +148,8 @@ class EasyOcrEngine:
             image[int(h * 0.62) : int(h * 0.88), int(w * 0.22) : int(w * 0.78)],
             image[int(h * 0.70) : int(h * 0.98), int(w * 0.28) : int(w * 0.74)],
             image[int(h * 0.76) : int(h * 0.99), int(w * 0.32) : int(w * 0.70)],
+            image[int(h * 0.80) : int(h * 1.00), int(w * 0.25) : int(w * 0.78)],
+            image[int(h * 0.83) : int(h * 1.00), int(w * 0.30) : int(w * 0.74)],
         ]
         for crop in crops:
             add(crop)
