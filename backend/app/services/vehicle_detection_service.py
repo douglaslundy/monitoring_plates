@@ -46,8 +46,8 @@ class VehicleDetector:
         candidates.extend(self._detect_candidates_in_roi(cv2, image, image[primary_y1:, :], 0, primary_y1, w, h))
 
         focused_x1 = max(0, int(w * 0.08))
-        focused_x2 = min(w, int(w * 0.72))
-        focused_y1 = max(0, int(h * 0.48))
+        focused_x2 = min(w, int(w * 0.62))
+        focused_y1 = max(0, int(h * 0.50))
         focused_roi = image[focused_y1:, focused_x1:focused_x2]
         if focused_roi.size:
             candidates.extend(self._detect_candidates_in_roi(cv2, image, focused_roi, focused_x1, focused_y1, w, h))
