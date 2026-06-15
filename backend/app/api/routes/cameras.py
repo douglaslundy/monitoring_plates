@@ -50,8 +50,10 @@ def _serialize_camera(camera: Camera) -> dict:
     quality = get_image_quality(str(camera.id))
     ocr_metrics = get_ocr_pipeline_metrics(str(camera.id))
     ocr_health = build_ocr_pipeline_health(ocr_metrics)
-    detector_health = build_detector_health(camera.is_online, telemetry, quality)
+    camera_online = camera.is_online or telemetry.preview_status != "offline"
+    detector_health = build_detector_health(camera_online, telemetry, quality)
     payload = CameraRead.model_validate(camera).model_dump()
+    payload["is_online"] = camera_online
     payload.update(telemetry.as_dict())
     payload.update(ocr_health.as_dict())
     payload.update(quality.as_dict())

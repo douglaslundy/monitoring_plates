@@ -35,6 +35,23 @@ def _is_pilot_camera(camera_id: str) -> bool:
     return camera_id in settings.get_pilot_camera_ids()
 
 
+def _queue_depth() -> int:
+    try:
+        import redis
+
+        cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        for queue_name in ("frames", "celery"):
+            try:
+                depth = cache.llen(queue_name)
+                if depth:
+                    return int(depth)
+            except Exception:
+                continue
+    except Exception:
+        return 0
+    return 0
+
+
 def _should_sample_high_volume_frame(camera_id: str, preview_frames_last_minute: int) -> bool:
     if _is_pilot_camera(camera_id):
         return True
@@ -326,6 +343,7 @@ try:
         from app.services.camera_service import capture_rtsp_frame, crop_half_frame
         from app.services.storage_service import save_latest_frame
         from app.services.preview_telemetry_service import record_preview_frame
+        from app.services.preview_telemetry_service import get_preview_telemetry
         from app.services.ocr_pipeline_metrics_service import record_ocr_pipeline_metrics
         from app.services.ocr_pipeline_alert_service import maybe_publish_ocr_pipeline_alert
         from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
@@ -359,8 +377,30 @@ try:
                         frame_bytes = crop_half_frame(frame_bytes, camera.lens_side)
                     save_latest_frame(frame_bytes, str(camera.id))
                     record_preview_frame(str(camera.id))
+                    preview_telemetry = get_preview_telemetry(str(camera.id), True)
                     camera.last_seen_at = datetime.now(timezone.utc)
                     db.commit()
+                    queue_depth = _queue_depth()
+                    if queue_depth >= settings.WORKER_DELAY_QUEUE_THRESHOLD and not _is_pilot_camera(str(camera.id)):
+                        logger.debug(
+                            "Skipping RTSP enqueue due backlog camera=%s queue_depth=%s",
+                            camera.id,
+                            queue_depth,
+                        )
+                        maybe_publish_worker_delay_alert(db)
+                        continue
+                    if not _should_sample_high_volume_frame(
+                        str(camera.id),
+                        preview_telemetry.preview_frames_last_minute,
+                    ):
+                        logger.debug(
+                            "RTSP frame sampled camera=%s frames_last_minute=%s queue_depth=%s",
+                            camera.id,
+                            preview_telemetry.preview_frames_last_minute,
+                            queue_depth,
+                        )
+                        maybe_publish_worker_delay_alert(db)
+                        continue
                     frame_b64 = base64.b64encode(frame_bytes).decode()
                     process_frame.delay(str(camera.id), frame_b64)
                 except Exception as exc:
