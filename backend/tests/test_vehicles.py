@@ -43,6 +43,23 @@ def test_vehicle_detector_identifica_veiculo_sintetico():
     assert best.crop_bytes
 
 
+def test_vehicle_detector_nao_rotula_carro_grande_como_caminhao():
+    from app.services.vehicle_detection_service import VehicleDetector
+
+    detector = VehicleDetector()
+    vehicle_type, confidence = detector._classify(  # noqa: SLF001
+        area=160_000.0,
+        aspect_ratio=1.65,
+        box_w=640,
+        box_h=360,
+        frame_w=1280,
+        frame_h=720,
+    )
+
+    assert vehicle_type == "car"
+    assert confidence >= 0.5
+
+
 def test_vehicle_stats_endpoint_conta_por_tipo(client, db):
     from app.models.vehicle_event import VehicleEvent
 

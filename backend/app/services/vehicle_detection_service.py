@@ -307,9 +307,12 @@ class VehicleDetector:
         frame_area = float(frame_w * frame_h)
         area_ratio = area / frame_area
 
-        if area_ratio > 0.28 or box_w > frame_w * 0.58 or box_h > frame_h * 0.58:
+        # Truck is a conservative label here: prefer "car" unless the box is
+        # really large in the frame. This avoids classifying a close car as a
+        # truck just because it dominates the camera view.
+        if area_ratio > 0.40 or box_w > frame_w * 0.68 or box_h > frame_h * 0.68:
             vehicle_type = "truck"
-            confidence = min(0.95, 0.58 + area_ratio * 2.5)
+            confidence = min(0.95, 0.56 + area_ratio * 2.2)
         elif aspect_ratio < 1.4 and box_w < frame_w * 0.25 and box_h < frame_h * 0.25:
             vehicle_type = "motorcycle"
             confidence = min(0.93, 0.58 + (1.4 - aspect_ratio) * 0.2 + area_ratio * 5.0)
