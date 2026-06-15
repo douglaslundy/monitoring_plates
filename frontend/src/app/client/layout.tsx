@@ -6,6 +6,7 @@ import { Sidebar, CLIENT_NAV } from "@/components/ui/Sidebar";
 import { AlertBanner } from "@/components/AlertBanner";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { getMe, UserMe } from "@/lib/auth";
+import { RealtimeAlertsProvider } from "@/components/realtime/RealtimeAlertsProvider";
 
 function ClientLayoutInner({
   user,
@@ -65,5 +66,9 @@ export default function ClientLayout({
       .catch(() => {});
   }, []);
 
-  return <ClientLayoutInner user={user}>{children}</ClientLayoutInner>;
+  return (
+    <RealtimeAlertsProvider clientId={user?.client_id ?? null}>
+      <ClientLayoutInner user={user}>{children}</ClientLayoutInner>
+    </RealtimeAlertsProvider>
+  );
 }

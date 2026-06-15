@@ -63,7 +63,7 @@ export default function ClientDashboard() {
   const [exportingVehicles, setExportingVehicles] = useState(false);
   const [exportError, setExportError] = useState("");
 
-  const { lastAlert, isConnected } = useWebSocket(user?.client_id ?? null);
+  const { lastAlert, isConnected, connection } = useWebSocket(user?.client_id ?? null);
 
   const load = useCallback(async () => {
     try {
@@ -148,13 +148,20 @@ export default function ClientDashboard() {
           title="Painel do Cliente"
           description="Monitoramento em tempo real"
         />
-        <div className="flex items-center gap-2 text-xs">
-          <span
-            className={`h-2 w-2 rounded-full ${isConnected ? "bg-green-500 animate-pulse" : "bg-gray-300"}`}
-          />
-          <span className="text-muted-foreground">
-            {isConnected ? "Tempo real conectado" : "Sem conexão em tempo real"}
-          </span>
+        <div className="flex flex-col items-end gap-1 text-xs">
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-2 w-2 rounded-full ${isConnected ? "bg-green-500 animate-pulse" : connection.status === "retrying" ? "bg-amber-500 animate-pulse" : connection.status === "auth_pending" ? "bg-blue-500" : "bg-gray-300"}`}
+            />
+            <span className="text-muted-foreground">
+              {isConnected ? "Tempo real conectado" : connection.message}
+            </span>
+          </div>
+          {!isConnected && connection.retryAfterMs !== null && (
+            <span className="text-[11px] text-amber-600">
+              Tentando reconectar em {Math.ceil(connection.retryAfterMs / 1000)}s
+            </span>
+          )}
         </div>
       </div>
 

@@ -26,10 +26,12 @@
 
 ## Fase 3. OCR guiado por veiculo
 
+- [ ] Ajustar OCR para recortes menores da placa.
 - [ ] Reaproveitar o recorte do veiculo como entrada do OCR.
 - [ ] Rodar OCR apenas em recortes candidatos.
 - [ ] Implementar score de qualidade do recorte.
 - [ ] Ajustar preprocessamento por tipo de imagem.
+- [ ] Aplicar allowlist de caracteres quando houver alta chance de placa.
 - [ ] Medir ganho real de acerto frente ao baseline.
 
 ## Fase 4. Contagem e classificacao
@@ -64,6 +66,29 @@
 - [ ] Adicionar graficos de fluxo por hora.
 - [x] Adicionar painel de saude operacional.
 
+## Fase 8. Ajustes solicitados pelo dashboard
+
+- [ ] Diagnosticar por que o dashboard mostra "Sem conexao em tempo real".
+- [ ] Implementar reconexao do websocket com mensagem clara de falha.
+- [ ] Corrigir contagem excessiva de veiculos parados em frente a camera.
+- [ ] Ajustar tracker/deduplicacao para nao contar o mesmo veiculo duas vezes.
+- [ ] Explicar e corrigir o status "degradado" da saude operacional.
+- [ ] Reduzir a fila OCR para um nivel compativel com tempo real.
+- [ ] Gatear OCR para rodar apenas apos capturar um veiculo candidato.
+- [ ] Exibir carros detectados mesmo quando a placa nao for reconhecida.
+- [ ] Criar pagina historica de veiculos com frame, data/hora e camera.
+- [ ] Adicionar filtros por tipo de veiculo, camera e periodo na pagina historica.
+
+### Critérios de aceite da fase
+
+- o dashboard indica conexao realtime de forma confiavel e explicavel;
+- um veiculo parado nao infla a contagem semanal;
+- o status operacional mostra causa clara e muda quando a causa for corrigida;
+- a fila OCR para de crescer indefinidamente;
+- o OCR so roda quando houver alvo util;
+- o usuario ve veiculo detectado mesmo sem leitura de placa;
+- a nova pagina historica exibe imagem, camera e horario do evento.
+
 ### Status da implementacao atual
 
 - Preview ao vivo usa stream MJPEG com fallback automatico para o ultimo frame salvo.
@@ -83,8 +108,19 @@
 - O backend agora publica alerta de worker atrasado quando a fila OCR acumula acima do limite configurado.
 - O painel do cliente agora exibe fluxo de veiculos por tipo, por hora e a ultima leitura com confianca.
 - O painel do cliente agora permite exportar os eventos de veiculos para analise externa.
+- O realtime do dashboard agora compartilha uma unica conexao por sessao, com reconexao automatica e mensagem de estado clara.
+- O OCR da VPS conseguiu abrir o motor, mas ainda nao confirmou placa valida no frame amplo.
+- O recorte da placa retornou texto parcial, indicando que a proxima rodada deve focar em recortes menores e preprocessamento seletivo.
 
-## Fase 8. Validacao final
+## Fase 9. Validacao final adicional
+
+- [ ] Validar websocket realtime com usuario autenticado na VPS.
+- [ ] Validar contagem de veiculos com carro parado em frente a camera.
+- [ ] Validar fila OCR depois do gate por deteccao de veiculo.
+- [ ] Validar leitura de carro em movimento com frame historico.
+- [ ] Validar nova pagina historica de veiculos por tipo.
+
+## Fase 10. Validacao final
 
 - [ ] Rodar testes unitarios do backend.
 - [ ] Rodar testes de integracao do OCR.

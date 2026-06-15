@@ -1,9 +1,27 @@
 import type { RealtimeAlert } from "@/types";
 
+export type RealtimeConnectionStatus =
+  | "idle"
+  | "auth_pending"
+  | "connecting"
+  | "connected"
+  | "retrying"
+  | "disconnected"
+  | "error";
+
+export interface RealtimeConnectionState {
+  connected: boolean;
+  status: RealtimeConnectionStatus;
+  message: string;
+  retryAfterMs: number | null;
+  attempts: number;
+}
+
 export class PlateAlertWebSocket {
   private ws: WebSocket | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private closed = false;
+  private closedByUser = false;
+  private retryAttempt = 0;
 
   constructor(
     private readonly clientId: string,
@@ -12,36 +30,82 @@ export class PlateAlertWebSocket {
 
   connect(
     onAlert: (data: RealtimeAlert) => void,
-    onStatusChange: (connected: boolean) => void,
+    onStatusChange: (state: RealtimeConnectionState) => void,
   ): void {
-    if (this.closed) return;
+    if (this.closedByUser) return;
 
-    const wsBase = window.location.origin.replace(/^http/, "ws");
-    const url = `${wsBase}/api/ws/${this.clientId}?token=${encodeURIComponent(this.token)}`;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+      this.ws.close();
+    }
+
+    const url = new URL(window.location.origin);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = `/api/ws/${this.clientId}`;
+    url.searchParams.set("token", this.token);
 
     try {
-      this.ws = new WebSocket(url);
+      onStatusChange({
+        connected: false,
+        status: "connecting",
+        message: "Conectando ao tempo real...",
+        retryAfterMs: null,
+        attempts: this.retryAttempt,
+      });
+      this.ws = new WebSocket(url.toString());
 
       this.ws.onopen = () => {
-        onStatusChange(true);
+        this.retryAttempt = 0;
+        onStatusChange({
+          connected: true,
+          status: "connected",
+          message: "Tempo real conectado.",
+          retryAfterMs: null,
+          attempts: this.retryAttempt,
+        });
         if (this.timer) {
           clearTimeout(this.timer);
           this.timer = null;
         }
       };
 
-      this.ws.onclose = () => {
-        onStatusChange(false);
-        if (!this.closed) {
+      this.ws.onclose = (event) => {
+        const closedReason = event.code === 1008
+          ? "Autenticacao invalida para o websocket."
+          : event.code === 1006
+            ? "Conexao com o websocket foi interrompida."
+            : "Tempo real indisponivel no momento.";
+
+        onStatusChange({
+          connected: false,
+          status: this.closedByUser ? "disconnected" : event.code === 1008 ? "error" : "retrying",
+          message: closedReason,
+          retryAfterMs: this.closedByUser || event.code === 1008 ? null : 1000 * Math.min(8, this.retryAttempt + 1),
+          attempts: this.retryAttempt,
+        });
+
+        if (!this.closedByUser && event.code !== 1008) {
+          this.retryAttempt += 1;
+          const delayMs = Math.min(15_000, 1_000 * 2 ** Math.min(this.retryAttempt, 4));
           this.timer = setTimeout(
             () => this.connect(onAlert, onStatusChange),
-            5_000,
+            delayMs,
           );
         }
       };
 
       this.ws.onerror = () => {
-        /* onclose fires next */
+        onStatusChange({
+          connected: false,
+          status: this.closedByUser ? "disconnected" : "retrying",
+          message: "Falha na conexao em tempo real. Tentando novamente...",
+          retryAfterMs: this.closedByUser ? null : 1_000,
+          attempts: this.retryAttempt,
+        });
       };
 
       this.ws.onmessage = (event) => {
@@ -60,17 +124,23 @@ export class PlateAlertWebSocket {
         }
       };
     } catch {
-      if (!this.closed) {
-        this.timer = setTimeout(
-          () => this.connect(onAlert, onStatusChange),
-          5_000,
-        );
+      if (!this.closedByUser) {
+        this.retryAttempt += 1;
+        const delayMs = Math.min(15_000, 1_000 * 2 ** Math.min(this.retryAttempt, 4));
+        onStatusChange({
+          connected: false,
+          status: "retrying",
+          message: "Falha ao iniciar o tempo real. Reconectando...",
+          retryAfterMs: delayMs,
+          attempts: this.retryAttempt,
+        });
+        this.timer = setTimeout(() => this.connect(onAlert, onStatusChange), delayMs);
       }
     }
   }
 
   disconnect(): void {
-    this.closed = true;
+    this.closedByUser = true;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
