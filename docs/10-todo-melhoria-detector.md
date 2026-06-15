@@ -46,7 +46,7 @@
 - [x] Criar healthcheck do pipeline de OCR.
 - [x] Alertar quando a camera estiver com baixa qualidade.
 - [x] Alertar quando o worker ficar atrasado.
-- [ ] Alertar quando a taxa de OCR cair abaixo do esperado.
+- [x] Alertar quando a taxa de OCR cair abaixo do esperado.
 
 ## Fase 6. Otimizacoes adicionais
 
@@ -77,6 +77,7 @@
 - O painel live agora exibe saude operacional, fila OCR, FPS medio e latencia media.
 - O painel live agora exibe tambem captura media, OCR medio, persistencia media e taxa de sucesso do OCR.
 - O painel live agora exibe tambem o healthcheck do pipeline de OCR por camera e no resumo geral.
+- O sistema agora emite alerta realtime quando a taxa de OCR fica abaixo do esperado.
 - O backend agora publica alerta de worker atrasado quando a fila OCR acumula acima do limite configurado.
 - O painel do cliente agora exibe fluxo de veiculos por tipo, por hora e a ultima leitura com confianca.
 

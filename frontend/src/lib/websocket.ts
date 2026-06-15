@@ -50,7 +50,8 @@ export class PlateAlertWebSocket {
           if (
             data.type === "plate_alert" ||
             data.type === "camera_health_alert" ||
-            data.type === "worker_delay_alert"
+            data.type === "worker_delay_alert" ||
+            data.type === "ocr_pipeline_alert"
           ) {
             onAlert(data as RealtimeAlert);
           }

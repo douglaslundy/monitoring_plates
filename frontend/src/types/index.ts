@@ -223,7 +223,24 @@ export interface WorkerDelayAlert {
   detail: string;
 }
 
-export type RealtimeAlert = PlateAlert | CameraHealthAlert | WorkerDelayAlert;
+export interface OcrPipelineAlert {
+  type: "ocr_pipeline_alert";
+  client_id: string;
+  camera_id: string;
+  camera_name: string;
+  location: string;
+  detected_at: string;
+  updated_at: number;
+  ocr_pipeline_status: "warning" | "degraded";
+  ocr_pipeline_health_score: number;
+  ocr_attempts: number;
+  ocr_success_rate: number | null;
+  ocr_false_positive_rate: number | null;
+  avg_ocr_seconds: number | null;
+  detail: string;
+}
+
+export type RealtimeAlert = PlateAlert | CameraHealthAlert | WorkerDelayAlert | OcrPipelineAlert;
 
 export interface OperationalMetrics {
   total_cameras: number;

@@ -698,6 +698,71 @@ def test_ocr_pipeline_health_classifica_estado(monkeypatch):
     assert degraded.ocr_pipeline_status == "degraded"
 
 
+def test_ocr_pipeline_alert_publica_e_aplica_cooldown(monkeypatch):
+    """OCR pipeline alerts should publish once and then respect cooldown for same status."""
+    from app.services import ocr_pipeline_alert_service as alert_service
+    from app.services.ocr_pipeline_metrics_service import OcrPipelineMetrics
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.store: dict[str, str] = {}
+            self.published: list[tuple[str, str]] = []
+
+        def get(self, key: str):
+            return self.store.get(key)
+
+        def set(self, key: str, value: str, ex: int | None = None):
+            self.store[key] = value
+            return True
+
+        def publish(self, channel: str, message: str):
+            self.published.append((channel, message))
+            return 1
+
+    class CameraStub:
+        id = "cam-ocr"
+        client_id = "client-ocr"
+        name = "Cam OCR"
+        location = "Entrada"
+
+    camera = CameraStub()
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(alert_service, "_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(alert_service, "time", lambda: 1000.0)
+    monkeypatch.setattr(
+        alert_service,
+        "get_ocr_pipeline_metrics",
+        lambda *_args, **_kwargs: OcrPipelineMetrics(
+            capture_attempts=3,
+            capture_successes=3,
+            capture_failures=0,
+            ocr_attempts=3,
+            ocr_successes=1,
+            ocr_failures=2,
+            ocr_false_positives=1,
+            persistence_attempts=1,
+            avg_capture_seconds=0.2,
+            avg_ocr_seconds=1.5,
+            avg_persistence_seconds=0.1,
+            capture_success_rate=1.0,
+            ocr_success_rate=0.33,
+            ocr_false_positive_rate=0.33,
+            last_attempt_at=999.0,
+        ),
+    )
+
+    first = alert_service.maybe_publish_ocr_pipeline_alert(camera)
+    second = alert_service.maybe_publish_ocr_pipeline_alert(camera)
+
+    assert first is True
+    assert second is False
+    assert len(fake_redis.published) == 1
+    channel, payload = fake_redis.published[0]
+    assert channel == "ws:alerts:client-ocr"
+    assert "ocr_pipeline_alert" in payload
+
+
 def test_detector_health_reflete_status_e_qualidade():
     """Detector health should combine preview and image quality into one status."""
     from app.services.detector_health_service import build_detector_health

@@ -28,6 +28,7 @@ try:
         from app.services.preview_telemetry_service import record_preview_frame
         from app.services.image_quality_service import record_image_quality
         from app.services.ocr_pipeline_metrics_service import record_ocr_pipeline_metrics
+        from app.services.ocr_pipeline_alert_service import maybe_publish_ocr_pipeline_alert
         from app.services.camera_health_alert_service import maybe_publish_camera_health_alert
         from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
 
@@ -65,6 +66,7 @@ try:
                 ocr_success=result is not None,
                 false_positive=result is not None and vehicle is None,
             )
+            maybe_publish_ocr_pipeline_alert(camera)
             if result is None and vehicle is None:
                 return
 
@@ -157,6 +159,7 @@ try:
                     str(camera.id),
                     persistence_seconds=persistence_seconds,
                 )
+                maybe_publish_ocr_pipeline_alert(camera)
             maybe_publish_camera_health_alert(camera)
             maybe_publish_worker_delay_alert(db)
         finally:
@@ -186,6 +189,7 @@ try:
         from app.services.storage_service import save_latest_frame
         from app.services.preview_telemetry_service import record_preview_frame
         from app.services.ocr_pipeline_metrics_service import record_ocr_pipeline_metrics
+        from app.services.ocr_pipeline_alert_service import maybe_publish_ocr_pipeline_alert
         from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
 
         logger = logging.getLogger(__name__)
@@ -210,6 +214,7 @@ try:
                         capture_seconds=capture_seconds,
                         capture_success=frame_bytes is not None,
                     )
+                    maybe_publish_ocr_pipeline_alert(camera)
                     if frame_bytes is None:
                         continue
                     if camera.dual_lens and camera.lens_side in ("upper", "lower"):
