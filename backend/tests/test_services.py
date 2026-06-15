@@ -313,10 +313,21 @@ def test_process_frame_cria_ocorrencia(db):
 
     mock_recognizer = MagicMock()
     mock_recognizer.recognize.return_value = {"plate": "XYZ5678", "confidence": 0.95}
+    mock_vehicle_detector = MagicMock()
+    mock_detection = MagicMock()
+    mock_detection.crop_bytes = b"vehicle-crop"
+    mock_detection.vehicle_type = "car"
+    mock_detection.confidence = 0.91
+    mock_detection.bbox_x = 10
+    mock_detection.bbox_y = 20
+    mock_detection.bbox_w = 100
+    mock_detection.bbox_h = 80
+    mock_vehicle_detector.best_detection.return_value = mock_detection
     worker_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     with patch("app.core.database.SessionLocal", worker_session), \
          patch("app.services.ocr_service.recognizer", mock_recognizer), \
+         patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector), \
          patch("app.services.storage_service.save_bytes", return_value="cameras/test/img.jpg"), \
          patch("app.services.alert_service.process_alerts"):
         from app.workers import frame_processor
@@ -364,7 +375,15 @@ def test_process_frame_usa_roi_da_camera(db):
     mock_recognizer = MagicMock()
     mock_recognizer.recognize.return_value = {"plate": "ROI1234", "confidence": 0.9}
     mock_vehicle_detector = MagicMock()
-    mock_vehicle_detector.best_detection.return_value = None
+    mock_detection = MagicMock()
+    mock_detection.crop_bytes = b"vehicle-crop"
+    mock_detection.vehicle_type = "truck"
+    mock_detection.confidence = 0.88
+    mock_detection.bbox_x = 12
+    mock_detection.bbox_y = 24
+    mock_detection.bbox_w = 110
+    mock_detection.bbox_h = 90
+    mock_vehicle_detector.best_detection.return_value = mock_detection
 
     with patch("app.core.database.SessionLocal", worker_session), \
          patch("app.services.camera_service.crop_roi_frame", return_value=b"roi_frame") as mock_crop, \
@@ -379,9 +398,9 @@ def test_process_frame_usa_roi_da_camera(db):
 
     mock_crop.assert_called_once()
     mock_vehicle_detector.best_detection.assert_called_once_with(b"roi_frame")
-    mock_recognizer.recognize.assert_called_once_with(b"roi_frame", camera_id=str(cam.id))
+    mock_recognizer.recognize.assert_called_once_with(b"vehicle-crop", camera_id=str(cam.id))
     assert mock_save.call_args is not None
-    assert mock_save.call_args.args[0] == b"roi_frame"
+    assert mock_save.call_args.args[0] == b"vehicle-crop"
 
 
 def test_process_frame_ocr_none_nao_cria(db):
@@ -403,9 +422,20 @@ def test_process_frame_ocr_none_nao_cria(db):
 
     mock_recognizer = MagicMock()
     mock_recognizer.recognize.return_value = None
+    mock_vehicle_detector = MagicMock()
+    mock_detection = MagicMock()
+    mock_detection.crop_bytes = b"vehicle-crop"
+    mock_detection.vehicle_type = "car"
+    mock_detection.confidence = 0.91
+    mock_detection.bbox_x = 10
+    mock_detection.bbox_y = 20
+    mock_detection.bbox_w = 100
+    mock_detection.bbox_h = 80
+    mock_vehicle_detector.best_detection.return_value = mock_detection
 
     with patch("app.core.database.SessionLocal", return_value=db), \
-         patch("app.services.ocr_service.recognizer", mock_recognizer):
+         patch("app.services.ocr_service.recognizer", mock_recognizer), \
+         patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector):
         from app.workers import frame_processor
         import importlib
         importlib.reload(frame_processor)

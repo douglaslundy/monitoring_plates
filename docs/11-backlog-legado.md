@@ -104,7 +104,7 @@ Sintoma:
 - A fila OCR cresce muito quando todo frame vira tentativa de analise.
 
 Status:
-- Aberto como melhoria de arquitetura e custo. Precisa de gate por veiculo, amostragem e descarte de frames repetidos.
+- Corrigido parcialmente com gate por veiculo e descarte de frames repetidos. Ainda vale observar cameras de alto volume e amostragem futura.
 
 ### 12. Evento visual sem placa nao fica evidente
 

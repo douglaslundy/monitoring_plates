@@ -101,21 +101,31 @@ try:
             except Exception as exc:
                 logger.debug("Frame repeat cache unavailable: %s", exc)
 
+            capture_started_at = perf_counter()
             vehicle = vehicle_detector.best_detection(analysis_bytes)
-            ocr_bytes = vehicle.crop_bytes if vehicle is not None else analysis_bytes
+            capture_seconds = perf_counter() - capture_started_at
+            record_ocr_pipeline_metrics(
+                str(camera.id),
+                capture_seconds=capture_seconds,
+                capture_success=True,
+            )
+
+            if vehicle is None:
+                maybe_publish_ocr_pipeline_alert(camera)
+                maybe_publish_camera_health_alert(camera)
+                maybe_publish_worker_delay_alert(db)
+                return
 
             ocr_started_at = perf_counter()
-            result = recognizer.recognize(ocr_bytes, camera_id=camera_id)
+            result = recognizer.recognize(vehicle.crop_bytes, camera_id=camera_id)
             ocr_seconds = perf_counter() - ocr_started_at
             record_ocr_pipeline_metrics(
                 str(camera.id),
                 ocr_seconds=ocr_seconds,
                 ocr_success=result is not None,
-                false_positive=result is not None and vehicle is None,
+                false_positive=False,
             )
             maybe_publish_ocr_pipeline_alert(camera)
-            if result is None and vehicle is None:
-                return
 
             plate = result["plate"] if result is not None else None
             confidence = result["confidence"] if result is not None else 0.0
@@ -211,7 +221,7 @@ try:
                         expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
 
                     persist_started_at = perf_counter()
-                    image_path = save_bytes(ocr_bytes if vehicle is not None else analysis_bytes, camera_id)
+                    image_path = save_bytes(vehicle.crop_bytes, camera_id)
 
                     occ = Occurrence(
                         camera_id=camera.id,

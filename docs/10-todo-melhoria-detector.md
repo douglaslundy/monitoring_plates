@@ -27,8 +27,8 @@
 ## Fase 3. OCR guiado por veiculo
 
 - [ ] Ajustar OCR para recortes menores da placa.
-- [ ] Reaproveitar o recorte do veiculo como entrada do OCR.
-- [ ] Rodar OCR apenas em recortes candidatos.
+- [x] Reaproveitar o recorte do veiculo como entrada do OCR.
+- [x] Rodar OCR apenas em recortes candidatos.
 - [ ] Implementar score de qualidade do recorte.
 - [ ] Ajustar preprocessamento por tipo de imagem.
 - [ ] Aplicar allowlist de caracteres quando houver alta chance de placa.
@@ -73,8 +73,8 @@
 - [ ] Corrigir contagem excessiva de veiculos parados em frente a camera.
 - [ ] Ajustar tracker/deduplicacao para nao contar o mesmo veiculo duas vezes.
 - [ ] Explicar e corrigir o status "degradado" da saude operacional.
-- [ ] Reduzir a fila OCR para um nivel compativel com tempo real.
-- [ ] Gatear OCR para rodar apenas apos capturar um veiculo candidato.
+- [x] Reduzir a fila OCR para um nivel compativel com tempo real.
+- [x] Gatear OCR para rodar apenas apos capturar um veiculo candidato.
 - [ ] Exibir carros detectados mesmo quando a placa nao for reconhecida.
 - [ ] Criar pagina historica de veiculos com frame, data/hora e camera.
 - [ ] Adicionar filtros por tipo de veiculo, camera e periodo na pagina historica.
@@ -110,6 +110,7 @@
 - O painel do cliente agora permite exportar os eventos de veiculos para analise externa.
 - O realtime do dashboard agora compartilha uma unica conexao por sessao, com reconexao automatica e mensagem de estado clara.
 - O tracker de veiculos agora evita contagem repetida do mesmo alvo parado em frente a camera.
+- O worker de OCR agora dispara somente apos detectar um veiculo candidato, reduzindo a fila de frames sem alvo util.
 - O OCR da VPS conseguiu abrir o motor, mas ainda nao confirmou placa valida no frame amplo.
 - O recorte da placa retornou texto parcial, indicando que a proxima rodada deve focar em recortes menores e preprocessamento seletivo.
 
