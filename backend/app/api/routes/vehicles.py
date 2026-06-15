@@ -60,8 +60,11 @@ def _filter_query(
 def _serialize_event(event: VehicleEvent) -> VehicleEventWithCamera:
     camera = event.camera
     image_path = event.image_path
+    plate = None
     if not image_path and event.occurrence and event.occurrence.image_path:
         image_path = event.occurrence.image_path
+    if event.occurrence and event.occurrence.plate:
+        plate = event.occurrence.plate
     return VehicleEventWithCamera(
         id=event.id,
         camera_id=event.camera_id,
@@ -76,6 +79,7 @@ def _serialize_event(event: VehicleEvent) -> VehicleEventWithCamera:
         detected_at=event.detected_at,
         created_at=event.created_at,
         image_url=get_url(image_path) if image_path else "",
+        plate=plate,
         camera=VehicleCameraMin(
             id=camera.id if camera else event.camera_id,
             name=camera.name if camera else "Desconhecida",

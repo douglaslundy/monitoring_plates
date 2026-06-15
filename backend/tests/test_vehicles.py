@@ -381,6 +381,7 @@ def test_vehicle_list_endpoint_usa_imagem_da_ocorrencia_como_fallback(client, db
     data = r.json()
     assert data["total"] == 1
     assert data["items"][0]["image_url"].endswith(f"cameras/{camera.id}/occurrence.jpg")
+    assert data["items"][0]["plate"] == "ABC1234"
 
 
 def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):

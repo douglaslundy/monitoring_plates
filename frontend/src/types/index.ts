@@ -189,6 +189,7 @@ export interface VehicleEventWithCamera {
   bbox_h: number;
   image_path: string | null;
   image_url: string;
+  plate: string | null;
   detected_at: string;
   created_at: string;
   camera: VehicleCameraMin;

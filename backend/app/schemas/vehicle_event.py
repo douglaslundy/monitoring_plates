@@ -33,6 +33,7 @@ class VehicleCameraMin(BaseModel):
 
 class VehicleEventWithCamera(VehicleEventRead):
     image_url: str
+    plate: Optional[str] = None
     camera: VehicleCameraMin
 
 
