@@ -51,7 +51,7 @@
 ## Fase 6. Otimizacoes adicionais
 
 - [ ] Cachear modelos na inicializacao do worker.
-- [ ] Diminuir inferencia em frames repetidos.
+- [x] Diminuir inferencia em frames repetidos.
 - [ ] Amostrar frames em cameras de alto volume.
 - [x] Criar configuracao de ROI por camera.
 - [ ] Exportar eventos para analise externa.
@@ -70,6 +70,7 @@
 - O recarregamento manual restaura o stream sem bloquear o OCR.
 - O preview permanece desacoplado da fila de analise.
 - A taxa de atualizacao do live agora pode ser ajustada por camera.
+- O worker agora ignora frames repetidos em sequencia para reduzir inferencia desnecessaria.
 - O dashboard agora exibe FPS efetivo, quadros por minuto e status operacional do preview por camera.
 - O worker aplica ROI configurada na camera antes do detector e do OCR.
 - O dashboard agora exibe telemetria de qualidade da imagem por camera.

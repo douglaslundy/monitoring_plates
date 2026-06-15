@@ -11,6 +11,7 @@ try:
     @celery_app.task(name="app.workers.frame_processor.process_frame")
     def process_frame(camera_id: str, frame_b64: str) -> None:
         import base64
+        import hashlib
         import logging
         import uuid
         from time import perf_counter
@@ -54,6 +55,21 @@ try:
 
             record_preview_frame(str(camera.id))
             record_image_quality(str(camera.id), analysis_bytes)
+
+            try:
+                import redis
+
+                cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
+                frame_digest = hashlib.sha256(analysis_bytes).hexdigest()
+                cache_key = f"camera-frame:{camera.id}:last-digest"
+                previous_digest = cache.get(cache_key)
+                if previous_digest == frame_digest:
+                    logger.debug("Repeated frame skipped camera=%s digest=%s", camera.id, frame_digest[:12])
+                    return
+                cache.set(cache_key, frame_digest, ex=max(3, settings.AGENT_FRAME_INTERVAL * 3))
+            except Exception as exc:
+                logger.debug("Frame repeat cache unavailable: %s", exc)
+
             vehicle = vehicle_detector.best_detection(analysis_bytes)
             ocr_bytes = vehicle.crop_bytes if vehicle is not None else analysis_bytes
 

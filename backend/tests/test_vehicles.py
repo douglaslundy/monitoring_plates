@@ -161,3 +161,50 @@ def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
         assert occ.vehicle_type == "car"
     finally:
         worker_db.close()
+
+
+def test_process_frame_ignora_frame_repetido(db, camera_agent_a):
+    from app.core.database import SessionLocal
+    from app.workers import frame_processor
+
+    frame_bytes = _make_vehicle_image()
+    frame_b64 = __import__("base64").b64encode(frame_bytes).decode()
+
+    mock_vehicle_detector = MagicMock()
+    mock_vehicle_detector.best_detection.return_value = None
+    mock_recognizer = MagicMock()
+    mock_recognizer.recognize.return_value = {"plate": "ABC1234", "confidence": 0.95, "engine": "easyocr"}
+
+    fake_cache_state: dict[str, str] = {}
+
+    class FakeRedis:
+        def get(self, key: str):
+            return fake_cache_state.get(key)
+
+        def set(self, key: str, value: str, ex: int | None = None, nx: bool = False):
+            fake_cache_state[key] = value
+            return True
+
+    worker_db = SessionLocal()
+    try:
+        with (
+            patch("app.core.database.SessionLocal", return_value=worker_db),
+            patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector),
+            patch("app.services.ocr_service.recognizer", mock_recognizer),
+            patch("app.services.storage_service.save_bytes", return_value="cameras/test/repeat.jpg"),
+            patch("app.services.alert_service.process_alerts"),
+            patch("app.services.preview_telemetry_service.record_preview_frame"),
+            patch("app.services.image_quality_service.record_image_quality"),
+            patch("app.services.ocr_pipeline_metrics_service.record_ocr_pipeline_metrics"),
+            patch("app.services.ocr_pipeline_alert_service.maybe_publish_ocr_pipeline_alert"),
+            patch("app.services.camera_health_alert_service.maybe_publish_camera_health_alert"),
+            patch("app.services.worker_delay_alert_service.maybe_publish_worker_delay_alert"),
+            patch("redis.from_url", return_value=FakeRedis()),
+        ):
+            frame_processor.process_frame.run(str(camera_agent_a.id), frame_b64)
+            frame_processor.process_frame.run(str(camera_agent_a.id), frame_b64)
+
+        assert mock_vehicle_detector.best_detection.call_count == 1
+        assert mock_recognizer.recognize.call_count == 1
+    finally:
+        worker_db.close()
