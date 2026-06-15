@@ -34,6 +34,24 @@ function formatDateTime(value: string): string {
   });
 }
 
+function HourChart({ data }: { data: { hour: number; count: number }[] }) {
+  const max = Math.max(...data.map((item) => item.count), 1);
+  return (
+    <div className="flex items-end gap-1 h-28">
+      {data.map((item) => (
+        <div key={item.hour} className="flex-1 flex flex-col items-center gap-1">
+          <div
+            className="w-full rounded-t-md bg-primary/75 hover:bg-primary transition-colors"
+            style={{ height: `${Math.max((item.count / max) * 100, item.count > 0 ? 5 : 0)}%` }}
+            title={`${item.hour}h: ${item.count}`}
+          />
+          <span className="text-[10px] text-muted-foreground">{item.hour}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function VehicleHistoryPage() {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [stats, setStats] = useState<VehicleEventStats | null>(null);
@@ -121,9 +139,9 @@ export default function VehicleHistoryPage() {
     window.open(`${API_BASE}/api/vehicles/export?${params.toString()}`, "_blank", "noopener,noreferrer");
   }, [cameraId, dateFrom, dateTo, vehicleType]);
 
-  const latestEvent = stats?.latest_event;
   const topType = stats?.by_type[0];
   const topCamera = stats?.top_cameras[0];
+  const byHour = stats?.by_hour ?? [];
 
   return (
     <div className="p-6">
@@ -158,6 +176,35 @@ export default function VehicleHistoryPage() {
           description={topCamera ? `${topCamera.count} eventos` : "sem dados"}
         />
       </div>
+
+      {stats && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <h2 className="font-semibold mb-1">Fluxo de veiculos por hora</h2>
+            <p className="text-xs text-muted-foreground mb-4">Ultimas 24 horas</p>
+            <HourChart data={byHour} />
+          </div>
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <h2 className="font-semibold mb-1">Resumo rapido</h2>
+            <p className="text-xs text-muted-foreground mb-4">Maiores concentracoes do periodo</p>
+            <div className="space-y-3">
+              {stats.by_hour
+                .filter((item) => item.count > 0)
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 4)
+                .map((item) => (
+                  <div key={item.hour} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                    <span>{item.hour.toString().padStart(2, "0")}h</span>
+                    <span className="text-muted-foreground">{item.count} eventos</span>
+                  </div>
+                ))}
+              {stats.by_hour.every((item) => item.count === 0) && (
+                <p className="text-sm text-muted-foreground">Sem eventos registrados neste periodo.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border shadow-sm p-5 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
