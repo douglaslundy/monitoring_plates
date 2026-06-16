@@ -111,6 +111,24 @@ def test_vehicle_detector_modo_degradado_sem_modelo():
     assert best.crop_bytes
 
 
+def test_detector_reconhece_pessoa_e_animal():
+    """Classes COCO 0/16 mapeiam para category person/animal com o label correto."""
+    import sys
+    from unittest.mock import patch
+
+    from app.services.vehicle_detection_service import VehicleDetector
+
+    for class_id, exp_cat, exp_label in ((0, "person", "person"), (16, "animal", "dog")):
+        detector = VehicleDetector()
+        mock_ort = _mock_onnxruntime(_fake_yolo_output(class_id=class_id))
+        with patch.dict(sys.modules, {"onnxruntime": mock_ort}), \
+             patch("os.path.exists", return_value=True):
+            best = detector.best_detection(_make_vehicle_image())
+        assert best is not None, f"class {class_id} não detectada"
+        assert best.category == exp_cat
+        assert best.vehicle_type == exp_label
+
+
 def test_vehicle_stats_endpoint_conta_por_tipo(client, db):
     from app.models.vehicle_event import VehicleEvent
 

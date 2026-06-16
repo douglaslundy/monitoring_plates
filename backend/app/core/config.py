@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     VEHICLE_CONF_THRESHOLD: float = 0.35
     VEHICLE_IOU_THRESHOLD: float = 0.45
     VEHICLE_DETECTOR_THREADS: int = 1
+    # Categorias extras de detecção (mesmo modelo YOLOv8n/COCO).
+    DETECT_PERSONS: bool = True
+    DETECT_ANIMALS: bool = True
+
+    # Rastreador multi-objeto (object_tracker_service)
+    TRACK_IOU_MIN: float = 0.30
+    TRACK_MAX_AGE_SECONDS: float = 3.0
+    TRACK_MIN_HITS: int = 2
 
     # Captura RTSP + motion gating (capture-runner)
     CAPTURE_FPS: float = 6.0

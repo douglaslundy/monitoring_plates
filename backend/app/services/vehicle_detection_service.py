@@ -22,13 +22,37 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# COCO class id → rótulo usado no sistema.
-_COCO_VEHICLE_CLASSES: dict[int, str] = {
-    2: "car",
-    3: "motorcycle",
-    5: "bus",
-    7: "truck",
+# COCO class id → (categoria, label) usados no sistema.
+_COCO_CLASSES: dict[int, tuple[str, str]] = {
+    0: ("person", "person"),
+    2: ("vehicle", "car"),
+    3: ("vehicle", "motorcycle"),
+    5: ("vehicle", "bus"),
+    7: ("vehicle", "truck"),
+    14: ("animal", "bird"),
+    15: ("animal", "cat"),
+    16: ("animal", "dog"),
+    17: ("animal", "horse"),
+    18: ("animal", "sheep"),
+    19: ("animal", "cow"),
+    20: ("animal", "elephant"),
+    21: ("animal", "bear"),
+    22: ("animal", "zebra"),
+    23: ("animal", "giraffe"),
 }
+
+
+def _active_classes() -> dict[int, tuple[str, str]]:
+    """Classes COCO ativas conforme as flags (veículos sempre habilitados)."""
+    active: dict[int, tuple[str, str]] = {}
+    for cid, (category, label) in _COCO_CLASSES.items():
+        if category == "vehicle":
+            active[cid] = (category, label)
+        elif category == "person" and settings.DETECT_PERSONS:
+            active[cid] = (category, label)
+        elif category == "animal" and settings.DETECT_ANIMALS:
+            active[cid] = (category, label)
+    return active
 
 _INPUT_SIZE = 640
 
@@ -36,6 +60,7 @@ _INPUT_SIZE = 640
 @dataclass(frozen=True)
 class VehicleDetection:
     vehicle_type: str
+    category: str
     confidence: float
     bbox_x: int
     bbox_y: int
@@ -125,10 +150,12 @@ class VehicleDetector:
 
         boxes = self._postprocess(outputs[0], ratio, pad, w, h)
         detections: list[VehicleDetection] = []
+        active = _active_classes()
         for (x1, y1, x2, y2, score, cls_id) in boxes:
-            label = _COCO_VEHICLE_CLASSES.get(int(cls_id))
-            if label is None:
+            mapped = active.get(int(cls_id))
+            if mapped is None:
                 continue
+            category, label = mapped
             crop = self._crop_with_padding(image, x1, y1, x2, y2, w, h)
             crop_bytes = self._encode_jpeg(crop)
             if not crop_bytes:
@@ -136,6 +163,7 @@ class VehicleDetector:
             detections.append(
                 VehicleDetection(
                     vehicle_type=label,
+                    category=category,
                     confidence=round(float(score), 3),
                     bbox_x=int(x1),
                     bbox_y=int(y1),
@@ -200,7 +228,7 @@ class VehicleDetector:
         confidences = class_scores[np.arange(class_scores.shape[0]), class_ids]
 
         conf_thr = settings.VEHICLE_CONF_THRESHOLD
-        vehicle_mask = np.isin(class_ids, list(_COCO_VEHICLE_CLASSES.keys()))
+        vehicle_mask = np.isin(class_ids, list(_active_classes().keys()))
         keep = (confidences >= conf_thr) & vehicle_mask
         if not np.any(keep):
             return []
@@ -336,6 +364,7 @@ class VehicleDetector:
         return [
             VehicleDetection(
                 vehicle_type="unknown",
+                category="vehicle",
                 confidence=0.5,
                 bbox_x=0,
                 bbox_y=0,
