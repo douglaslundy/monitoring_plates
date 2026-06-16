@@ -124,12 +124,18 @@ services:
   go2rtc:
     image: alexxit/go2rtc:latest
     restart: always
+    # Carrega DOIS configs e mescla: o versionado (go2rtc.yaml) + o local
+    # (go2rtc.local.yaml, fora do repo / git-ignored) com os streams recortados
+    # das câmeras dual-lens. Assim um re-sync do repo nunca apaga esses streams.
+    # Crie o local a partir de infra/go2rtc.local.yaml.example.
+    command: ["go2rtc", "-config", "/config/go2rtc.yaml", "-config", "/config/go2rtc.local.yaml"]
     ports:
       - "1984:1984"      # API + player WebRTC (acessado pelo navegador)
       - "8555:8555/tcp"  # WebRTC TCP
       - "8555:8555/udp"  # WebRTC UDP
     volumes:
       - ./infra/go2rtc.yaml:/config/go2rtc.yaml:ro
+      - ./infra/go2rtc.local.yaml:/config/go2rtc.local.yaml:ro
     networks:
       - monitoramento_net
 

@@ -70,6 +70,10 @@ Thumbs.db
 # Docker
 *.pid
 
+# go2rtc — config local com streams das câmeras dual-lens (fora do repo p/
+# sobreviver a re-sync; criar a partir de infra/go2rtc.local.yaml.example)
+infra/go2rtc.local.yaml
+
 # Storage
 storage/
 *.jpg
