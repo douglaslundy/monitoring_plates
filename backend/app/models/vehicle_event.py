@@ -15,7 +15,12 @@ class VehicleEvent(Base):
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     camera_id = Column(Uuid(as_uuid=True), ForeignKey("cameras.id"), nullable=False, index=True)
     occurrence_id = Column(Uuid(as_uuid=True), ForeignKey("occurrences.id"), nullable=True, index=True)
+    # Categoria da detecção: vehicle | person | animal.
+    category = Column(String(10), nullable=False, default="vehicle", server_default="vehicle", index=True)
+    # Label da detecção (car/truck/person/dog/cat/...). Nome mantido por compat.
     vehicle_type = Column(String(20), nullable=False, index=True)
+    # Id do rastro (object_tracker_service) que originou o evento — count-once.
+    track_id = Column(String(40), nullable=True, index=True)
     confidence = Column(Float, nullable=False)
     bbox_x = Column(Integer, nullable=False)
     bbox_y = Column(Integer, nullable=False)
