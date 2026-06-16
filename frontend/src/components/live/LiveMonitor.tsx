@@ -93,7 +93,7 @@ export default function LiveMonitor({
   // verificação de acesso). O backend resolve o host público do go2rtc.
   useEffect(() => {
     for (const camera of cameras) {
-      if (camera.connection_type !== "rtsp" || camera.dual_lens || webrtcFetched.current.has(camera.id)) continue;
+      if (camera.connection_type !== "rtsp" || webrtcFetched.current.has(camera.id)) continue;
       webrtcFetched.current.add(camera.id);
       api
         .get<{ enabled: boolean; url: string | null }>(`/api/cameras/${camera.id}/webrtc`)
@@ -345,10 +345,7 @@ export default function LiveMonitor({
             const status = previewStatus[camera.id] ?? "loading";
             const streamSrc = previewUrls[camera.id];
             const webrtcUrl = webrtcUrls[camera.id];
-            // Câmeras dual-lens usam o preview MJPEG (que já recorta a lente
-            // configurada). O WebRTC do go2rtc transmite o RTSP cru, sem recorte,
-            // então exibiria as duas lentes — por isso é desativado aqui.
-            const useWebrtc = camera.connection_type === "rtsp" && !!webrtcUrl && !camera.dual_lens;
+            const useWebrtc = camera.connection_type === "rtsp" && !!webrtcUrl;
 
             return (
               <div key={camera.id} className="border rounded-lg p-3 bg-white shadow-sm">
