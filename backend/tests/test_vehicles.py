@@ -30,34 +30,85 @@ def _make_vehicle_image() -> bytes:
     return buffer.getvalue()
 
 
-def test_vehicle_detector_identifica_veiculo_sintetico():
+def _fake_yolo_output(class_id: int, score: float = 0.9):
+    """Saída YOLOv8 [1,84,8400] com uma única detecção centralizada (640x640)."""
+    import numpy as np
+
+    out = np.zeros((1, 84, 8400), dtype=np.float32)
+    # anchor 0: cx,cy,w,h no espaço 640 (carro central de uma imagem 1280x720)
+    out[0, 0, 0] = 320.0
+    out[0, 1, 0] = 320.0
+    out[0, 2, 0] = 240.0
+    out[0, 3, 0] = 135.0
+    out[0, 4 + class_id, 0] = score
+    return out
+
+
+def _mock_onnxruntime(output):
+    """sys.modules patch p/ onnxruntime devolvendo `output` em session.run."""
+    import types
+    from unittest.mock import MagicMock
+
+    mod = types.ModuleType("onnxruntime")
+    session = MagicMock()
+    session.run.return_value = [output]
+    inp = MagicMock()
+    inp.name = "images"
+    session.get_inputs.return_value = [inp]
+    mod.InferenceSession = MagicMock(return_value=session)
+    mod.SessionOptions = MagicMock(return_value=MagicMock())
+    return mod
+
+
+def test_vehicle_detector_detecta_carro_via_onnx():
+    """Mock do YOLOv8 ONNX → detecção classificada como 'car'."""
+    import sys
+    from unittest.mock import patch
+
     from app.services.vehicle_detection_service import VehicleDetector
 
     detector = VehicleDetector()
-    detections = detector.detect(_make_vehicle_image())
+    mock_ort = _mock_onnxruntime(_fake_yolo_output(class_id=2))  # COCO 2 = car
+    with patch.dict(sys.modules, {"onnxruntime": mock_ort}), \
+         patch("os.path.exists", return_value=True):
+        detections = detector.detect(_make_vehicle_image())
 
     assert detections
     best = detections[0]
     assert best.vehicle_type == "car"
     assert best.confidence >= 0.5
     assert best.crop_bytes
+    assert best.bbox_w > 0 and best.bbox_h > 0
 
 
-def test_vehicle_detector_nao_rotula_carro_grande_como_caminhao():
+def test_vehicle_detector_mapeia_truck_e_motorcycle():
+    """Classes COCO 7/3 mapeiam para truck/motorcycle."""
+    import sys
+    from unittest.mock import patch
+
+    from app.services.vehicle_detection_service import VehicleDetector
+
+    for class_id, expected in ((7, "truck"), (3, "motorcycle")):
+        detector = VehicleDetector()
+        mock_ort = _mock_onnxruntime(_fake_yolo_output(class_id=class_id))
+        with patch.dict(sys.modules, {"onnxruntime": mock_ort}), \
+             patch("os.path.exists", return_value=True):
+            best = detector.best_detection(_make_vehicle_image())
+        assert best is not None
+        assert best.vehicle_type == expected
+
+
+def test_vehicle_detector_modo_degradado_sem_modelo():
+    """Sem modelo disponível → devolve o frame inteiro p/ o OCR tentar."""
     from app.services.vehicle_detection_service import VehicleDetector
 
     detector = VehicleDetector()
-    vehicle_type, confidence = detector._classify(  # noqa: SLF001
-        area=160_000.0,
-        aspect_ratio=1.65,
-        box_w=640,
-        box_h=360,
-        frame_w=1280,
-        frame_h=720,
-    )
+    detector._unavailable = True  # noqa: SLF001 — simula ausência do modelo
+    best = detector.best_detection(_make_vehicle_image())
 
-    assert vehicle_type == "car"
-    assert confidence >= 0.5
+    assert best is not None
+    assert best.vehicle_type == "unknown"
+    assert best.crop_bytes
 
 
 def test_vehicle_stats_endpoint_conta_por_tipo(client, db):
@@ -429,17 +480,17 @@ def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
     try:
         with patch("app.core.database.SessionLocal", return_value=worker_db), mock_query, mock_recognizer as recognizer_mock, mock_save, mock_alerts, mock_redis as redis_from_url:
             redis_from_url.return_value = fake_redis
-        frame_processor.process_frame.run(str(camera_agent_a.id), __import__("base64").b64encode(frame_bytes).decode())
+            frame_processor.process_frame.run(str(camera_agent_a.id), __import__("base64").b64encode(frame_bytes).decode())
 
-        recognizer_mock.assert_called_once()
-        assert recognizer_mock.call_args.args[0] == b"vehicle-crop"
-        vehicle_event = db.query(VehicleEvent).first()
-        assert vehicle_event is not None
-        assert db.query(VehicleEvent).count() == 1
-        assert vehicle_event.image_path == "cameras/test/crop.jpg"
-        occ = db.query(Occurrence).first()
-        assert occ is not None
-        assert occ.vehicle_type == "car"
+            recognizer_mock.assert_called_once()
+            assert recognizer_mock.call_args.args[0] == b"vehicle-crop"
+            vehicle_event = db.query(VehicleEvent).first()
+            assert vehicle_event is not None
+            assert db.query(VehicleEvent).count() == 1
+            assert vehicle_event.image_path == "cameras/test/crop.jpg"
+            occ = db.query(Occurrence).first()
+            assert occ is not None
+            assert occ.vehicle_type == "car"
     finally:
         worker_db.close()
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
 import type { Camera, OperationalMetrics } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -22,6 +22,8 @@ export default function LiveMonitor({
   const [previewStatus, setPreviewStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
   const [previewMode, setPreviewMode] = useState<Record<string, "stream" | "fallback">>({});
   const [metrics, setMetrics] = useState<OperationalMetrics | null>(null);
+  const [webrtcUrls, setWebrtcUrls] = useState<Record<string, string | null>>({});
+  const webrtcFetched = useRef<Set<string>>(new Set());
 
   const activeCameras = useMemo(
     () => cameras.filter((camera) => camera.is_active),
@@ -86,6 +88,23 @@ export default function LiveMonitor({
   useEffect(() => {
     void syncCameras(true);
   }, [syncCameras]);
+
+  // Busca a URL do live WebRTC (go2rtc) por câmera RTSP no backend (com
+  // verificação de acesso). O backend resolve o host público do go2rtc.
+  useEffect(() => {
+    for (const camera of cameras) {
+      if (camera.connection_type !== "rtsp" || webrtcFetched.current.has(camera.id)) continue;
+      webrtcFetched.current.add(camera.id);
+      api
+        .get<{ enabled: boolean; url: string | null }>(`/api/cameras/${camera.id}/webrtc`)
+        .then((res) => {
+          setWebrtcUrls((current) => ({ ...current, [camera.id]: res.data.enabled ? res.data.url : null }));
+        })
+        .catch(() => {
+          setWebrtcUrls((current) => ({ ...current, [camera.id]: null }));
+        });
+    }
+  }, [cameras]);
 
   useEffect(() => {
     if (cameras.length === 0) return;
@@ -325,6 +344,8 @@ export default function LiveMonitor({
           {cameras.map((camera) => {
             const status = previewStatus[camera.id] ?? "loading";
             const streamSrc = previewUrls[camera.id];
+            const webrtcUrl = webrtcUrls[camera.id];
+            const useWebrtc = camera.connection_type === "rtsp" && !!webrtcUrl;
 
             return (
               <div key={camera.id} className="border rounded-lg p-3 bg-white shadow-sm">
@@ -390,7 +411,14 @@ export default function LiveMonitor({
                 )}
 
                 <div className="relative aspect-video rounded border bg-black overflow-hidden mb-2">
-                  {streamSrc ? (
+                  {useWebrtc ? (
+                    <iframe
+                      title={`Live ${camera.name}`}
+                      src={webrtcUrl ?? undefined}
+                      className="h-full w-full border-0"
+                      allow="autoplay; fullscreen; picture-in-picture"
+                    />
+                  ) : streamSrc ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={streamSrc}
@@ -411,7 +439,7 @@ export default function LiveMonitor({
                     <div className="absolute inset-0 bg-gradient-to-br from-black via-slate-900 to-zinc-950" />
                   )}
 
-                  {status !== "ready" && (
+                  {!useWebrtc && status !== "ready" && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-white px-4 text-center">
                       {status === "loading" ? (
                         <>

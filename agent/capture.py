@@ -1,50 +1,29 @@
-import re
+"""Captura de frames RTSP/webcam (sem OCR — o backend faz detecção e leitura).
+
+Mantém a conexão aberta e lê sempre o frame mais recente (buffer=1), evitando o
+handshake RTSP por frame da versão antiga.
+"""
 import cv2
-import numpy as np
-from typing import Optional, Tuple
-
-_reader = None
 
 
-def get_reader():
-    global _reader
-    if _reader is None:
-        import easyocr
-        _reader = easyocr.Reader(["pt", "en"], gpu=False)
-    return _reader
-
-
-_PLATE_RE = re.compile(r"^[A-Z]{3}[0-9]{4}$|^[A-Z]{3}[0-9][A-Z][0-9]{2}$")
-
-
-def _normalize(text: str) -> str:
-    return re.sub(r"[^A-Z0-9]", "", text.upper())
-
-
-def capture_and_read(source) -> Optional[Tuple[str, float, bytes, str]]:
-    """Return (plate, confidence, jpeg_bytes, raw_text) or None."""
+def open_capture(source):
+    """Abre a câmera. Retorna o VideoCapture aberto ou None."""
     cap = cv2.VideoCapture(source)
-    ret, frame = cap.read()
-    cap.release()
-    if not ret:
+    try:
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    except Exception:
+        pass
+    if not cap.isOpened():
+        cap.release()
         return None
+    return cap
 
-    reader = get_reader()
-    results = reader.readtext(frame)
 
-    best_plate = None
-    best_conf = 0.0
-    raw_texts = []
-
-    for _, text, conf in results:
-        raw_texts.append(text)
-        norm = _normalize(text)
-        if _PLATE_RE.match(norm) and conf > best_conf:
-            best_plate = norm
-            best_conf = conf
-
-    if not best_plate:
+def read_jpeg(cap, quality: int = 80):
+    """Lê o frame mais recente e devolve JPEG em bytes (ou None se falhar)."""
+    cap.grab()  # descarta o frame em buffer p/ baixa latência
+    ok, frame = cap.read()
+    if not ok or frame is None:
         return None
-
-    _, buf = cv2.imencode(".jpg", frame)
-    return best_plate, best_conf, buf.tobytes(), " | ".join(raw_texts)
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return buf.tobytes() if ok else None

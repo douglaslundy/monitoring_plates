@@ -35,6 +35,22 @@ class Settings(BaseSettings):
     OCR_PIPELINE_ALERT_COOLDOWN_SECONDS: int = 300
     OCR_ALLOWLIST: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+    # Detecção de veículos (YOLOv8n ONNX)
+    VEHICLE_CONF_THRESHOLD: float = 0.35
+    VEHICLE_IOU_THRESHOLD: float = 0.45
+    VEHICLE_DETECTOR_THREADS: int = 1
+
+    # Captura RTSP + motion gating (capture-runner)
+    CAPTURE_FPS: float = 6.0
+    MOTION_MIN_AREA_RATIO: float = 0.0035
+    MOTION_COOLDOWN_SECONDS: float = 0.0
+
+    # Live WebRTC (go2rtc). GO2RTC_URL = endpoint interno p/ a API (sync de
+    # streams); GO2RTC_PUBLIC_URL = base acessada pelo navegador do operador.
+    GO2RTC_URL: str = "http://go2rtc:1984"
+    GO2RTC_PUBLIC_URL: str = "http://192.168.0.115:1984"
+    GO2RTC_ENABLED: bool = True
+
     def get_cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
 

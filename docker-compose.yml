@@ -92,6 +92,33 @@ services:
     networks:
       - monitoramento_net
 
+  capture-runner:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://user:pass@postgres:5432/monitoramento
+      REDIS_URL: redis://redis:6379
+    command: python -m app.workers.capture_runner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoramento_net
+
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    ports:
+      - "1984:1984"      # API + player WebRTC
+      - "8555:8555/tcp"  # WebRTC TCP
+      - "8555:8555/udp"  # WebRTC UDP
+    volumes:
+      - ./infra/go2rtc.yaml:/config/go2rtc.yaml:ro
+    restart: unless-stopped
+    networks:
+      - monitoramento_net
+
   frontend:
     build: ./frontend
     ports:

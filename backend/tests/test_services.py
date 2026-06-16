@@ -990,7 +990,7 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
         connection_type=ConnectionType.rtsp,
         rtsp_url="rtsp://example/stream",
         is_active=True,
-        last_seen_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        last_seen_at=datetime.now(timezone.utc),
     )
     db.add(camera)
     db.commit()
@@ -1047,8 +1047,8 @@ def test_operational_metrics_resume_saude_do_painel(db, monkeypatch):
     metrics = ops_service.build_operational_metrics(db, admin)
 
     assert metrics.total_cameras == 1
-    assert metrics.online_cameras == 0
-    assert metrics.streaming_cameras == 0
+    assert metrics.online_cameras == 1
+    assert metrics.streaming_cameras == 1
     assert metrics.degraded_cameras == 0
     assert metrics.low_quality_cameras == 0
     assert metrics.avg_capture_seconds == 0.21

@@ -36,45 +36,33 @@ def _make_jpeg(
     return buf.getvalue()
 
 
-def _build_sys_patches(easyocr_results: list) -> dict:
-    """Return sys.modules patches for numpy, cv2, and easyocr."""
-    # --- numpy mock ---
-    mock_np = types.ModuleType("numpy")
-    mock_np.uint8 = 0
-    mock_np.frombuffer = MagicMock(return_value=MagicMock())
+def _build_sys_patches(ocr_results: list) -> dict:
+    """sys.modules patch p/ fast_alpr (+cv2) devolvendo placas pré-definidas.
 
-    # --- cv2 mock ---
-    mock_img = MagicMock()
-    mock_img.shape = (120, 520, 3)  # (h, w, channels)
-    # shape[:2] must work — MagicMock doesn't slice tuples automatically
-    mock_img.__getitem__ = lambda self, key: (120, 520, 3)[key]  # type: ignore
+    Aceita a lista no formato legado [(bbox, texto, confiança), ...]; o bbox é
+    ignorado. cv2 é mockado para que o decode use o caminho cv2 (e não o Pillow
+    real, que é corrompido pelo restore do patch.dict(sys.modules)).
+    """
+    import numpy as np
+
+    mock_alpr = MagicMock()
+    results = []
+    for item in ocr_results:
+        text, confidence = item[-2], item[-1]
+        r = MagicMock()
+        r.ocr.text = text
+        r.ocr.confidence = confidence
+        results.append(r)
+    mock_alpr.predict = MagicMock(return_value=results)
+
+    mock_fast_alpr = types.ModuleType("fast_alpr")
+    mock_fast_alpr.ALPR = MagicMock(return_value=mock_alpr)
 
     mock_cv2 = types.ModuleType("cv2")
     mock_cv2.IMREAD_COLOR = 1
-    mock_cv2.COLOR_BGR2GRAY = 6
-    mock_cv2.RETR_TREE = 3
-    mock_cv2.CHAIN_APPROX_SIMPLE = 2
+    mock_cv2.imdecode = MagicMock(return_value=np.zeros((40, 120, 3), dtype=np.uint8))
 
-    mock_cv2.imdecode = MagicMock(return_value=mock_img)
-    mock_cv2.resize = MagicMock(return_value=mock_img)
-    mock_cv2.cvtColor = MagicMock(return_value=MagicMock())
-    clahe = MagicMock()
-    clahe.apply = MagicMock(return_value=MagicMock())
-    mock_cv2.createCLAHE = MagicMock(return_value=clahe)
-    mock_cv2.bilateralFilter = MagicMock(return_value=MagicMock())
-    mock_cv2.Canny = MagicMock(return_value=MagicMock())
-    # findContours returns empty → no ROI crop, falls back to full image
-    mock_cv2.findContours = MagicMock(return_value=([], None))
-    mock_cv2.contourArea = MagicMock(return_value=0)
-    mock_cv2.boundingRect = MagicMock(return_value=(0, 0, 300, 80))
-
-    # --- easyocr mock ---
-    mock_reader = MagicMock()
-    mock_reader.readtext = MagicMock(return_value=easyocr_results)
-    mock_easyocr = types.ModuleType("easyocr")
-    mock_easyocr.Reader = MagicMock(return_value=mock_reader)
-
-    return {"numpy": mock_np, "cv2": mock_cv2, "easyocr": mock_easyocr}
+    return {"fast_alpr": mock_fast_alpr, "cv2": mock_cv2}
 
 
 @pytest.fixture
@@ -201,16 +189,16 @@ def test_normalize_remove_caracteres_especiais(fresh_recognizer):
     assert result["plate"] == "ABC1234"
 
 
-def test_allowlist_e_passada_para_recortes_de_placa(fresh_recognizer):
-    """Recortes candidatos devem restringir caracteres ao alfabeto de placas."""
+def test_predict_chamado_uma_unica_vez(fresh_recognizer):
+    """fast-alpr roda em passe único (1 predict), sem força-bruta de recortes."""
     patches = _build_sys_patches([(None, "ABC1234", 0.95)])
     with patch.dict(sys.modules, patches):
         result = fresh_recognizer.recognize(_make_jpeg("ABC1234"))
 
     assert result is not None
-    mock_reader = patches["easyocr"].Reader.return_value
-    assert mock_reader.readtext.called
-    assert mock_reader.readtext.call_args.kwargs["allowlist"] == "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    assert result["engine"] == "fast_alpr"
+    mock_alpr = patches["fast_alpr"].ALPR.return_value
+    assert mock_alpr.predict.call_count == 1
 
 
 # ── Deduplication test ────────────────────────────────────────────────────────

@@ -110,11 +110,11 @@ async def test_config(
     if not config:
         raise HTTPException(status_code=404, detail="Configuração não encontrada")
 
-    if config.engine_type == OcrEngineType.easyocr:
+    if config.engine_type in (OcrEngineType.fast_alpr, OcrEngineType.easyocr):
         return OcrEngineTestResult(
             success=True,
-            engine_type=OcrEngineType.easyocr,
-            message="EasyOCR não requer credenciais externas. Configuração válida.",
+            engine_type=config.engine_type,
+            message="Motor local (fast-alpr) não requer credenciais externas. Configuração válida.",
         )
 
     # Plate Recognizer — testa credenciais com uma chamada real

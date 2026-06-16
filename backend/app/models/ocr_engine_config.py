@@ -8,8 +8,9 @@ from app.core.database import Base
 
 
 class OcrEngineType(str, enum.Enum):
-    easyocr = "easyocr"
+    fast_alpr = "fast_alpr"
     plate_recognizer = "plate_recognizer"
+    easyocr = "easyocr"  # legado (mantido p/ compatibilidade de dados antigos)
 
 
 class OcrEngineMode(str, enum.Enum):

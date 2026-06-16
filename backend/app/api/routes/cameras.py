@@ -282,3 +282,31 @@ async def stream_camera(
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers=boundary_headers,
     )
+
+
+@router.get("/{camera_id}/webrtc")
+def camera_webrtc(
+    camera_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Dados do live WebRTC (go2rtc) para uma câmera RTSP, com verificação de acesso.
+
+    O front embute `url` (player WebRTC do go2rtc). Para câmeras que não são RTSP
+    ou com go2rtc desligado, `enabled=false` e o front cai no preview MJPEG.
+    """
+    from app.core.config import settings
+    from app.services.go2rtc_service import public_stream_url, register_stream, stream_name
+
+    camera = _get_camera_or_403(camera_id, current_user, db)
+
+    if not settings.GO2RTC_ENABLED or camera.connection_type != "rtsp" or not camera.rtsp_url:
+        return {"enabled": False, "src": None, "url": None}
+
+    # Garante o stream no go2rtc (idempotente) mesmo que o startup tenha falhado.
+    register_stream(str(camera.id), camera.rtsp_url)
+    return {
+        "enabled": True,
+        "src": stream_name(str(camera.id)),
+        "url": public_stream_url(str(camera.id)),
+    }
