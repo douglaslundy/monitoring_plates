@@ -49,17 +49,20 @@ def test_objeto_sai_e_volta_conta_de_novo():
     assert total == 2
 
 
-def test_aparicao_de_um_frame_nao_conta():
+def test_um_frame_ja_conta_com_min_hits_1():
+    # Default TRACK_MIN_HITS=1: conta ao aparecer; o track impede recontagem.
     box = _box(100, 100)
     state, newly = update_tracks([], [box], now=4000.0)
-    assert len(newly) == 0  # hits=1 < TRACK_MIN_HITS
+    assert len(newly) == 1
+    # frame seguinte (mesmo objeto) não recontabiliza
+    state, newly2 = update_tracks(state, [box], now=4000.5)
+    assert len(newly2) == 0
 
 
 def test_newly_counted_aponta_para_a_deteccao():
     a = _box(50, 50, label="car")
     b = _box(600, 400, category="person", label="person")
-    state, _ = update_tracks([], [a, b], now=5000.0)
-    state, newly = update_tracks(state, [a, b], now=5000.5)
+    state, newly = update_tracks([], [a, b], now=5000.0)
     assert len(newly) == 2
     # cada track contado referencia o indice da deteccao que o originou
     for t in newly:

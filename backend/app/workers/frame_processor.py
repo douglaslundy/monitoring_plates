@@ -126,6 +126,7 @@ try:
         from app.services.alert_service import process_alerts
         from app.models.vehicle_event import VehicleEvent
         from app.services.camera_service import crop_roi_frame
+        from app.services.object_tracker_service import track_camera
         from app.services.preview_telemetry_service import record_preview_frame
         from app.services.image_quality_service import record_image_quality
         from app.services.ocr_pipeline_metrics_service import record_ocr_pipeline_metrics
@@ -183,7 +184,7 @@ try:
                 logger.debug("Frame repeat cache unavailable: %s", exc)
 
             capture_started_at = perf_counter()
-            vehicle = vehicle_detector.best_detection(analysis_bytes)
+            detections = vehicle_detector.detect(analysis_bytes)
             capture_seconds = perf_counter() - capture_started_at
             record_ocr_pipeline_metrics(
                 str(camera.id),
@@ -191,104 +192,58 @@ try:
                 capture_success=True,
             )
 
-            if vehicle is None:
+            if not detections:
                 maybe_publish_ocr_pipeline_alert(camera)
                 maybe_publish_camera_health_alert(camera)
                 maybe_publish_worker_delay_alert(db)
                 return
 
-            event_image_path = save_bytes(vehicle.crop_bytes, camera_id)
+            now_ts = datetime.now(timezone.utc).timestamp()
+            # Rastreia TODOS os objetos (veículo/pessoa/animal): conta cada um uma
+            # única vez por permanência no frame — inclusive parado (o track se
+            # mantém por IoU+tempo, então não recontabiliza).
+            tracker_dets = [
+                {
+                    "category": d.category,
+                    "label": d.vehicle_type,
+                    "confidence": d.confidence,
+                    "bbox": {
+                        "bbox_x": int(d.bbox_x),
+                        "bbox_y": int(d.bbox_y),
+                        "bbox_w": int(d.bbox_w),
+                        "bbox_h": int(d.bbox_h),
+                    },
+                }
+                for d in detections
+            ]
+            newly_counted = track_camera(str(camera.id), tracker_dets, now_ts)
 
-            ocr_started_at = perf_counter()
-            result = recognizer.recognize(vehicle.crop_bytes, camera_id=camera_id)
-            ocr_seconds = perf_counter() - ocr_started_at
-            record_ocr_pipeline_metrics(
-                str(camera.id),
-                ocr_seconds=ocr_seconds,
-                ocr_success=result is not None,
-                false_positive=False,
-            )
+            # Melhor detecção de VEÍCULO → OCR de placa (roda a cada frame para dar
+            # múltiplas chances de leitura; o dedup da placa é por Occurrence).
+            vehicle = next((d for d in detections if d.category == "vehicle"), None)
+
+            result = None
+            plate = None
+            confidence = 0.0
+            vehicle_type = None
+            if vehicle is not None:
+                ocr_started_at = perf_counter()
+                result = recognizer.recognize(vehicle.crop_bytes, camera_id=camera_id)
+                ocr_seconds = perf_counter() - ocr_started_at
+                record_ocr_pipeline_metrics(
+                    str(camera.id),
+                    ocr_seconds=ocr_seconds,
+                    ocr_success=result is not None,
+                    false_positive=False,
+                )
+                plate = result["plate"] if result is not None else None
+                confidence = result["confidence"] if result is not None else 0.0
+                vehicle_type = result.get("vehicle_type") if result is not None else None
+                if vehicle_type is None:
+                    vehicle_type = vehicle.vehicle_type
             maybe_publish_ocr_pipeline_alert(camera)
 
-            plate = result["plate"] if result is not None else None
-            confidence = result["confidence"] if result is not None else 0.0
-            vehicle_type = result.get("vehicle_type") if result is not None else None
-            if vehicle_type is None and vehicle is not None:
-                vehicle_type = vehicle.vehicle_type
-
-            # Deduplication for vehicle counts: avoid counting the same vehicle signature repeatedly.
-            vehicle_event: VehicleEvent | None = None
-            if vehicle is not None:
-                try:
-                    if cache is None:
-                        raise RuntimeError("redis indisponível")
-                    current_box = {
-                        "bbox_x": int(vehicle.bbox_x),
-                        "bbox_y": int(vehicle.bbox_y),
-                        "bbox_w": int(vehicle.bbox_w),
-                        "bbox_h": int(vehicle.bbox_h),
-                    }
-                    track_key = f"vehicle-track:{camera.id}"
-                    now_ts = datetime.now(timezone.utc).timestamp()
-                    acquired = True
-                    raw_track = cache.get(track_key)
-                    if raw_track:
-                        try:
-                            track = json.loads(raw_track)
-                        except Exception:
-                            track = {}
-
-                        previous_box = track.get("bbox")
-                        previous_type = track.get("vehicle_type")
-                        previous_seen_at = float(track.get("last_seen_at", 0.0) or 0.0)
-                        # Dedup por POSIÇÃO + TEMPO apenas. NÃO exige o mesmo
-                        # vehicle_type: o YOLO troca a classe do mesmo veículo
-                        # entre frames (um carro com escada vira car/bus/truck),
-                        # e exigir tipo igual fazia cada frame virar um evento
-                        # novo — daí o mesmo veículo aparecia várias vezes e como
-                        # 3 tipos. O IoU + janela de tempo identifica o mesmo
-                        # veículo independentemente da classe.
-                        if (
-                            previous_box
-                            and now_ts - previous_seen_at <= settings.VEHICLE_EVENT_DEDUP_SECONDS
-                            and _vehicle_box_iou(current_box, previous_box) >= 0.35
-                        ):
-                            acquired = False
-                            # Mantém a classe original do rastro (estabiliza o
-                            # tipo reportado em vez de deixá-lo oscilar).
-                            if previous_type:
-                                vehicle_type = previous_type
-
-                    track_payload = {
-                        "vehicle_type": vehicle_type or vehicle.vehicle_type,
-                        "bbox": current_box,
-                        "last_seen_at": now_ts,
-                    }
-                    cache.set(
-                        track_key,
-                        json.dumps(track_payload),
-                        ex=max(settings.VEHICLE_EVENT_DEDUP_SECONDS * 2, 120),
-                    )
-                except Exception as exc:
-                    logger.debug("Vehicle dedup cache unavailable: %s", exc)
-                    acquired = True
-
-                if acquired:
-                    vehicle_event = VehicleEvent(
-                        camera_id=camera.id,
-                        occurrence_id=None,
-                        vehicle_type=vehicle.vehicle_type,
-                        confidence=vehicle.confidence,
-                        bbox_x=vehicle.bbox_x,
-                        bbox_y=vehicle.bbox_y,
-                        bbox_w=vehicle.bbox_w,
-                        bbox_h=vehicle.bbox_h,
-                        image_path=event_image_path,
-                    )
-                    db.add(vehicle_event)
-                    db.flush()
-
-            # Deduplication: ignore same plate from same camera in last N seconds
+            # Occurrence (placa): dedup por placa na janela AGENT_DEDUP_SECONDS.
             occ = None
             persistence_seconds: float | None = None
             if result is not None and plate is not None:
@@ -305,7 +260,6 @@ try:
                 if dup:
                     logger.debug("Dedup: plate=%s camera=%s ignored", plate, camera_id)
                 else:
-                    # expires_at from plan retention
                     client = camera.client
                     plan = client.plan
                     expires_at = None
@@ -318,7 +272,7 @@ try:
                         camera_id=camera.id,
                         plate=plate,
                         confidence=confidence,
-                        image_path=event_image_path,
+                        image_path=save_bytes(vehicle.crop_bytes, camera_id) if vehicle is not None else None,
                         expires_at=expires_at,
                         vehicle_type=vehicle_type,
                         vehicle_color=result.get("vehicle_color"),
@@ -332,8 +286,26 @@ try:
                     process_alerts(str(occ.id), db)
                     persistence_seconds = perf_counter() - persist_started_at
 
-            if vehicle_event is not None:
-                vehicle_event.occurrence_id = occ.id if occ is not None else None
+            # Evento de detecção (contagem única): um por track recém-contado.
+            for tr in newly_counted:
+                det = detections[tr["det_index"]]
+                event_image_path = save_bytes(det.crop_bytes, camera_id)
+                link_occ = occ.id if (occ is not None and tr["category"] == "vehicle") else None
+                db.add(
+                    VehicleEvent(
+                        camera_id=camera.id,
+                        occurrence_id=link_occ,
+                        category=tr["category"],
+                        vehicle_type=tr["label"],
+                        track_id=tr["track_id"],
+                        confidence=det.confidence,
+                        bbox_x=det.bbox_x,
+                        bbox_y=det.bbox_y,
+                        bbox_w=det.bbox_w,
+                        bbox_h=det.bbox_h,
+                        image_path=event_image_path,
+                    )
+                )
 
             db.commit()
             if persistence_seconds is not None:

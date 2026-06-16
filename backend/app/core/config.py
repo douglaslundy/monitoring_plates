@@ -46,7 +46,10 @@ class Settings(BaseSettings):
     # Rastreador multi-objeto (object_tracker_service)
     TRACK_IOU_MIN: float = 0.30
     TRACK_MAX_AGE_SECONDS: float = 3.0
-    TRACK_MIN_HITS: int = 2
+    # Frames mínimos para confirmar/contar um track. 1 = conta ao aparecer (o
+    # próprio track impede recontagem enquanto o objeto permanece). Aumente para
+    # filtrar detecções espúrias de 1 frame.
+    TRACK_MIN_HITS: int = 1
 
     # Captura RTSP + motion gating (capture-runner)
     CAPTURE_FPS: float = 6.0

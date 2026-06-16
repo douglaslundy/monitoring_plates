@@ -478,6 +478,7 @@ def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
 
     frame_bytes = _make_vehicle_image()
     fake_detection = MagicMock()
+    fake_detection.category = "vehicle"
     fake_detection.crop_bytes = b"vehicle-crop"
     fake_detection.vehicle_type = "car"
     fake_detection.confidence = 0.91
@@ -486,7 +487,7 @@ def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
     fake_detection.bbox_w = 100
     fake_detection.bbox_h = 80
 
-    mock_query = patch("app.services.vehicle_detection_service.vehicle_detector.best_detection", return_value=fake_detection)
+    mock_query = patch("app.services.vehicle_detection_service.vehicle_detector.detect", return_value=[fake_detection])
     mock_recognizer = patch("app.services.ocr_service.recognizer.recognize", return_value={"plate": "ABC1234", "confidence": 0.95, "engine": "easyocr"})
     mock_save = patch("app.services.storage_service.save_bytes", return_value="cameras/test/crop.jpg")
     mock_alerts = patch("app.services.alert_service.process_alerts")
@@ -522,6 +523,7 @@ def test_process_frame_ignora_frame_repetido(db, camera_agent_a):
 
     mock_vehicle_detector = MagicMock()
     fake_detection = MagicMock()
+    fake_detection.category = "vehicle"
     fake_detection.crop_bytes = b"vehicle-crop"
     fake_detection.vehicle_type = "car"
     fake_detection.confidence = 0.91
@@ -529,7 +531,7 @@ def test_process_frame_ignora_frame_repetido(db, camera_agent_a):
     fake_detection.bbox_y = 20
     fake_detection.bbox_w = 100
     fake_detection.bbox_h = 80
-    mock_vehicle_detector.best_detection.return_value = fake_detection
+    mock_vehicle_detector.detect.return_value = [fake_detection]
     mock_recognizer = MagicMock()
     mock_recognizer.recognize.return_value = {"plate": "ABC1234", "confidence": 0.95, "engine": "easyocr"}
 
@@ -562,7 +564,7 @@ def test_process_frame_ignora_frame_repetido(db, camera_agent_a):
             frame_processor.process_frame.run(str(camera_agent_a.id), frame_b64)
             frame_processor.process_frame.run(str(camera_agent_a.id), frame_b64)
 
-        assert mock_vehicle_detector.best_detection.call_count == 1
+        assert mock_vehicle_detector.detect.call_count == 1
         assert mock_recognizer.recognize.call_count == 1
     finally:
         worker_db.close()
@@ -576,7 +578,7 @@ def test_process_frame_sem_veiculo_nao_chama_ocr(db, camera_agent_a):
     frame_b64 = __import__("base64").b64encode(frame_bytes).decode()
 
     mock_vehicle_detector = MagicMock()
-    mock_vehicle_detector.best_detection.return_value = None
+    mock_vehicle_detector.detect.return_value = []
     mock_recognizer = MagicMock()
 
     worker_db = SessionLocal()
@@ -594,7 +596,7 @@ def test_process_frame_sem_veiculo_nao_chama_ocr(db, camera_agent_a):
         ):
             frame_processor.process_frame.run(str(camera_agent_a.id), frame_b64)
 
-        mock_vehicle_detector.best_detection.assert_called_once()
+        mock_vehicle_detector.detect.assert_called_once()
         mock_recognizer.recognize.assert_not_called()
     finally:
         worker_db.close()
@@ -609,6 +611,7 @@ def test_process_frame_nao_duplica_veiculo_parado(db, camera_agent_a):
     frame_two = _make_vehicle_image()
 
     fake_detection = MagicMock()
+    fake_detection.category = "vehicle"
     fake_detection.crop_bytes = b"vehicle-crop"
     fake_detection.vehicle_type = "truck"
     fake_detection.confidence = 0.91
@@ -617,7 +620,7 @@ def test_process_frame_nao_duplica_veiculo_parado(db, camera_agent_a):
     fake_detection.bbox_w = 100
     fake_detection.bbox_h = 80
 
-    mock_query = patch("app.services.vehicle_detection_service.vehicle_detector.best_detection", return_value=fake_detection)
+    mock_query = patch("app.services.vehicle_detection_service.vehicle_detector.detect", return_value=[fake_detection])
     mock_recognizer = patch("app.services.ocr_service.recognizer.recognize", return_value=None)
     fake_cache_state: dict[str, str] = {}
 
