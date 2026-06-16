@@ -1,6 +1,8 @@
-# ─── Stage 1: export YOLOv8n → ONNX (ultralytics/torch usados só no build) ───
-# O runtime NÃO leva PyTorch: só copiamos o .onnx resultante.
+# ─── Stage 1: export YOLOv8 (n/s/m) → ONNX (ultralytics/torch só no build) ───
+# O runtime NÃO leva PyTorch: só copiamos o .onnx resultante. O modelo é
+# escolhido pelo build-arg YOLO_MODEL (default yolov8s; troque p/ yolov8m/n).
 FROM python:3.11-slim AS model-export
+ARG YOLO_MODEL=yolov8s
 ENV YOLO_OFFLINE=True
 # Torch CPU 2.4.1: usa o exportador ONNX legado (sem onnxscript) e evita ~2GB de
 # wheels CUDA. Instalado antes do ultralytics p/ ele não puxar a versão CUDA.
@@ -13,15 +15,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /export
 # Pesos enviados no repo (a VPS não baixa do github) → export 100% local.
-COPY yolov8n.pt /export/yolov8n.pt
-RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=640, opset=12, simplify=True)" \
-    && test -f yolov8n.onnx
+COPY ${YOLO_MODEL}.pt /export/${YOLO_MODEL}.pt
+RUN python -c "from ultralytics import YOLO; YOLO('${YOLO_MODEL}.pt').export(format='onnx', imgsz=640, opset=12, simplify=True)" \
+    && test -f ${YOLO_MODEL}.onnx
 
 # ─── Stage 2: runtime leve (onnxruntime + fast-alpr, sem torch/easyocr) ───
 FROM python:3.11-slim
+ARG YOLO_MODEL=yolov8s
 
 ENV PYTHONUNBUFFERED=1 \
-    MODELS_DIR=/app/models
+    MODELS_DIR=/app/models \
+    VEHICLE_MODEL_PATH=/app/models/${YOLO_MODEL}.onnx
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -36,8 +40,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Modelo de detecção de veículos (YOLOv8n) gerado no estágio anterior.
-COPY --from=model-export /export/yolov8n.onnx /app/models/yolov8n.onnx
+# Modelo de detecção de objetos (YOLOv8, default yolov8s) gerado no estágio anterior.
+COPY --from=model-export /export/${YOLO_MODEL}.onnx /app/models/${YOLO_MODEL}.onnx
 
 # Pré-baixa os modelos do fast-alpr durante o build (build tem internet) para
 # que o container rode 100% OFFLINE na VPS. O cache fica embutido na imagem.
