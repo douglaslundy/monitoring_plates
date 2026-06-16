@@ -222,6 +222,7 @@ def export_events(
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
     vehicle_type: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -232,6 +233,8 @@ def export_events(
         q = q.filter(VehicleEvent.camera_id.in_(camera_ids))
     if camera_id is not None:
         q = q.filter(VehicleEvent.camera_id == camera_id)
+    if category:
+        q = q.filter(VehicleEvent.category == category)
     if date_from is not None:
         q = q.filter(VehicleEvent.detected_at >= date_from)
     if date_to is not None:
@@ -248,6 +251,7 @@ def export_events(
             "ID",
             "Camera",
             "Local",
+            "Categoria",
             "Tipo",
             "Confiança (%)",
             "BBox X",
@@ -265,6 +269,7 @@ def export_events(
                 str(event.id),
                 camera.name if camera else "",
                 camera.location if camera else "",
+                event.category,
                 event.vehicle_type,
                 f"{event.confidence * 100:.1f}",
                 event.bbox_x,

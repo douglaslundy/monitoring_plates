@@ -71,7 +71,7 @@ export default function ClientDashboard() {
         api.get<OccurrenceStats>("/api/occurrences/stats"),
         api.get<{ items: OccurrenceWithCamera[] }>("/api/occurrences?limit=10"),
         api.get<CameraType[]>("/api/cameras"),
-        api.get<VehicleEventStats>("/api/vehicles/stats"),
+        api.get<VehicleEventStats>("/api/vehicles/stats", { params: { category: "vehicle" } }),
       ]);
       setStats(statsRes.data);
       setFeed(feedRes.data.items);
@@ -88,7 +88,7 @@ export default function ClientDashboard() {
     setExportingVehicles(true);
     setExportError("");
     try {
-      const response = await api.get<Blob>("/api/vehicles/export", { responseType: "blob" });
+      const response = await api.get<Blob>("/api/vehicles/export", { params: { category: "vehicle" }, responseType: "blob" });
       const blob = new Blob([response.data], { type: "text/csv;charset=utf-8" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
