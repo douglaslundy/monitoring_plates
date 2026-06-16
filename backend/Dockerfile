@@ -2,9 +2,12 @@
 # O runtime NÃO leva PyTorch: só copiamos o .onnx resultante.
 FROM python:3.11-slim AS model-export
 ENV YOLO_OFFLINE=True
+# Torch CPU 2.4.1: usa o exportador ONNX legado (sem onnxscript) e evita ~2GB de
+# wheels CUDA. Instalado antes do ultralytics p/ ele não puxar a versão CUDA.
+RUN pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 \
+    --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir ultralytics==8.3.0 onnx==1.17.0 onnxslim
 # ultralytics importa cv2 (opencv) → precisa de libGL/glib no sistema.
-# (depois do pip p/ preservar o cache da camada pesada do pip/torch)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
