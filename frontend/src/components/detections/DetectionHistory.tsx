@@ -71,17 +71,26 @@ function formatDateTime(value: string): string {
 function HourChart({ data }: { data: { hour: number; count: number }[] }) {
   const max = Math.max(...data.map((item) => item.count), 1);
   return (
-    <div className="flex items-end gap-1 h-28">
-      {data.map((item) => (
-        <div key={item.hour} className="flex-1 flex flex-col items-center gap-1">
+    <div>
+      {/* As barras são filhas DIRETAS do container de altura fixa (h-28) para
+          que `height: %` resolva contra uma altura definida. */}
+      <div className="flex items-end gap-1 h-28">
+        {data.map((item) => (
           <div
-            className="w-full rounded-t-md bg-primary/75 hover:bg-primary transition-colors"
+            key={item.hour}
+            className="flex-1 rounded-t-md bg-primary/75 hover:bg-primary transition-colors"
             style={{ height: `${Math.max((item.count / max) * 100, item.count > 0 ? 5 : 0)}%` }}
             title={`${item.hour}h: ${item.count}`}
           />
-          <span className="text-[10px] text-muted-foreground">{item.hour}</span>
-        </div>
-      ))}
+        ))}
+      </div>
+      <div className="mt-1 flex gap-1">
+        {data.map((item) => (
+          <span key={item.hour} className="flex-1 text-center text-[10px] text-muted-foreground">
+            {item.hour}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
