@@ -34,9 +34,18 @@ def public_stream_url(camera_id: str) -> str:
     return f"{base}/stream.html?src={stream_name(camera_id)}"
 
 
-def register_stream(camera_id: str, rtsp_url: str) -> bool:
-    """Cadastra/atualiza um stream RTSP no go2rtc (idempotente)."""
+def register_stream(camera_id: str, rtsp_url: str, dual_lens: bool = False) -> bool:
+    """Cadastra/atualiza um stream RTSP no go2rtc (idempotente).
+
+    Câmeras **dual-lens** NÃO são registradas por aqui: o go2rtc recusa fontes
+    com espaço (filtro ffmpeg) via API ("source with spaces may be insecure"),
+    então o stream recortado da lente configurada é definido no `go2rtc.yaml`
+    (config), usando o UUID da câmera como nome. Registrar o RTSP cru aqui
+    sobrescreveria esse stream recortado (voltaria a exibir as 2 lentes).
+    """
     if not settings.GO2RTC_ENABLED or not rtsp_url:
+        return False
+    if dual_lens:
         return False
     try:
         import requests
@@ -89,7 +98,7 @@ def sync_streams(db) -> int:
     )
     count = 0
     for camera in cameras:
-        if register_stream(str(camera.id), camera.rtsp_url):
+        if register_stream(str(camera.id), camera.rtsp_url, bool(camera.dual_lens)):
             count += 1
     logger.info("go2rtc: %s/%s streams sincronizados", count, len(cameras))
     return count

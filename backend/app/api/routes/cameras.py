@@ -304,7 +304,8 @@ def camera_webrtc(
         return {"enabled": False, "src": None, "url": None}
 
     # Garante o stream no go2rtc (idempotente) mesmo que o startup tenha falhado.
-    register_stream(str(camera.id), camera.rtsp_url)
+    # Dual-lens é definido no go2rtc.yaml (recortado); register_stream ignora.
+    register_stream(str(camera.id), camera.rtsp_url, bool(camera.dual_lens))
     return {
         "enabled": True,
         "src": stream_name(str(camera.id)),

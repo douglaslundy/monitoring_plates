@@ -1,6 +1,20 @@
 # Configuração do go2rtc (live WebRTC).
-# Os streams são cadastrados dinamicamente pelo backend/capture-runner via API
-# (REST PUT /api/streams), então não precisam ser listados aqui.
+# Câmeras normais são cadastradas dinamicamente pelo backend/capture-runner via
+# API (REST PUT /api/streams) e não precisam ser listadas aqui.
+#
+# Câmeras DUAL-LENS são a exceção: o go2rtc recusa fontes com espaço/filtro via
+# API ("source with spaces may be insecure"), então o stream recortado da lente
+# configurada precisa ser definido AQUI, no config (que aceita). Use o UUID da
+# câmera como nome do stream (o front consome por UUID) e recorte a lente:
+#   - lower (metade de baixo):  crop=iw:ih/2:0:ih/2
+#   - upper (metade de cima):   crop=iw:ih/2:0:0
+#
+# streams:
+#   <camera-uuid>: "exec:ffmpeg -rtsp_transport tcp -i <rtsp-url> -an
+#     -vf crop=iw:ih/2:0:ih/2,scale=1280:-2 -c:v libx264 -preset superfast
+#     -tune zerolatency -profile:v baseline -pix_fmt yuv420p -g 30
+#     -f rtsp -rtsp_transport tcp {output}"
+# (o stream acima deve ser UMA linha; aqui está quebrado só para leitura)
 
 api:
   listen: ":1984"
