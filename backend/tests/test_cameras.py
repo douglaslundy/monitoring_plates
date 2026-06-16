@@ -1,6 +1,7 @@
 from io import BytesIO
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
+from uuid import UUID
 
 import pytest
 
