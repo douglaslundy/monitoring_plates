@@ -45,7 +45,7 @@ class CameraCapture(threading.Thread):
         self._prev_gray = None
         self._last_preview_save = 0.0
         self._last_seen_update = 0.0
-        self._bootstrap = True  # 1o frame após conectar sempre dispara ANPR
+        self._force_send = True  # 1o frame após conectar sempre dispara ANPR
 
     def stop(self) -> None:
         self._stop.set()
@@ -60,7 +60,7 @@ class CameraCapture(threading.Thread):
                 time.sleep(_RECONNECT_SECONDS)
                 continue
 
-            self._bootstrap = True
+            self._force_send = True
             self._prev_gray = None
             frame_interval = 1.0 / max(0.5, settings.CAPTURE_FPS)
             try:
@@ -114,9 +114,9 @@ class CameraCapture(threading.Thread):
             self._last_preview_save = now
             self._touch_last_seen(now)
 
-        if not (moved or self._bootstrap):
+        if not (moved or self._force_send):
             return
-        self._bootstrap = False
+        self._force_send = False
         self._enqueue(cv2, frame)
 
     def _has_motion(self, cv2, frame) -> bool:

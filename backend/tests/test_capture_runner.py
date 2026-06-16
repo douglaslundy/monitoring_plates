@@ -39,6 +39,13 @@ def test_motion_gate_ignora_cena_parada():
     assert cap._has_motion(cv2, frame) is False
 
 
+def test_camera_capture_nao_sombreia_thread_bootstrap():
+    """Atributo de flag não pode sombrear o método interno Thread._bootstrap."""
+    cap = CameraCapture("cam-1", "rtsp://x", dual_lens=False, lens_side=None)
+    assert callable(cap._bootstrap)  # método do threading.Thread intacto
+    assert cap._force_send is True
+
+
 def test_manager_inicia_e_encerra_workers(monkeypatch):
     started: list[str] = []
     stopped: list[str] = []
