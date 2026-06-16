@@ -1,13 +1,16 @@
 # ─── Stage 1: export YOLOv8n → ONNX (ultralytics/torch usados só no build) ───
 # O runtime NÃO leva PyTorch: só copiamos o .onnx resultante.
 FROM python:3.11-slim AS model-export
-RUN pip install --no-cache-dir ultralytics==8.3.0 onnx==1.17.0
+ENV YOLO_OFFLINE=True
+RUN pip install --no-cache-dir ultralytics==8.3.0 onnx==1.17.0 onnxslim
 # ultralytics importa cv2 (opencv) → precisa de libGL/glib no sistema.
 # (depois do pip p/ preservar o cache da camada pesada do pip/torch)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /export
+# Pesos enviados no repo (a VPS não baixa do github) → export 100% local.
+COPY yolov8n.pt /export/yolov8n.pt
 RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=640, opset=12, simplify=True)" \
     && test -f yolov8n.onnx
 
