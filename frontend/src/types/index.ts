@@ -141,6 +141,11 @@ export interface VehicleEventTypeCount {
   count: number;
 }
 
+export interface CategoryCount {
+  category: string;
+  count: number;
+}
+
 export interface TopVehicleCamera {
   camera_id: string;
   camera_name: string;
@@ -157,6 +162,7 @@ export interface LatestVehicleEvent {
   camera_id: string;
   camera_name: string;
   camera_location: string | null;
+  category: string;
   vehicle_type: string;
   confidence: number;
   detected_at: string;
@@ -166,6 +172,7 @@ export interface VehicleEventStats {
   total_today: number;
   total_week: number;
   by_type: VehicleEventTypeCount[];
+  by_category: CategoryCount[];
   top_cameras: TopVehicleCamera[];
   by_hour: VehicleHourBucket[];
   latest_event: LatestVehicleEvent | null;
@@ -181,6 +188,7 @@ export interface VehicleEventWithCamera {
   id: string;
   camera_id: string;
   occurrence_id: string | null;
+  category: string;
   vehicle_type: string;
   confidence: number;
   bbox_x: number;
