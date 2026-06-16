@@ -1,5 +1,19 @@
+"""Reconhecimento de placas (OCR) híbrido.
+
+Motor local padrão: **fast-alpr** (detecção de placa + OCR em ONNX Runtime, CPU,
+single-pass, ~dezenas de ms). Substitui o EasyOCR força-bruta que rodava ~18
+recortes por frame (83s/frame).
+
+Motor opcional por plano/câmera: **PlateRecognizer** (nuvem, paga, alta
+precisão, devolve marca/cor/modelo). O `OcrRouter` resolve qual usar e cacheia a
+resolução para não abrir sessão de banco a cada frame.
+
+Importações de `fast_alpr`/`cv2` são preguiçosas para permitir mock nos testes.
+"""
+import os
 import re
 import logging
+import threading
 import time
 from io import BytesIO
 from typing import Optional, Protocol
@@ -10,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 _PLATE_RE = re.compile(r"^[A-Z]{3}\d{4}$|^[A-Z]{3}\d[A-Z]\d{2}$")
 
+# TTL (s) do cache de resolução de motor por câmera — evita hit de DB por frame.
+_ENGINE_CACHE_TTL = 60.0
+
 
 # ─── Interface comum ──────────────────────────────────────────────────────────
 
@@ -18,231 +35,142 @@ class OcrEngine(Protocol):
         ...
 
 
-# ─── EasyOCR ──────────────────────────────────────────────────────────────────
+# ─── Motor local: fast-alpr (ONNX) ─────────────────────────────────────────────
 
-class EasyOcrEngine:
+class FastAlprEngine:
+    """Detecção de placa + OCR via fast-alpr (ONNX Runtime, CPU)."""
+
     def __init__(self) -> None:
-        self._reader = None
+        self._alpr = None
+        self._lock = threading.Lock()
+        self._unavailable = False
 
-    def _get_reader(self):
-        if self._reader is None:
-            import easyocr
+    def _get_alpr(self):
+        if self._alpr is not None or self._unavailable:
+            return self._alpr
+        with self._lock:
+            if self._alpr is not None or self._unavailable:
+                return self._alpr
             try:
-                import torch
+                from fast_alpr import ALPR
+            except Exception as exc:  # pragma: no cover - ambiente sem fast_alpr
+                logger.warning("fast-alpr indisponível (%s) — OCR local desligado", exc)
+                self._unavailable = True
+                return None
 
-                torch.backends.nnpack.set_flags(False)
-            except Exception:
-                pass
-            self._reader = easyocr.Reader(["pt", "en"], gpu=False, quantize=False, verbose=False)
-        return self._reader
+            kwargs: dict = {}
+            detector = os.getenv("FAST_ALPR_DETECTOR_MODEL")
+            ocr = os.getenv("FAST_ALPR_OCR_MODEL")
+            if detector:
+                kwargs["detector_model"] = detector
+            if ocr:
+                kwargs["ocr_model"] = ocr
+            try:
+                self._alpr = ALPR(**kwargs)
+                logger.info("fast-alpr carregado (%s)", kwargs or "defaults")
+            except Exception as exc:
+                logger.error("Falha ao iniciar fast-alpr (%s) — OCR local desligado", exc)
+                self._unavailable = True
+                self._alpr = None
+            return self._alpr
+
+    def warmup(self) -> None:
+        self._get_alpr()
 
     def recognize(self, image_bytes: bytes) -> Optional[dict]:
-        import numpy as np
+        alpr = self._get_alpr()
+        if alpr is None:
+            return None
 
-        t0 = time.time()
         image = self._decode_image(image_bytes)
         if image is None:
             return None
 
-        reader = self._get_reader()
-        candidates = self._build_candidates(image)
-        shape = getattr(image, "shape", None)
-        if type(image).__module__ != "unittest.mock" and shape and len(shape) >= 2 and min(shape[:2]) < 900:
-            candidates.append(np.repeat(np.repeat(image, 2, axis=0), 2, axis=1))
-
-        for candidate in candidates:
-            readtext_kwargs = self._readtext_kwargs(candidate)
-            result = self._extract_plate(reader.readtext(candidate, **readtext_kwargs), t0)
-            if result is not None:
-                return result
-
-        return None
-
-    def _readtext_kwargs(self, candidate) -> dict[str, object]:
-        allowlist = settings.OCR_ALLOWLIST.strip()
-        if not allowlist:
-            return {}
-
-        score = self._candidate_quality_score(candidate)
-        if score < 0.48:
-            return {}
-
-        shape = getattr(candidate, "shape", None)
-        if not shape or len(shape) < 2:
-            return {"allowlist": allowlist}
-
-        height = int(shape[0])
-        width = int(shape[1])
-        aspect_ratio = width / max(height, 1)
-        if width >= 64 and 2.0 <= aspect_ratio <= 7.8:
-            return {"allowlist": allowlist}
-
-        return {}
-
-    def _candidate_quality_score(self, candidate) -> float:
-        shape = getattr(candidate, "shape", None)
-        if not shape or len(shape) < 2:
-            return 0.0
-
-        height = max(1, int(shape[0]))
-        width = max(1, int(shape[1]))
-        aspect_ratio = width / height
-        size_score = min(1.0, (width * height) / 60000.0)
-        aspect_score = 1.0 - min(1.0, abs(aspect_ratio - 4.0) / 4.0)
-        if width < 64 or height < 18:
-            return round(max(0.0, (size_score * 0.4) + (aspect_score * 0.6) - 0.2), 3)
-        return round(max(0.0, (size_score * 0.45) + (aspect_score * 0.55)), 3)
-
-    def _extract_plate(self, results, started_at: float) -> Optional[dict]:
-        minimum_confidence = min(settings.AGENT_MIN_CONFIDENCE, 0.55)
-        for _, text, confidence in results:
-            normalized = re.sub(r"[^A-Z0-9]", "", text.upper())
-            if _PLATE_RE.match(normalized) and confidence >= minimum_confidence:
-                elapsed = time.time() - started_at
-                logger.info("EasyOCR: plate=%s conf=%.2f time=%.2fs", normalized, confidence, elapsed)
-                return {
-                    "plate": normalized,
-                    "confidence": float(confidence),
-                    "engine": "easyocr",
-                }
-        return None
-
-    def _build_candidates(self, image):
-        import numpy as np
-
-        candidates = []
-        seen: set[tuple[int, int]] = set()
-
-        def add(candidate) -> None:
-            shape = getattr(candidate, "shape", None)
-            if not shape or len(shape) < 2:
-                return
-            key = (int(shape[0]), int(shape[1]))
-            if key in seen:
-                return
-            seen.add(key)
-            candidates.append(candidate)
-
-        add(image)
-
-        roi = self._find_plate_roi(image)
-        if roi is not None:
-            add(roi)
-
-        if type(image).__module__ == "unittest.mock":
-            return candidates
-
-        shape = getattr(image, "shape", None)
-        if not shape or len(shape) < 2:
-            return candidates
-        h, w = int(shape[0]), int(shape[1])
-        crops = [
-            image[max(0, int(h * 0.45)) :, :],
-            image[max(0, int(h * 0.55)) :, max(0, int(w * 0.1)) :],
-            image[: int(h * 0.7), :],
-            image[:, max(0, int(w * 0.05)) :],
-            image[int(h * 0.2) : int(h * 0.85), int(w * 0.1) : int(w * 0.95)],
-            image[int(h * 0.45) : int(h * 0.9), int(w * 0.05) : int(w * 0.7)],
-            image[int(h * 0.3) : int(h * 0.8), int(w * 0.2) : int(w * 0.95)],
-            image[int(h * 0.55) : int(h * 0.82), int(w * 0.18) : int(w * 0.82)],
-            image[int(h * 0.62) : int(h * 0.88), int(w * 0.22) : int(w * 0.78)],
-            image[int(h * 0.70) : int(h * 0.98), int(w * 0.28) : int(w * 0.74)],
-            image[int(h * 0.76) : int(h * 0.99), int(w * 0.32) : int(w * 0.70)],
-            image[int(h * 0.80) : int(h * 1.00), int(w * 0.25) : int(w * 0.78)],
-            image[int(h * 0.83) : int(h * 1.00), int(w * 0.30) : int(w * 0.74)],
-            image[int(h * 0.73) : int(h * 1.00), int(w * 0.38) : int(w * 0.66)],
-            image[int(h * 0.70) : int(h * 1.00), int(w * 0.35) : int(w * 0.68)],
-        ]
-        for crop in crops:
-            add(crop)
-
-        add(np.repeat(np.repeat(image, 2, axis=0), 2, axis=1))
-        add(np.repeat(np.repeat(image, 3, axis=0), 3, axis=1))
-
-        return candidates
-
-    def warmup(self) -> None:
+        t0 = time.time()
         try:
-            self._get_reader()
-        except Exception:
-            return
-
-    def _decode_image(self, image_bytes: bytes):
-        import numpy as np
-        from PIL import Image, ImageEnhance, ImageFilter, ImageOps
-
-        try:
-            import cv2
-        except ImportError:
-            cv2 = None
-
-        if cv2 is not None:
-            arr = np.frombuffer(image_bytes, np.uint8)
-            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-            if img is None:
-                return None
-
-            h, w = img.shape[:2]
-            if w > 1280:
-                scale = 1280 / w
-                img = cv2.resize(img, (1280, int(h * scale)))
-
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            if not isinstance(getattr(gray, "shape", None), tuple):
-                return img
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
-            if not isinstance(getattr(enhanced, "shape", None), tuple):
-                return img
-            return enhanced
-
-        try:
-            image = Image.open(BytesIO(image_bytes)).convert("L")
-        except Exception:
+            results = alpr.predict(image)
+        except Exception as exc:
+            logger.warning("fast-alpr predict falhou: %s", exc)
             return None
 
-        if image.width > 1280:
-            scale = 1280 / image.width
-            image = image.resize((1280, int(image.height * scale)))
+        min_conf = self._min_confidence()
+        best_plate: Optional[str] = None
+        best_conf = 0.0
+        for result in results or []:
+            text, conf = self._extract(result)
+            if not text:
+                continue
+            normalized = re.sub(r"[^A-Z0-9]", "", text.upper())
+            if _PLATE_RE.match(normalized) and conf >= min_conf and conf > best_conf:
+                best_plate = normalized
+                best_conf = conf
 
-        image = ImageOps.autocontrast(image)
-        image = ImageEnhance.Sharpness(image).enhance(1.6)
-        image = image.filter(ImageFilter.SHARPEN)
-        return np.array(image)
+        if best_plate is None:
+            return None
 
-    def _find_plate_roi(self, gray):
+        logger.info("fast-alpr: plate=%s conf=%.2f time=%.3fs", best_plate, best_conf, time.time() - t0)
+        return {"plate": best_plate, "confidence": float(best_conf), "engine": "fast_alpr"}
+
+    @staticmethod
+    def _min_confidence() -> float:
+        return min(settings.AGENT_MIN_CONFIDENCE, 0.5)
+
+    @staticmethod
+    def _extract(result) -> tuple[Optional[str], float]:
+        """Extrai (texto, confiança) de um resultado do fast-alpr de forma robusta."""
+        ocr = None
+        if isinstance(result, dict):
+            ocr = result.get("ocr")
+        else:
+            ocr = getattr(result, "ocr", None)
+        if ocr is None:
+            return None, 0.0
+        if isinstance(ocr, dict):
+            text = ocr.get("text")
+            conf = ocr.get("confidence", 0.0)
+        else:
+            text = getattr(ocr, "text", None)
+            conf = getattr(ocr, "confidence", 0.0)
+        try:
+            conf = float(conf or 0.0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        return text, conf
+
+    def _decode_image(self, image_bytes: bytes):
         try:
             import cv2
-        except ImportError:
-            return gray
+            import numpy as np
+        except Exception:  # pragma: no cover
+            cv2 = None
+            np = None
 
-        blurred = cv2.bilateralFilter(gray, 11, 17, 17)
-        edges = cv2.Canny(blurred, 30, 200)
-        contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:30]
+        if cv2 is not None and np is not None:
+            arr = np.frombuffer(image_bytes, np.uint8)
+            return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
-        for contour in contours:
-            x, y, w, h = cv2.boundingRect(contour)
-            if h == 0:
-                continue
-            ratio = w / h
-            if 3.0 <= ratio <= 5.0 and w > 80:
-                return gray[y: y + h, x: x + w]
+        try:
+            from PIL import Image
+            import numpy as np
+        except Exception:  # pragma: no cover
+            return None
+        try:
+            pil = Image.open(BytesIO(image_bytes)).convert("RGB")
+        except Exception:
+            return None
+        return np.array(pil)[:, :, ::-1]  # RGB→BGR (formato cv2/fast-alpr)
 
-        return gray
 
-
-class PlateRecognizer(EasyOcrEngine):
-    """Backward-compatible alias kept for tests and older imports."""
-
-    pass
+# Aliases de compatibilidade — código/testes antigos importam estes nomes.
+EasyOcrEngine = FastAlprEngine
+PlateRecognizer = FastAlprEngine
 
 
 def warm_ocr_models() -> None:
-    _easyocr_engine.warmup()
+    _local_engine.warmup()
 
 
-# ─── Plate Recognizer ─────────────────────────────────────────────────────────
+# ─── Motor de nuvem: Plate Recognizer ──────────────────────────────────────────
 
 class PlateRecognizerEngine:
     def __init__(self, api_token: str, api_url: str, regions: list, enable_mmc: bool) -> None:
@@ -309,24 +237,45 @@ class PlateRecognizerEngine:
 # ─── Router ───────────────────────────────────────────────────────────────────
 
 class OcrRouter:
-    """Resolve qual motor OCR usar com base no plano do cliente da câmera."""
+    """Resolve qual motor OCR usar com base no plano do cliente da câmera.
+
+    A resolução é cacheada por `_ENGINE_CACHE_TTL` segundos para não abrir sessão
+    de banco a cada frame processado.
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[str, tuple[OcrEngine, float]] = {}
+        self._cache_lock = threading.Lock()
 
     def recognize(self, image_bytes: bytes, camera_id: Optional[str] = None) -> Optional[dict]:
         engine = self._resolve_engine(camera_id)
         try:
             result = engine.recognize(image_bytes)
         except Exception as e:
-            logger.error("OCR engine failed (%s): %s — falling back to EasyOCR", type(engine).__name__, e)
+            logger.error("OCR engine failed (%s): %s — fallback para motor local", type(engine).__name__, e)
             result = None
 
-        # Fallback para EasyOCR se o motor principal falhar
-        if result is None and not isinstance(engine, EasyOcrEngine):
-            logger.info("Falling back to EasyOCR")
-            result = _easyocr_engine.recognize(image_bytes)
+        # Fallback para o motor local se o motor principal falhar.
+        if result is None and not isinstance(engine, FastAlprEngine):
+            logger.info("Fallback para fast-alpr local")
+            result = _local_engine.recognize(image_bytes)
 
         return result
 
     def _resolve_engine(self, camera_id: Optional[str]) -> OcrEngine:
+        cache_key = camera_id or "__system__"
+        now = time.time()
+        with self._cache_lock:
+            cached = self._cache.get(cache_key)
+            if cached and cached[1] > now:
+                return cached[0]
+
+        engine = self._build_engine(camera_id)
+        with self._cache_lock:
+            self._cache[cache_key] = (engine, now + _ENGINE_CACHE_TTL)
+        return engine
+
+    def _build_engine(self, camera_id: Optional[str]) -> OcrEngine:
         if camera_id is None:
             return self._get_active_engine("system_default")
 
@@ -346,7 +295,7 @@ class OcrRouter:
         except Exception as e:
             logger.warning("Could not resolve OCR engine for camera %s: %s", camera_id, e)
 
-        return _easyocr_engine
+        return _local_engine
 
     def _get_active_engine(self, preferred: str) -> OcrEngine:
         if preferred == "system_default" or preferred is None:
@@ -357,18 +306,18 @@ class OcrRouter:
             if engine:
                 return engine
 
-        return _easyocr_engine
+        return _local_engine
 
     def _get_system_default(self) -> str:
         try:
             from app.core.database import SessionLocal
-            from app.models.ocr_engine_config import OcrEngineConfig, OcrEngineType
+            from app.models.ocr_engine_config import OcrEngineConfig
 
             db = SessionLocal()
             try:
                 cfg = (
                     db.query(OcrEngineConfig)
-                    .filter(OcrEngineConfig.is_active == True)
+                    .filter(OcrEngineConfig.is_active == True)  # noqa: E712
                     .order_by(OcrEngineConfig.updated_at.desc())
                     .first()
                 )
@@ -379,7 +328,7 @@ class OcrRouter:
         except Exception as e:
             logger.warning("Could not fetch system default OCR engine: %s", e)
 
-        return "easyocr"
+        return "fast_alpr"
 
     def _build_plate_recognizer(self) -> Optional[PlateRecognizerEngine]:
         try:
@@ -392,7 +341,7 @@ class OcrRouter:
                     db.query(OcrEngineConfig)
                     .filter(
                         OcrEngineConfig.engine_type == OcrEngineType.plate_recognizer,
-                        OcrEngineConfig.is_active == True,
+                        OcrEngineConfig.is_active == True,  # noqa: E712
                     )
                     .first()
                 )
@@ -413,5 +362,6 @@ class OcrRouter:
 
 # ─── Instâncias globais ────────────────────────────────────────────────────────
 
-_easyocr_engine = EasyOcrEngine()
+_local_engine = FastAlprEngine()
+_easyocr_engine = _local_engine  # alias de compatibilidade
 recognizer = OcrRouter()

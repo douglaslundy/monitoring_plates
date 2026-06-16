@@ -41,20 +41,20 @@ def run() -> None:
             db.commit()
             print("[seed] Planos criados.")
 
-        easyocr_cfg = (
+        local_cfg = (
             db.query(OcrEngineConfig)
-            .filter(OcrEngineConfig.engine_type == OcrEngineType.easyocr)
+            .filter(OcrEngineConfig.engine_type == OcrEngineType.fast_alpr)
             .first()
         )
-        if not easyocr_cfg:
+        if not local_cfg:
             db.add(OcrEngineConfig(
-                engine_type=OcrEngineType.easyocr,
-                mode=OcrEngineMode.cloud,
+                engine_type=OcrEngineType.fast_alpr,
+                mode=OcrEngineMode.onpremise,
                 is_active=True,
                 regions=["br"],
             ))
             db.commit()
-            print("[seed] Motor OCR padrão criado: EasyOCR (ativo).")
+            print("[seed] Motor OCR padrão criado: fast-alpr (local, ativo).")
 
         if not db.query(User).filter(User.email == "admin@sistema.com").first():
             admin = User(
