@@ -58,20 +58,41 @@ class FastAlprEngine:
                 self._unavailable = True
                 return None
 
-            kwargs: dict = {}
+            # Tenta, em ordem: modelos do ambiente → defaults da lib → pares
+            # conhecidos. Robusto a diferenças de versão do fast-alpr.
+            candidates: list[dict] = []
             detector = os.getenv("FAST_ALPR_DETECTOR_MODEL")
             ocr = os.getenv("FAST_ALPR_OCR_MODEL")
-            if detector:
-                kwargs["detector_model"] = detector
-            if ocr:
-                kwargs["ocr_model"] = ocr
-            try:
-                self._alpr = ALPR(**kwargs)
-                logger.info("fast-alpr carregado (%s)", kwargs or "defaults")
-            except Exception as exc:
-                logger.error("Falha ao iniciar fast-alpr (%s) — OCR local desligado", exc)
-                self._unavailable = True
-                self._alpr = None
+            if detector or ocr:
+                env_kwargs: dict = {}
+                if detector:
+                    env_kwargs["detector_model"] = detector
+                if ocr:
+                    env_kwargs["ocr_model"] = ocr
+                candidates.append(env_kwargs)
+            candidates.append({})  # defaults da versão instalada
+            candidates.append({
+                "detector_model": "yolo-v9-t-384-license-plate-end2end",
+                "ocr_model": "global-plates-mobile-vit-v2-model",
+            })
+            candidates.append({
+                "detector_model": "yolo-v9-t-384-license-plate-end2end",
+                "ocr_model": "cct-xs-v1-global-model",
+            })
+
+            last_exc: Exception | None = None
+            for cand in candidates:
+                try:
+                    self._alpr = ALPR(**cand)
+                    logger.info("fast-alpr carregado (%s)", cand or "defaults")
+                    return self._alpr
+                except Exception as exc:
+                    last_exc = exc
+                    continue
+
+            logger.error("Falha ao iniciar fast-alpr (%s) — OCR local desligado", last_exc)
+            self._unavailable = True
+            self._alpr = None
             return self._alpr
 
     def warmup(self) -> None:
