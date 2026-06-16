@@ -243,6 +243,14 @@ try:
                     vehicle_type = vehicle.vehicle_type
             maybe_publish_ocr_pipeline_alert(camera)
 
+            # Imagem de exibição: salva o FRAME CHEIO (resolução nativa, qualidade
+            # de captura, sem recompressão extra). O recorte pequeno de veículo
+            # distante ficava ilegível no histórico. Salvo uma vez por frame e
+            # reusado pela placa e pelos eventos de detecção.
+            display_image_path = None
+            if newly_counted or (result is not None and plate is not None):
+                display_image_path = save_bytes(analysis_bytes, camera_id)
+
             # Occurrence (placa): dedup por placa na janela AGENT_DEDUP_SECONDS.
             occ = None
             persistence_seconds: float | None = None
@@ -272,7 +280,7 @@ try:
                         camera_id=camera.id,
                         plate=plate,
                         confidence=confidence,
-                        image_path=save_bytes(vehicle.crop_bytes, camera_id) if vehicle is not None else None,
+                        image_path=display_image_path,
                         expires_at=expires_at,
                         vehicle_type=vehicle_type,
                         vehicle_color=result.get("vehicle_color"),
@@ -289,7 +297,6 @@ try:
             # Evento de detecção (contagem única): um por track recém-contado.
             for tr in newly_counted:
                 det = detections[tr["det_index"]]
-                event_image_path = save_bytes(det.crop_bytes, camera_id)
                 link_occ = occ.id if (occ is not None and tr["category"] == "vehicle") else None
                 db.add(
                     VehicleEvent(
@@ -303,7 +310,7 @@ try:
                         bbox_y=det.bbox_y,
                         bbox_w=det.bbox_w,
                         bbox_h=det.bbox_h,
-                        image_path=event_image_path,
+                        image_path=display_image_path,
                     )
                 )
 

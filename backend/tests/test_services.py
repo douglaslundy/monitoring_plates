@@ -409,7 +409,9 @@ def test_process_frame_usa_roi_da_camera(db):
     mock_vehicle_detector.detect.assert_called_once_with(b"roi_frame")
     mock_recognizer.recognize.assert_called_once_with(b"vehicle-crop", camera_id=str(cam.id))
     assert mock_save.call_args is not None
-    assert mock_save.call_args.args[0] == b"vehicle-crop"
+    # A imagem salva para exibição é o FRAME CHEIO (analysis_bytes = ROI), não o
+    # recorte pequeno do veículo.
+    assert mock_save.call_args.args[0] == b"roi_frame"
 
 
 def test_process_frame_ocr_none_nao_cria(db):
