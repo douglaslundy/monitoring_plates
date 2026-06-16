@@ -1,0 +1,15 @@
+# Configuração do go2rtc (live WebRTC).
+# Os streams são cadastrados dinamicamente pelo backend/capture-runner via API
+# (REST PUT /api/streams), então não precisam ser listados aqui.
+
+api:
+  listen: ":1984"
+
+webrtc:
+  # Candidato ICE para o navegador conectar ao go2rtc. Ajuste o IP para o host
+  # onde o go2rtc roda (VPS). Em LAN, o IP da VPS resolve direto.
+  candidates:
+    - 192.168.0.115:8555
+
+log:
+  level: info

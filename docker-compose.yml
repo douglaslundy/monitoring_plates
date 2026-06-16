@@ -107,12 +107,25 @@ services:
     networks:
       - monitoramento_net
 
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    ports:
+      - "1984:1984"      # API + player WebRTC
+      - "8555:8555/tcp"  # WebRTC TCP
+      - "8555:8555/udp"  # WebRTC UDP
+    volumes:
+      - ./infra/go2rtc.yaml:/config/go2rtc.yaml:ro
+    restart: unless-stopped
+    networks:
+      - monitoramento_net
+
   frontend:
     build: ./frontend
     ports:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_GO2RTC_URL: http://localhost:1984
     depends_on:
       - backend
     networks:

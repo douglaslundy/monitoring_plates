@@ -235,6 +235,13 @@ class CaptureManager:
         # Inicia threads novas.
         for camera_id, cfg in desired.items():
             if camera_id not in self._workers:
+                # Registra no go2rtc para o live WebRTC (best-effort).
+                try:
+                    from app.services.go2rtc_service import register_stream
+
+                    register_stream(camera_id, cfg["rtsp_url"])
+                except Exception:
+                    pass
                 worker = CameraCapture(camera_id, cfg["rtsp_url"], cfg["dual_lens"], cfg["lens_side"])
                 worker.start()
                 self._workers[camera_id] = worker

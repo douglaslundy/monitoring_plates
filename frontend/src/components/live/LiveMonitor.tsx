@@ -325,6 +325,8 @@ export default function LiveMonitor({
           {cameras.map((camera) => {
             const status = previewStatus[camera.id] ?? "loading";
             const streamSrc = previewUrls[camera.id];
+            const go2rtcBase = process.env.NEXT_PUBLIC_GO2RTC_URL;
+            const useWebrtc = camera.connection_type === "rtsp" && !!go2rtcBase;
 
             return (
               <div key={camera.id} className="border rounded-lg p-3 bg-white shadow-sm">
@@ -390,7 +392,14 @@ export default function LiveMonitor({
                 )}
 
                 <div className="relative aspect-video rounded border bg-black overflow-hidden mb-2">
-                  {streamSrc ? (
+                  {useWebrtc ? (
+                    <iframe
+                      title={`Live ${camera.name}`}
+                      src={`${go2rtcBase}/stream.html?src=${camera.id}`}
+                      className="h-full w-full border-0"
+                      allow="autoplay; fullscreen; picture-in-picture"
+                    />
+                  ) : streamSrc ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={streamSrc}
@@ -411,7 +420,7 @@ export default function LiveMonitor({
                     <div className="absolute inset-0 bg-gradient-to-br from-black via-slate-900 to-zinc-950" />
                   )}
 
-                  {status !== "ready" && (
+                  {!useWebrtc && status !== "ready" && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-white px-4 text-center">
                       {status === "loading" ? (
                         <>

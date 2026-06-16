@@ -52,6 +52,19 @@ async def lifespan(app: FastAPI):
 
         seed()
         asyncio.create_task(_redis_subscriber())
+
+        # Registra as câmeras RTSP no go2rtc para o live WebRTC (best-effort).
+        try:
+            from app.core.database import SessionLocal
+            from app.services.go2rtc_service import sync_streams
+
+            db = SessionLocal()
+            try:
+                sync_streams(db)
+            finally:
+                db.close()
+        except Exception:
+            logger.warning("Falha ao sincronizar streams no go2rtc", exc_info=True)
     yield
 
 
