@@ -105,6 +105,34 @@ services:
     networks:
       - monitoramento_net
 
+  capture-runner:
+    build: ./backend
+    restart: always
+    env_file: .env.prod
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+    command: python -m app.workers.capture_runner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoramento_net
+
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    restart: always
+    ports:
+      - "1984:1984"      # API + player WebRTC (acessado pelo navegador)
+      - "8555:8555/tcp"  # WebRTC TCP
+      - "8555:8555/udp"  # WebRTC UDP
+    volumes:
+      - ./infra/go2rtc.yaml:/config/go2rtc.yaml:ro
+    networks:
+      - monitoramento_net
+
   frontend:
     build: ./frontend
     restart: always
