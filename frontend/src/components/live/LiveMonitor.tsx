@@ -361,9 +361,11 @@ export default function LiveMonitor({
                     <Badge variant={detectorVariant(camera.detector_status)}>
                       detector {detectorLabel(camera.detector_status)} ({camera.detector_health_score.toFixed(0)})
                     </Badge>
-                    <Badge variant={ocrVariant(camera.ocr_pipeline_status)}>
-                      OCR {ocrLabel(camera.ocr_pipeline_status)} ({camera.ocr_pipeline_health_score.toFixed(0)})
-                    </Badge>
+                    <span title="Saúde da leitura de placa (0–100): 100 saudável · 65 atenção · 35 degradado · 20 sem leitura. Degradado = sucesso < 35%, leitura > 2,5s, ou sem leitura há 15 min.">
+                      <Badge variant={ocrVariant(camera.ocr_pipeline_status)}>
+                        OCR {ocrLabel(camera.ocr_pipeline_status)} ({camera.ocr_pipeline_health_score.toFixed(0)})
+                      </Badge>
+                    </span>
                     <Badge variant="secondary">
                       live {camera.preview_refresh_seconds.toFixed(1)}s
                     </Badge>
