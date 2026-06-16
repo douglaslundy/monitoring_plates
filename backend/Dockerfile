@@ -1,7 +1,20 @@
+# ─── Stage 1: export YOLOv8n → ONNX (ultralytics/torch usados só no build) ───
+# O runtime NÃO leva PyTorch: só copiamos o .onnx resultante.
+FROM python:3.11-slim AS model-export
+RUN pip install --no-cache-dir ultralytics==8.3.0 onnx==1.17.0
+WORKDIR /export
+RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=640, opset=12, simplify=True)" \
+    && test -f yolov8n.onnx
+
+# ─── Stage 2: runtime leve (onnxruntime + fast-alpr, sem torch/easyocr) ───
 FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    MODELS_DIR=/app/models
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ffmpeg \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
@@ -11,6 +24,13 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Modelo de detecção de veículos (YOLOv8n) gerado no estágio anterior.
+COPY --from=model-export /export/yolov8n.onnx /app/models/yolov8n.onnx
+
+# Pré-baixa os modelos do fast-alpr durante o build (build tem internet) para
+# que o container rode 100% OFFLINE na VPS. O cache fica embutido na imagem.
+RUN python -c "from fast_alpr import ALPR; ALPR()" || echo "[build] aviso: warm do fast-alpr falhou (sera baixado no 1o uso)"
 
 COPY . .
 
