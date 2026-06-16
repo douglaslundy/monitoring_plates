@@ -35,11 +35,21 @@ def _is_pilot_camera(camera_id: str) -> bool:
     return camera_id in settings.get_pilot_camera_ids()
 
 
-def _queue_depth() -> int:
+def _open_cache():
+    """Abre um único cliente Redis (pool interno). Retorna None se indisponível."""
     try:
         import redis
 
-        cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        return redis.from_url(settings.REDIS_URL, decode_responses=True)
+    except Exception:
+        return None
+
+
+def _queue_depth(cache=None) -> int:
+    try:
+        cache = cache or _open_cache()
+        if cache is None:
+            return 0
         for queue_name in ("frames", "celery"):
             try:
                 depth = cache.llen(queue_name)
@@ -52,16 +62,16 @@ def _queue_depth() -> int:
     return 0
 
 
-def _should_sample_high_volume_frame(camera_id: str, preview_frames_last_minute: int) -> bool:
+def _should_sample_high_volume_frame(camera_id: str, preview_frames_last_minute: int, cache=None) -> bool:
     if _is_pilot_camera(camera_id):
         return True
     if preview_frames_last_minute < settings.HIGH_VOLUME_PREVIEW_FPS_THRESHOLD:
         return True
     sample_every = max(1, settings.HIGH_VOLUME_SAMPLE_EVERY)
     try:
-        import redis
-
-        cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        cache = cache or _open_cache()
+        if cache is None:
+            return True
         counter_key = f"camera-frame:{camera_id}:sample-seq"
         counter = int(cache.incr(counter_key))
         cache.expire(counter_key, 300)
@@ -121,6 +131,9 @@ try:
         frame_bytes = base64.b64decode(frame_b64)
 
         db = SessionLocal()
+        # Um único cliente Redis por frame (pool interno), reusado abaixo —
+        # antes abríamos uma conexão nova a cada subetapa.
+        cache = _open_cache()
         try:
             camera = db.query(Camera).filter(Camera.id == uuid.UUID(camera_id)).first()
             if not camera or not camera.is_active:
@@ -140,7 +153,7 @@ try:
             record_preview_frame(str(camera.id))
             record_image_quality(str(camera.id), analysis_bytes)
             preview_telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
-            if not _should_sample_high_volume_frame(str(camera.id), preview_telemetry.preview_frames_last_minute):
+            if not _should_sample_high_volume_frame(str(camera.id), preview_telemetry.preview_frames_last_minute, cache):
                 logger.debug(
                     "High-volume frame sampled camera=%s frames_last_minute=%s",
                     camera.id,
@@ -151,16 +164,14 @@ try:
                 return
 
             try:
-                import redis
-
-                cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
-                frame_digest = hashlib.sha256(analysis_bytes).hexdigest()
-                cache_key = f"camera-frame:{camera.id}:last-digest"
-                previous_digest = cache.get(cache_key)
-                if previous_digest == frame_digest:
-                    logger.debug("Repeated frame skipped camera=%s digest=%s", camera.id, frame_digest[:12])
-                    return
-                cache.set(cache_key, frame_digest, ex=max(3, settings.AGENT_FRAME_INTERVAL * 3))
+                if cache is not None:
+                    frame_digest = hashlib.sha256(analysis_bytes).hexdigest()
+                    cache_key = f"camera-frame:{camera.id}:last-digest"
+                    previous_digest = cache.get(cache_key)
+                    if previous_digest == frame_digest:
+                        logger.debug("Repeated frame skipped camera=%s digest=%s", camera.id, frame_digest[:12])
+                        return
+                    cache.set(cache_key, frame_digest, ex=max(3, settings.AGENT_FRAME_INTERVAL * 3))
             except Exception as exc:
                 logger.debug("Frame repeat cache unavailable: %s", exc)
 
@@ -202,9 +213,8 @@ try:
             vehicle_event: VehicleEvent | None = None
             if vehicle is not None:
                 try:
-                    import redis
-
-                    cache = redis.from_url(settings.REDIS_URL, decode_responses=True)
+                    if cache is None:
+                        raise RuntimeError("redis indisponível")
                     current_box = {
                         "bbox_x": int(vehicle.bbox_x),
                         "bbox_y": int(vehicle.bbox_y),
@@ -331,93 +341,9 @@ try:
         finally:
             db.close()
 
-    @celery_app.task(name="app.workers.frame_processor.poll_rtsp_cameras")
-    def poll_rtsp_cameras() -> None:
-        import base64
-        import logging
-        from time import perf_counter
-        from datetime import datetime, timezone
-
-        from app.core.database import SessionLocal
-        from app.models.camera import Camera, ConnectionType
-        from app.services.camera_service import capture_rtsp_frame, crop_half_frame
-        from app.services.storage_service import save_latest_frame
-        from app.services.preview_telemetry_service import record_preview_frame
-        from app.services.preview_telemetry_service import get_preview_telemetry
-        from app.services.ocr_pipeline_metrics_service import record_ocr_pipeline_metrics
-        from app.services.ocr_pipeline_alert_service import maybe_publish_ocr_pipeline_alert
-        from app.services.worker_delay_alert_service import maybe_publish_worker_delay_alert
-
-        logger = logging.getLogger(__name__)
-        db = SessionLocal()
-        try:
-            cameras = (
-                db.query(Camera)
-                .filter(
-                    Camera.connection_type == ConnectionType.rtsp,
-                    Camera.is_active == True,  # noqa: E712
-                    Camera.rtsp_url.isnot(None),
-                )
-                .all()
-            )
-            queue_depth = _queue_depth()
-            for camera in cameras:
-                try:
-                    if queue_depth >= settings.WORKER_DELAY_QUEUE_THRESHOLD and not _is_pilot_camera(str(camera.id)):
-                        logger.debug(
-                            "Skipping RTSP capture due backlog camera=%s queue_depth=%s",
-                            camera.id,
-                            queue_depth,
-                        )
-                        maybe_publish_worker_delay_alert(db)
-                        continue
-                    capture_started_at = perf_counter()
-                    frame_bytes = capture_rtsp_frame(camera.rtsp_url)
-                    capture_seconds = perf_counter() - capture_started_at
-                    record_ocr_pipeline_metrics(
-                        str(camera.id),
-                        capture_seconds=capture_seconds,
-                        capture_success=frame_bytes is not None,
-                    )
-                    maybe_publish_ocr_pipeline_alert(camera)
-                    if frame_bytes is None:
-                        continue
-                    if camera.dual_lens and camera.lens_side in ("upper", "lower"):
-                        frame_bytes = crop_half_frame(frame_bytes, camera.lens_side)
-                    save_latest_frame(frame_bytes, str(camera.id))
-                    record_preview_frame(str(camera.id))
-                    preview_telemetry = get_preview_telemetry(str(camera.id), True)
-                    camera.last_seen_at = datetime.now(timezone.utc)
-                    db.commit()
-                    queue_depth = _queue_depth()
-                    if queue_depth >= settings.WORKER_DELAY_QUEUE_THRESHOLD and not _is_pilot_camera(str(camera.id)):
-                        logger.debug(
-                            "Skipping RTSP enqueue due backlog camera=%s queue_depth=%s",
-                            camera.id,
-                            queue_depth,
-                        )
-                        maybe_publish_worker_delay_alert(db)
-                        continue
-                    if not _should_sample_high_volume_frame(
-                        str(camera.id),
-                        preview_telemetry.preview_frames_last_minute,
-                    ):
-                        logger.debug(
-                            "RTSP frame sampled camera=%s frames_last_minute=%s queue_depth=%s",
-                            camera.id,
-                            preview_telemetry.preview_frames_last_minute,
-                            queue_depth,
-                        )
-                        maybe_publish_worker_delay_alert(db)
-                        continue
-                    frame_b64 = base64.b64encode(frame_bytes).decode()
-                    process_frame.delay(str(camera.id), frame_b64)
-                    queue_depth = _queue_depth()
-                except Exception as exc:
-                    logger.warning("RTSP poll failed camera=%s: %s", camera.id, exc)
-            maybe_publish_worker_delay_alert(db)
-        finally:
-            db.close()
+    # poll_rtsp_cameras (Celery beat de 1s que reabria a RTSP a cada tick) foi
+    # removido — a captura agora é feita pelo capture-runner (conexão persistente
+    # + motion gating em app/workers/capture_runner.py).
 
 except ImportError:
     class _NoOpTask:
