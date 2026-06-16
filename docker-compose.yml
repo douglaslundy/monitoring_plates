@@ -92,6 +92,21 @@ services:
     networks:
       - monitoramento_net
 
+  capture-runner:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://user:pass@postgres:5432/monitoramento
+      REDIS_URL: redis://redis:6379
+    command: python -m app.workers.capture_runner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoramento_net
+
   frontend:
     build: ./frontend
     ports:
