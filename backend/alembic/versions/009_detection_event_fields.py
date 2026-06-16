@@ -1,7 +1,7 @@
 """add detection category/track_id to vehicle_events
 
-Revision ID: 007
-Revises: 006
+Revision ID: 009
+Revises: 008
 Create Date: 2026-06-16
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "007"
-down_revision = "006"
+revision = "009"
+down_revision = "008"
 branch_labels = None
 depends_on = None
 
