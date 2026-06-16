@@ -15,10 +15,15 @@ Rodar: `python -m app.workers.capture_runner`
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
+
+# RTSP sobre TCP é bem mais confiável que UDP (default do OpenCV/FFmpeg), que
+# costuma falhar a leitura em muitas câmeras/redes. Definir ANTES de usar o cv2.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 
 from app.core.config import settings
 
@@ -63,15 +68,20 @@ class CameraCapture(threading.Thread):
             self._force_send = True
             self._prev_gray = None
             frame_interval = 1.0 / max(0.5, settings.CAPTURE_FPS)
+            fail_count = 0
             try:
                 while not self._stop.is_set():
                     started = time.time()
-                    # Esvazia o buffer p/ pegar o frame mais recente (baixa latência).
-                    cap.grab()
                     ok, frame = cap.read()
                     if not ok or frame is None:
-                        logger.warning("Camera %s: leitura falhou, reconectando", self.camera_id)
-                        break
+                        # Tolera falhas transitórias antes de reconectar.
+                        fail_count += 1
+                        if fail_count >= 15:
+                            logger.warning("Camera %s: leitura falhou %dx, reconectando", self.camera_id, fail_count)
+                            break
+                        time.sleep(0.2)
+                        continue
+                    fail_count = 0
                     self._handle_frame(cv2, frame)
                     elapsed = time.time() - started
                     if elapsed < frame_interval:

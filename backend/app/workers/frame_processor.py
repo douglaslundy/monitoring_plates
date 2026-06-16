@@ -98,7 +98,14 @@ try:
 
     @celery_app.on_after_configure.connect
     def _warm_up_worker_models(*_args, **_kwargs) -> None:
-        warm_worker_models()
+        # Só faz o warm (download/carregamento dos modelos, que pode demorar) se
+        # explicitamente habilitado. Caso contrário os modelos carregam de forma
+        # preguiçosa no 1º frame. Isso evita que processos que apenas ENFILEIRAM
+        # (capture-runner) travem ~minutos baixando modelos que não usam.
+        import os
+
+        if os.getenv("OCR_WARMUP_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+            warm_worker_models()
 
     @celery_app.task(name="app.workers.frame_processor.process_frame")
     def process_frame(camera_id: str, frame_b64: str) -> None:
