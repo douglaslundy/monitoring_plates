@@ -1,6 +1,8 @@
 import uuid
 from typing import Optional
 
+from app.core.config import settings
+
 
 def generate_agent_token() -> str:
     """Return a 32-char hex UUID (no hyphens) for agent authentication."""
@@ -25,7 +27,7 @@ def capture_rtsp_frame(rtsp_url: str) -> Optional[bytes]:
     cap.release()
     if not ret:
         return None
-    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, settings.CAPTURE_JPEG_QUALITY])
     return buf.tobytes()
 
 
@@ -49,7 +51,7 @@ def crop_half_frame(frame_bytes: bytes, side: str) -> bytes:
     else:
         cropped = frame[:mid, :]
 
-    ok, buf = cv2.imencode(".jpg", cropped, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    ok, buf = cv2.imencode(".jpg", cropped, [cv2.IMWRITE_JPEG_QUALITY, settings.CAPTURE_JPEG_QUALITY])
     return buf.tobytes() if ok else frame_bytes
 
 
@@ -87,7 +89,7 @@ def crop_roi_frame(
             return frame_bytes
 
         cropped = frame[y1:y2, x1:x2]
-        ok, buf = cv2.imencode(".jpg", cropped, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        ok, buf = cv2.imencode(".jpg", cropped, [cv2.IMWRITE_JPEG_QUALITY, settings.CAPTURE_JPEG_QUALITY])
         return buf.tobytes() if ok else frame_bytes
 
     try:
@@ -111,5 +113,5 @@ def crop_roi_frame(
 
     cropped = image.crop((x1, y1, x2, y2))
     buffer = BytesIO()
-    cropped.save(buffer, format="JPEG", quality=80)
+    cropped.save(buffer, format="JPEG", quality=settings.CAPTURE_JPEG_QUALITY)
     return buffer.getvalue()

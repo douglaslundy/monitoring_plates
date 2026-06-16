@@ -281,6 +281,24 @@ def test_vehicle_export_endpoint_retorna_csv(client, db):
     assert rows[0]["Confiança (%)"] == "88.0"
 
 
+def test_crop_pequeno_e_ampliado_para_legibilidade():
+    """Recortes pequenos (veículo distante) são ampliados; grandes ficam nativos."""
+    import numpy as np
+
+    from app.core.config import settings
+    from app.services.vehicle_detection_service import VehicleDetector
+
+    detector = VehicleDetector()
+    img = np.zeros((1000, 1000, 3), dtype=np.uint8)
+
+    small = detector._crop_with_padding(img, 100, 100, 140, 140, 1000, 1000)
+    assert max(small.shape[0], small.shape[1]) >= settings.DETECTION_MIN_CROP_SIDE
+
+    big = detector._crop_with_padding(img, 0, 0, 800, 800, 1000, 1000)
+    # já é maior que o mínimo -> não amplia além do nativo
+    assert max(big.shape[0], big.shape[1]) <= 1000
+
+
 def test_stats_by_category_e_filtro(client, db, camera_rtsp_a, super_admin_user):
     from app.models.vehicle_event import VehicleEvent
 

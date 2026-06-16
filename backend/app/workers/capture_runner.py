@@ -146,7 +146,7 @@ class CameraCapture(threading.Thread):
     def _enqueue(self, cv2, frame) -> None:
         import base64
 
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, settings.CAPTURE_JPEG_QUALITY])
         if not ok:
             return
         try:
@@ -158,7 +158,7 @@ class CameraCapture(threading.Thread):
 
     def _save_preview(self, cv2, frame) -> None:
         try:
-            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, settings.CAPTURE_JPEG_QUALITY])
             if not ok:
                 return
             from app.services.storage_service import save_latest_frame

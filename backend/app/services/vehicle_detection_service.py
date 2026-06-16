@@ -325,7 +325,29 @@ class VehicleDetector:
         cy1 = max(0, int(y1) - pad_y)
         cx2 = min(max_w, int(x2) + pad_x)
         cy2 = min(max_h, int(y2) + pad_y)
-        return image[cy1:cy2, cx1:cx2]
+        return self._upscale_to_min(image[cy1:cy2, cx1:cx2])
+
+    def _upscale_to_min(self, crop):
+        """Amplia (cúbico) recortes pequenos para a imagem salva ficar legível.
+
+        Não recupera detalhe que a câmera não capturou — só evita que recortes de
+        veículos distantes fiquem minúsculos/serrilhados ao serem exibidos.
+        """
+        min_side = settings.DETECTION_MIN_CROP_SIDE
+        if min_side <= 0 or crop is None or getattr(crop, "size", 0) == 0:
+            return crop
+        h, w = crop.shape[:2]
+        longest = max(h, w)
+        if longest <= 0 or longest >= min_side:
+            return crop
+        try:
+            import cv2
+        except Exception:  # pragma: no cover
+            return crop
+        scale = min_side / float(longest)
+        new_w = max(1, int(round(w * scale)))
+        new_h = max(1, int(round(h * scale)))
+        return cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
     def _encode_jpeg(self, image) -> bytes | None:
         try:
@@ -334,14 +356,14 @@ class VehicleDetector:
             cv2 = None
 
         if cv2 is not None:
-            ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, settings.DETECTION_JPEG_QUALITY])
             return buf.tobytes() if ok else None
 
         try:  # pragma: no cover
             from PIL import Image
 
             buffer = BytesIO()
-            Image.fromarray(image[:, :, ::-1]).save(buffer, format="JPEG", quality=90)
+            Image.fromarray(image[:, :, ::-1]).save(buffer, format="JPEG", quality=settings.DETECTION_JPEG_QUALITY)
             return buffer.getvalue()
         except Exception:
             return None

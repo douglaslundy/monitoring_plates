@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     DETECT_PERSONS: bool = True
     DETECT_ANIMALS: bool = True
 
+    # Qualidade das imagens (reduz perda por recompressão JPEG na cadeia
+    # captura -> análise -> recorte salvo).
+    CAPTURE_JPEG_QUALITY: int = 92
+    DETECTION_JPEG_QUALITY: int = 95
+    # Upscale (cúbico) de recortes cujo maior lado seja menor que isto, p/ a
+    # imagem salva ficar maior e mais legível a olho. 0 desliga.
+    DETECTION_MIN_CROP_SIDE: int = 320
+
     # Rastreador multi-objeto (object_tracker_service)
     TRACK_IOU_MIN: float = 0.30
     TRACK_MAX_AGE_SECONDS: float = 3.0
