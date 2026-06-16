@@ -13,7 +13,7 @@ import type {
   OccurrenceWithCamera,
   VehicleEventStats,
 } from "@/types";
-import { Camera as CameraIcon, Shield, Activity, BarChart2, CarFront, Truck, Bike, Gauge } from "lucide-react";
+import { Camera as CameraIcon, Shield, Activity, BarChart2, CarFront, Truck, Bike, Gauge, Users, PawPrint } from "lucide-react";
 
 function BarChart({ data }: { data: { hour: number; count: number }[] }) {
   const max = Math.max(...data.map((d) => d.count), 1);
@@ -141,6 +141,17 @@ export default function ClientDashboard() {
   const latestVehicle = vehicleStats?.latest_event;
   const topVehicleType = vehicleStats?.by_type[0];
 
+  // by_category traz todas as categorias mesmo com o filtro category=vehicle;
+  // by_type (filtrado a vehicle) traz os subtipos de veículo.
+  const catCount = (c: string) => vehicleStats?.by_category.find((x) => x.category === c)?.count ?? 0;
+  const typeCount = (t: string) => vehicleStats?.by_type.find((x) => x.vehicle_type === t)?.count ?? 0;
+  const personCount = catCount("person");
+  const animalCount = catCount("animal");
+  const carCount = typeCount("car");
+  const motoCount = typeCount("motorcycle");
+  const truckCount = typeCount("truck");
+  const busCount = typeCount("bus");
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
@@ -235,6 +246,33 @@ export default function ClientDashboard() {
               ? `${latestVehicle.camera_name} • ${Math.round(latestVehicle.confidence * 100)}%`
               : "sem leitura recente"
           }
+        />
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <MetricCard
+          title="Pessoas"
+          value={loading ? "—" : personCount}
+          icon={Users}
+          description="total detectado"
+        />
+        <MetricCard
+          title="Animais"
+          value={loading ? "—" : animalCount}
+          icon={PawPrint}
+          description="total detectado"
+        />
+        <MetricCard
+          title="Carros e Motos"
+          value={loading ? "—" : carCount + motoCount}
+          icon={CarFront}
+          description={loading ? "carregando" : `${carCount} carros · ${motoCount} motos`}
+        />
+        <MetricCard
+          title="Caminhões e Ônibus"
+          value={loading ? "—" : truckCount + busCount}
+          icon={Truck}
+          description={loading ? "carregando" : `${truckCount} caminhões · ${busCount} ônibus`}
         />
       </div>
 
@@ -348,6 +386,26 @@ export default function ClientDashboard() {
                   ) : (
                     <p className="text-xs text-muted-foreground">Sem dados.</p>
                   )}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Fluxo de objetos</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">Pessoas</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">{personCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <PawPrint className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">Animais</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">{animalCount}</span>
+                  </div>
                 </div>
               </div>
 
