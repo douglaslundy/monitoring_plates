@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 class VehicleEventBase(BaseModel):
     camera_id: UUID
     occurrence_id: Optional[UUID] = None
+    category: str = "vehicle"
     vehicle_type: str
     confidence: float
     bbox_x: int
@@ -49,6 +50,11 @@ class VehicleEventTypeCount(BaseModel):
     count: int
 
 
+class CategoryCount(BaseModel):
+    category: str
+    count: int
+
+
 class TopVehicleCamera(BaseModel):
     camera_id: str
     camera_name: str
@@ -65,6 +71,7 @@ class LatestVehicleEvent(BaseModel):
     camera_id: UUID
     camera_name: str
     camera_location: Optional[str] = None
+    category: str = "vehicle"
     vehicle_type: str
     confidence: float
     detected_at: datetime
@@ -74,6 +81,7 @@ class VehicleEventStats(BaseModel):
     total_today: int
     total_week: int
     by_type: List[VehicleEventTypeCount]
+    by_category: List[CategoryCount]
     top_cameras: List[TopVehicleCamera]
     by_hour: List[HourBucket]
     latest_event: Optional[LatestVehicleEvent] = None

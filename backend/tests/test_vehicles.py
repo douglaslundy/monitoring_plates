@@ -281,6 +281,35 @@ def test_vehicle_export_endpoint_retorna_csv(client, db):
     assert rows[0]["Confiança (%)"] == "88.0"
 
 
+def test_stats_by_category_e_filtro(client, db, camera_rtsp_a, super_admin_user):
+    from app.models.vehicle_event import VehicleEvent
+
+    def _ev(category, label):
+        return VehicleEvent(
+            camera_id=camera_rtsp_a.id, category=category, vehicle_type=label,
+            confidence=0.8, bbox_x=0, bbox_y=0, bbox_w=10, bbox_h=10,
+        )
+
+    db.add_all([_ev("vehicle", "car"), _ev("person", "person"), _ev("animal", "dog"), _ev("animal", "cat")])
+    db.commit()
+    h = _auth_header(super_admin_user)
+
+    stats = client.get("/api/vehicles/stats", headers=h).json()
+    by_cat = {c["category"]: c["count"] for c in stats["by_category"]}
+    assert by_cat == {"vehicle": 1, "person": 1, "animal": 2}
+
+    # stats?category=animal -> by_type por tipo de animal (Tarefa 4.1)
+    animal_stats = client.get("/api/vehicles/stats?category=animal", headers=h).json()
+    by_type = {t["vehicle_type"]: t["count"] for t in animal_stats["by_type"]}
+    assert by_type == {"dog": 1, "cat": 1}
+
+    # listagem filtrada por categoria (Tarefa 3.1)
+    page = client.get("/api/vehicles?category=person", headers=h).json()
+    assert page["total"] == 1
+    assert len(page["items"]) == 1
+    assert page["items"][0]["category"] == "person"
+
+
 def test_vehicle_list_endpoint_retorna_historico_paginado(client, db):
     from app.models.vehicle_event import VehicleEvent
     from app.models.occurrence import Occurrence

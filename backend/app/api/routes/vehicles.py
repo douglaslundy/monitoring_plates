@@ -14,6 +14,7 @@ from app.models.camera import Camera
 from app.models.user import User, UserRole
 from app.models.vehicle_event import VehicleEvent
 from app.schemas.vehicle_event import (
+    CategoryCount,
     HourBucket,
     LatestVehicleEvent,
     TopVehicleCamera,
@@ -40,6 +41,7 @@ def _filter_query(
     *,
     camera_id: Optional[UUID] = None,
     vehicle_type: Optional[str] = None,
+    category: Optional[str] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
 ):
@@ -48,6 +50,8 @@ def _filter_query(
         q = q.filter(VehicleEvent.camera_id.in_(camera_ids))
     if camera_id is not None:
         q = q.filter(VehicleEvent.camera_id == camera_id)
+    if category:
+        q = q.filter(VehicleEvent.category == category)
     if vehicle_type:
         q = q.filter(VehicleEvent.vehicle_type == vehicle_type)
     if date_from is not None:
@@ -69,6 +73,7 @@ def _serialize_event(event: VehicleEvent) -> VehicleEventWithCamera:
         id=event.id,
         camera_id=event.camera_id,
         occurrence_id=event.occurrence_id,
+        category=event.category,
         vehicle_type=event.vehicle_type,
         confidence=event.confidence,
         bbox_x=event.bbox_x,
@@ -98,6 +103,7 @@ def _paginate(q, page: int, limit: int) -> VehicleEventPage:
 
 @router.get("/stats", response_model=VehicleEventStats)
 def get_stats(
+    category: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -107,22 +113,32 @@ def get_stats(
     week_start = now - timedelta(days=7)
     hour_24_ago = now - timedelta(hours=24)
 
-    base = db.query(VehicleEvent)
-    if camera_ids is not None:
-        base = base.filter(VehicleEvent.camera_id.in_(camera_ids))
+    def _scoped(q):
+        """Escopo por câmera (multi-tenant) + filtro opcional de categoria."""
+        if camera_ids is not None:
+            q = q.filter(VehicleEvent.camera_id.in_(camera_ids))
+        if category:
+            q = q.filter(VehicleEvent.category == category)
+        return q
+
+    base = _scoped(db.query(VehicleEvent))
 
     total_today = base.filter(VehicleEvent.detected_at >= today_start).count()
     total_week = base.filter(VehicleEvent.detected_at >= week_start).count()
 
-    type_query = db.query(VehicleEvent.vehicle_type, func.count(VehicleEvent.id).label("cnt"))
-    if camera_ids is not None:
-        type_query = type_query.filter(VehicleEvent.camera_id.in_(camera_ids))
+    type_query = _scoped(db.query(VehicleEvent.vehicle_type, func.count(VehicleEvent.id).label("cnt")))
     type_agg = type_query.group_by(VehicleEvent.vehicle_type).order_by(func.count(VehicleEvent.id).desc()).all()
     by_type = [VehicleEventTypeCount(vehicle_type=row.vehicle_type, count=row.cnt) for row in type_agg]
 
-    cam_query = db.query(VehicleEvent.camera_id, func.count(VehicleEvent.id).label("cnt"))
+    # by_category ignora o filtro de categoria (mostra todas, p/ as abas), mas
+    # respeita o escopo de câmera.
+    cat_query = db.query(VehicleEvent.category, func.count(VehicleEvent.id).label("cnt"))
     if camera_ids is not None:
-        cam_query = cam_query.filter(VehicleEvent.camera_id.in_(camera_ids))
+        cat_query = cat_query.filter(VehicleEvent.camera_id.in_(camera_ids))
+    cat_agg = cat_query.group_by(VehicleEvent.category).order_by(func.count(VehicleEvent.id).desc()).all()
+    by_category = [CategoryCount(category=row.category, count=row.cnt) for row in cat_agg]
+
+    cam_query = _scoped(db.query(VehicleEvent.camera_id, func.count(VehicleEvent.id).label("cnt")))
     cam_agg = cam_query.group_by(VehicleEvent.camera_id).order_by(func.count(VehicleEvent.id).desc()).limit(5).all()
     top_cameras: List[TopVehicleCamera] = []
     for row in cam_agg:
@@ -158,6 +174,7 @@ def get_stats(
             camera_id=latest_event_row.camera_id,
             camera_name=camera.name if camera else str(latest_event_row.camera_id),
             camera_location=camera.location if camera else None,
+            category=latest_event_row.category,
             vehicle_type=latest_event_row.vehicle_type,
             confidence=latest_event_row.confidence,
             detected_at=latest_event_row.detected_at,
@@ -167,6 +184,7 @@ def get_stats(
         total_today=total_today,
         total_week=total_week,
         by_type=by_type,
+        by_category=by_category,
         top_cameras=top_cameras,
         by_hour=by_hour,
         latest_event=latest_event,
@@ -177,6 +195,7 @@ def get_stats(
 def list_events(
     camera_id: Optional[UUID] = Query(None),
     vehicle_type: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
     page: int = Query(1, ge=1),
@@ -190,6 +209,7 @@ def list_events(
         camera_ids,
         camera_id=camera_id,
         vehicle_type=vehicle_type,
+        category=category,
         date_from=date_from,
         date_to=date_to,
     )
