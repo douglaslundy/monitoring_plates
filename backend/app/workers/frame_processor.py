@@ -241,16 +241,26 @@ try:
                         previous_box = track.get("bbox")
                         previous_type = track.get("vehicle_type")
                         previous_seen_at = float(track.get("last_seen_at", 0.0) or 0.0)
+                        # Dedup por POSIÇÃO + TEMPO apenas. NÃO exige o mesmo
+                        # vehicle_type: o YOLO troca a classe do mesmo veículo
+                        # entre frames (um carro com escada vira car/bus/truck),
+                        # e exigir tipo igual fazia cada frame virar um evento
+                        # novo — daí o mesmo veículo aparecia várias vezes e como
+                        # 3 tipos. O IoU + janela de tempo identifica o mesmo
+                        # veículo independentemente da classe.
                         if (
                             previous_box
-                            and previous_type == vehicle.vehicle_type
                             and now_ts - previous_seen_at <= settings.VEHICLE_EVENT_DEDUP_SECONDS
                             and _vehicle_box_iou(current_box, previous_box) >= 0.35
                         ):
                             acquired = False
+                            # Mantém a classe original do rastro (estabiliza o
+                            # tipo reportado em vez de deixá-lo oscilar).
+                            if previous_type:
+                                vehicle_type = previous_type
 
                     track_payload = {
-                        "vehicle_type": vehicle.vehicle_type,
+                        "vehicle_type": vehicle_type or vehicle.vehicle_type,
                         "bbox": current_box,
                         "last_seen_at": now_ts,
                     }

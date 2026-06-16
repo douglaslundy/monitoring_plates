@@ -152,11 +152,24 @@ class FastAlprEngine:
         else:
             text = getattr(ocr, "text", None)
             conf = getattr(ocr, "confidence", 0.0)
+        return text, FastAlprEngine._scalar_confidence(conf)
+
+    @staticmethod
+    def _scalar_confidence(conf) -> float:
+        """Reduz a confiança a um escalar.
+
+        O fast-alpr devolve a confiança do OCR como uma **lista por caractere**
+        (ex.: ``[0.98, 0.99, ...]``). O código antigo fazia ``float(lista)``, que
+        estoura e zerava a confiança — derrubando até leituras corretas. Aqui
+        usamos a média dos caracteres; se vier escalar, só converte.
+        """
+        if isinstance(conf, (list, tuple)):
+            values = [float(c) for c in conf if c is not None]
+            return sum(values) / len(values) if values else 0.0
         try:
-            conf = float(conf or 0.0)
+            return float(conf or 0.0)
         except (TypeError, ValueError):
-            conf = 0.0
-        return text, conf
+            return 0.0
 
     def _decode_image(self, image_bytes: bytes):
         try:
