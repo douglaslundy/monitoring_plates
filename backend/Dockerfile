@@ -2,6 +2,11 @@
 # O runtime NÃO leva PyTorch: só copiamos o .onnx resultante.
 FROM python:3.11-slim AS model-export
 RUN pip install --no-cache-dir ultralytics==8.3.0 onnx==1.17.0
+# ultralytics importa cv2 (opencv) → precisa de libGL/glib no sistema.
+# (depois do pip p/ preservar o cache da camada pesada do pip/torch)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /export
 RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=640, opset=12, simplify=True)" \
     && test -f yolov8n.onnx
