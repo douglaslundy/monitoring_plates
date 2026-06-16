@@ -1,11 +1,36 @@
+"""Detecção de veículos com YOLOv8n em ONNX Runtime (CPU, leve, offline).
+
+Substitui a heurística antiga de bordas/contornos por um modelo real de
+detecção de objetos. Roda só as classes de veículo do COCO
+(car/motorcycle/bus/truck), em uma única passada por frame (~dezenas de ms na
+CPU). O modelo (`yolov8n.onnx`) é embutido na imagem Docker no build.
+
+Importações de `onnxruntime`/`cv2`/`numpy` são preguiçosas para permitir mock
+nos testes e para não quebrar caso o modelo não esteja presente (modo
+degradado: devolve o frame inteiro como um "veículo" para o OCR ainda tentar).
+"""
 from __future__ import annotations
 
 import logging
+import os
+import threading
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Optional
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
+
+# COCO class id → rótulo usado no sistema.
+_COCO_VEHICLE_CLASSES: dict[int, str] = {
+    2: "car",
+    3: "motorcycle",
+    5: "bus",
+    7: "truck",
+}
+
+_INPUT_SIZE = 640
 
 
 @dataclass(frozen=True)
@@ -19,335 +44,306 @@ class VehicleDetection:
     crop_bytes: bytes
 
 
-class VehicleDetector:
-    """Heuristic detector optimized for fixed traffic cameras.
+def _model_path() -> str:
+    explicit = os.getenv("VEHICLE_MODEL_PATH")
+    if explicit:
+        return explicit
+    return os.path.join(os.getenv("MODELS_DIR", "/app/models"), "yolov8n.onnx")
 
-    The first version intentionally stays lightweight so it can run on CPU-only
-    VPS nodes. It looks for large moving-like objects in the lower half of the
-    frame and classifies them by shape/area.
-    """
+
+class VehicleDetector:
+    """Detector de veículos baseado em YOLOv8n (ONNX Runtime, CPU)."""
+
+    def __init__(self) -> None:
+        self._session = None
+        self._input_name: Optional[str] = None
+        self._lock = threading.Lock()
+        self._unavailable = False
+
+    # ── Sessão ONNX ────────────────────────────────────────────────────────
+    def _get_session(self):
+        if self._session is not None or self._unavailable:
+            return self._session
+        with self._lock:
+            if self._session is not None or self._unavailable:
+                return self._session
+            try:
+                import onnxruntime as ort
+            except Exception as exc:  # pragma: no cover - ambiente sem onnxruntime
+                logger.warning("onnxruntime indisponível (%s) — detector em modo degradado", exc)
+                self._unavailable = True
+                return None
+
+            path = _model_path()
+            if not os.path.exists(path):
+                logger.warning("Modelo de veículos não encontrado em %s — modo degradado", path)
+                self._unavailable = True
+                return None
+
+            try:
+                providers = ["CPUExecutionProvider"]
+                sess_options = ort.SessionOptions()
+                sess_options.intra_op_num_threads = max(1, settings.VEHICLE_DETECTOR_THREADS)
+                self._session = ort.InferenceSession(path, sess_options=sess_options, providers=providers)
+                self._input_name = self._session.get_inputs()[0].name
+                logger.info("Detector YOLOv8n carregado de %s", path)
+            except Exception as exc:
+                logger.error("Falha ao carregar modelo de veículos (%s) — modo degradado", exc)
+                self._unavailable = True
+                self._session = None
+            return self._session
+
+    def warmup(self) -> None:
+        self._get_session()
+
+    # ── API pública ────────────────────────────────────────────────────────
+    def best_detection(self, image_bytes: bytes) -> Optional[VehicleDetection]:
+        detections = self.detect(image_bytes)
+        return detections[0] if detections else None
 
     def detect(self, image_bytes: bytes) -> list[VehicleDetection]:
         image = self._decode_image(image_bytes)
         if image is None:
             return []
 
-        try:
-            import cv2
-        except ImportError:
-            cv2 = None
+        session = self._get_session()
+        if session is None:
+            return self._fallback_detection(image)
 
-        if cv2 is None:
-            return self._detect_without_cv2(image)
+        try:
+            import numpy as np
+        except Exception:  # pragma: no cover
+            return self._fallback_detection(image)
 
         h, w = image.shape[:2]
-        candidates: list[VehicleDetection] = []
-        primary_y1 = max(0, int(h * 0.30))
-        candidates.extend(self._detect_candidates_in_roi(cv2, image, image[primary_y1:, :], 0, primary_y1, w, h))
+        tensor, ratio, pad = self._preprocess(image)
+        try:
+            outputs = session.run(None, {self._input_name: tensor})
+        except Exception as exc:
+            logger.warning("Inferência do detector falhou (%s) — modo degradado", exc)
+            return self._fallback_detection(image)
 
-        focused_x1 = max(0, int(w * 0.08))
-        focused_x2 = min(w, int(w * 0.62))
-        focused_y1 = max(0, int(h * 0.50))
-        focused_roi = image[focused_y1:, focused_x1:focused_x2]
-        if focused_roi.size:
-            candidates.extend(self._detect_candidates_in_roi(cv2, image, focused_roi, focused_x1, focused_y1, w, h))
+        boxes = self._postprocess(outputs[0], ratio, pad, w, h)
+        detections: list[VehicleDetection] = []
+        for (x1, y1, x2, y2, score, cls_id) in boxes:
+            label = _COCO_VEHICLE_CLASSES.get(int(cls_id))
+            if label is None:
+                continue
+            crop = self._crop_with_padding(image, x1, y1, x2, y2, w, h)
+            crop_bytes = self._encode_jpeg(crop)
+            if not crop_bytes:
+                continue
+            detections.append(
+                VehicleDetection(
+                    vehicle_type=label,
+                    confidence=round(float(score), 3),
+                    bbox_x=int(x1),
+                    bbox_y=int(y1),
+                    bbox_w=int(x2 - x1),
+                    bbox_h=int(y2 - y1),
+                    crop_bytes=crop_bytes,
+                )
+            )
 
-        candidates.sort(key=lambda item: self._score_detection(item, w, h), reverse=True)
-        return candidates[:3]
+        detections.sort(key=lambda d: self._score(d, w, h), reverse=True)
+        return detections[:3]
 
-    def best_detection(self, image_bytes: bytes) -> Optional[VehicleDetection]:
-        detections = self.detect(image_bytes)
-        if not detections:
-            return None
-        return detections[0]
+    # ── Pré/pós-processamento ──────────────────────────────────────────────
+    def _preprocess(self, image):
+        """Letterbox para 640x640, BGR→RGB, NCHW float32 normalizado."""
+        import numpy as np
 
+        try:
+            import cv2
+        except Exception:  # pragma: no cover
+            cv2 = None
+
+        h, w = image.shape[:2]
+        ratio = min(_INPUT_SIZE / h, _INPUT_SIZE / w)
+        new_w, new_h = int(round(w * ratio)), int(round(h * ratio))
+        pad_x = (_INPUT_SIZE - new_w) / 2
+        pad_y = (_INPUT_SIZE - new_h) / 2
+
+        if cv2 is not None:
+            resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            canvas = np.full((_INPUT_SIZE, _INPUT_SIZE, 3), 114, dtype=np.uint8)
+            top, left = int(round(pad_y - 0.1)), int(round(pad_x - 0.1))
+            canvas[top : top + new_h, left : left + new_w] = resized
+            rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
+        else:  # pragma: no cover - fallback sem cv2
+            from PIL import Image
+
+            pil = Image.fromarray(image[:, :, ::-1]).resize((new_w, new_h))
+            canvas = np.full((_INPUT_SIZE, _INPUT_SIZE, 3), 114, dtype=np.uint8)
+            top, left = int(round(pad_y - 0.1)), int(round(pad_x - 0.1))
+            canvas[top : top + new_h, left : left + new_w] = np.array(pil)
+            rgb = canvas
+
+        tensor = rgb.astype(np.float32) / 255.0
+        tensor = tensor.transpose(2, 0, 1)[np.newaxis, ...]
+        return np.ascontiguousarray(tensor), ratio, (pad_x, pad_y)
+
+    def _postprocess(self, output, ratio, pad, orig_w, orig_h):
+        """YOLOv8 output [1,84,8400] → caixas [x1,y1,x2,y2,score,cls] no frame original."""
+        import numpy as np
+
+        preds = np.asarray(output)
+        if preds.ndim == 3:
+            preds = preds[0]
+        # [84, N] → [N, 84]
+        if preds.shape[0] < preds.shape[1]:
+            preds = preds.transpose(1, 0)
+
+        boxes_xywh = preds[:, :4]
+        class_scores = preds[:, 4:]
+        class_ids = np.argmax(class_scores, axis=1)
+        confidences = class_scores[np.arange(class_scores.shape[0]), class_ids]
+
+        conf_thr = settings.VEHICLE_CONF_THRESHOLD
+        vehicle_mask = np.isin(class_ids, list(_COCO_VEHICLE_CLASSES.keys()))
+        keep = (confidences >= conf_thr) & vehicle_mask
+        if not np.any(keep):
+            return []
+
+        boxes_xywh = boxes_xywh[keep]
+        confidences = confidences[keep]
+        class_ids = class_ids[keep]
+
+        pad_x, pad_y = pad
+        cx, cy, bw, bh = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
+        x1 = (cx - bw / 2 - pad_x) / ratio
+        y1 = (cy - bh / 2 - pad_y) / ratio
+        x2 = (cx + bw / 2 - pad_x) / ratio
+        y2 = (cy + bh / 2 - pad_y) / ratio
+
+        x1 = np.clip(x1, 0, orig_w)
+        y1 = np.clip(y1, 0, orig_h)
+        x2 = np.clip(x2, 0, orig_w)
+        y2 = np.clip(y2, 0, orig_h)
+
+        xyxy = np.stack([x1, y1, x2, y2], axis=1)
+        keep_idx = self._nms(xyxy, confidences, settings.VEHICLE_IOU_THRESHOLD)
+
+        results = []
+        for i in keep_idx:
+            results.append(
+                (
+                    float(xyxy[i, 0]),
+                    float(xyxy[i, 1]),
+                    float(xyxy[i, 2]),
+                    float(xyxy[i, 3]),
+                    float(confidences[i]),
+                    int(class_ids[i]),
+                )
+            )
+        return results
+
+    @staticmethod
+    def _nms(boxes, scores, iou_threshold: float) -> list[int]:
+        import numpy as np
+
+        if len(boxes) == 0:
+            return []
+        x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+        areas = np.maximum(0.0, x2 - x1) * np.maximum(0.0, y2 - y1)
+        order = scores.argsort()[::-1]
+
+        keep: list[int] = []
+        while order.size > 0:
+            i = int(order[0])
+            keep.append(i)
+            if order.size == 1:
+                break
+            rest = order[1:]
+            xx1 = np.maximum(x1[i], x1[rest])
+            yy1 = np.maximum(y1[i], y1[rest])
+            xx2 = np.minimum(x2[i], x2[rest])
+            yy2 = np.minimum(y2[i], y2[rest])
+            inter = np.maximum(0.0, xx2 - xx1) * np.maximum(0.0, yy2 - yy1)
+            union = areas[i] + areas[rest] - inter
+            iou = np.where(union > 0, inter / union, 0.0)
+            order = rest[iou <= iou_threshold]
+        return keep
+
+    # ── Imagem ─────────────────────────────────────────────────────────────
     def _decode_image(self, image_bytes: bytes):
         try:
             import cv2
             import numpy as np
-        except ImportError:
+        except Exception:  # pragma: no cover
             cv2 = None
             np = None
 
         if cv2 is not None and np is not None:
             arr = np.frombuffer(image_bytes, np.uint8)
             image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-            if image is None:
-                return None
-
-            h, w = image.shape[:2]
-            if w > 1280:
-                scale = 1280 / w
-                image = cv2.resize(image, (1280, int(h * scale)))
             return image
 
         try:
-            from PIL import Image, ImageOps
+            from PIL import Image
             import numpy as np
-        except ImportError:
+        except Exception:  # pragma: no cover
             return None
-
         try:
-            image = Image.open(BytesIO(image_bytes)).convert("RGB")
+            pil = Image.open(BytesIO(image_bytes)).convert("RGB")
         except Exception:
             return None
+        return np.array(pil)[:, :, ::-1]  # RGB→BGR
 
-        if image.width > 1280:
-            scale = 1280 / image.width
-            image = image.resize((1280, int(image.height * scale)))
-
-        image = ImageOps.autocontrast(image)
-        return np.array(image)
-
-    def _detect_without_cv2(self, image) -> list[VehicleDetection]:
-        import numpy as np
-
-        if image.ndim == 3 and image.shape[2] >= 3:
-            gray = (0.299 * image[:, :, 2] + 0.587 * image[:, :, 1] + 0.114 * image[:, :, 0]).astype(np.uint8)
-        else:
-            gray = image.astype(np.uint8)
-
-        h, w = gray.shape[:2]
-        roi_y = max(0, int(h * 0.30))
-        roi = gray[roi_y:, :]
-        small = roi[::4, ::4]
-        if small.size == 0:
-            return []
-
-        threshold = int(np.clip(np.percentile(small, 38), 70, 190))
-        mask = small < threshold
-        components = self._connected_components(mask)
-        candidates: list[VehicleDetection] = []
-        min_pixels = max(18, int(mask.size * 0.001))
-
-        for comp in components:
-            if comp["pixels"] < min_pixels:
-                continue
-
-            x1 = max(0, comp["x1"] * 4)
-            y1 = max(0, roi_y + comp["y1"] * 4)
-            x2 = min(w, (comp["x2"] + 1) * 4)
-            y2 = min(h, roi_y + (comp["y2"] + 1) * 4)
-            box_w = max(1, x2 - x1)
-            box_h = max(1, y2 - y1)
-            if box_w < 35 or box_h < 25:
-                continue
-
-            aspect_ratio = box_w / max(box_h, 1)
-            if aspect_ratio < 0.5 or aspect_ratio > 8.0:
-                continue
-
-            crop = image[y1:y2, x1:x2]
-            crop_bytes = self._encode_jpeg(crop)
-            if crop_bytes is None:
-                continue
-
-            area = float(box_w * box_h)
-            vehicle_type, confidence = self._classify(area, aspect_ratio, box_w, box_h, w, h)
-            candidates.append(
-                VehicleDetection(
-                    vehicle_type=vehicle_type,
-                    confidence=confidence,
-                    bbox_x=x1,
-                    bbox_y=y1,
-                    bbox_w=box_w,
-                    bbox_h=box_h,
-                    crop_bytes=crop_bytes,
-                )
-            )
-
-        candidates.sort(key=lambda item: self._score_detection(item, w, h), reverse=True)
-        return candidates[:3]
+    def _crop_with_padding(self, image, x1, y1, x2, y2, max_w, max_h):
+        pad_x = max(8, int((x2 - x1) * 0.08))
+        pad_y = max(8, int((y2 - y1) * 0.12))
+        cx1 = max(0, int(x1) - pad_x)
+        cy1 = max(0, int(y1) - pad_y)
+        cx2 = min(max_w, int(x2) + pad_x)
+        cy2 = min(max_h, int(y2) + pad_y)
+        return image[cy1:cy2, cx1:cx2]
 
     def _encode_jpeg(self, image) -> bytes | None:
         try:
             import cv2
-        except ImportError:
+        except Exception:  # pragma: no cover
             cv2 = None
 
-        if cv2 is None:
-            try:
-                from PIL import Image
-            except ImportError:
-                return None
+        if cv2 is not None:
+            ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            return buf.tobytes() if ok else None
+
+        try:  # pragma: no cover
+            from PIL import Image
 
             buffer = BytesIO()
-            Image.fromarray(image).save(buffer, format="JPEG", quality=85)
+            Image.fromarray(image[:, :, ::-1]).save(buffer, format="JPEG", quality=90)
             return buffer.getvalue()
+        except Exception:
+            return None
 
-        ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        return buf.tobytes() if ok else None
-
-    def _pad_box(
-        self,
-        x: int,
-        y: int,
-        w: int,
-        h: int,
-        max_w: int,
-        max_h: int,
-        pad_x: float = 0.12,
-        pad_y: float = 0.18,
-    ) -> tuple[int, int, int, int]:
-        px = max(8, int(w * pad_x))
-        py = max(8, int(h * pad_y))
-        x1 = max(0, x - px)
-        y1 = max(0, y - py)
-        x2 = min(max_w, x + w + px)
-        y2 = min(max_h, y + h + py)
-        return x1, y1, max(1, x2 - x1), max(1, y2 - y1)
-
-    def _score_detection(self, detection: VehicleDetection, frame_w: int, frame_h: int) -> float:
+    def _score(self, detection: VehicleDetection, frame_w: int, frame_h: int) -> float:
+        """Prioriza detecções confiáveis, centrais e de bom tamanho."""
         area_ratio = (detection.bbox_w * detection.bbox_h) / max(frame_w * frame_h, 1)
         center_x = (detection.bbox_x + detection.bbox_w / 2) / max(frame_w, 1)
         center_y = (detection.bbox_y + detection.bbox_h / 2) / max(frame_h, 1)
+        center_bonus = 1.0 - min(1.0, abs(center_x - 0.5) + abs(center_y - 0.6))
+        size_bonus = min(1.0, area_ratio / 0.15)
+        return (detection.confidence * 0.6) + (center_bonus * 0.2) + (size_bonus * 0.2)
 
-        center_bonus = 1.0 - min(1.0, abs(center_x - 0.5) * 1.4 + abs(center_y - 0.78) * 1.1)
-        size_bonus = 1.0 - min(1.0, abs(area_ratio - 0.12) / 0.18)
-        huge_penalty = 0.0
-        if detection.bbox_w > frame_w * 0.85:
-            huge_penalty += 0.15
-        if detection.bbox_h > frame_h * 0.85:
-            huge_penalty += 0.15
-        return (detection.confidence * 0.45) + (center_bonus * 0.25) + (size_bonus * 0.30) - huge_penalty
-
-    def _detect_candidates_in_roi(
-        self,
-        cv2,
-        image,
-        roi,
-        roi_x: int,
-        roi_y: int,
-        frame_w: int,
-        frame_h: int,
-    ) -> list[VehicleDetection]:
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blurred, 40, 140)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
-        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        candidates: list[VehicleDetection] = []
-        min_area = max(1200, int(frame_w * frame_h * 0.01))
-        for contour in contours:
-            area = float(cv2.contourArea(contour))
-            if area < min_area:
-                continue
-
-            x, y, box_w, box_h = cv2.boundingRect(contour)
-            if box_w < 40 or box_h < 25:
-                continue
-
-            aspect_ratio = box_w / max(box_h, 1)
-            if aspect_ratio < 0.5 or aspect_ratio > 8.0:
-                continue
-
-            global_y = y + roi_y
-            global_x = x + roi_x
-            padded = self._pad_box(global_x, global_y, box_w, box_h, frame_w, frame_h)
-            crop = image[padded[1] : padded[1] + padded[3], padded[0] : padded[0] + padded[2]]
-            crop_bytes = self._encode_jpeg(crop)
-            if crop_bytes is None:
-                continue
-
-            vehicle_type, confidence = self._classify(area, aspect_ratio, padded[2], padded[3], frame_w, frame_h)
-            candidates.append(
-                VehicleDetection(
-                    vehicle_type=vehicle_type,
-                    confidence=confidence,
-                    bbox_x=padded[0],
-                    bbox_y=padded[1],
-                    bbox_w=padded[2],
-                    bbox_h=padded[3],
-                    crop_bytes=crop_bytes,
-                )
+    def _fallback_detection(self, image) -> list[VehicleDetection]:
+        """Modo degradado (sem modelo): devolve o frame inteiro p/ o OCR tentar."""
+        h, w = image.shape[:2]
+        crop_bytes = self._encode_jpeg(image)
+        if not crop_bytes:
+            return []
+        return [
+            VehicleDetection(
+                vehicle_type="unknown",
+                confidence=0.5,
+                bbox_x=0,
+                bbox_y=0,
+                bbox_w=int(w),
+                bbox_h=int(h),
+                crop_bytes=crop_bytes,
             )
-
-        return candidates
-
-    def _connected_components(self, mask) -> list[dict[str, int]]:
-        import numpy as np
-
-        height, width = mask.shape[:2]
-        visited = np.zeros_like(mask, dtype=bool)
-        components: list[dict[str, int]] = []
-
-        for y in range(height):
-            for x in range(width):
-                if not mask[y, x] or visited[y, x]:
-                    continue
-
-                stack = [(y, x)]
-                visited[y, x] = True
-                pixels = 0
-                min_x = max_x = x
-                min_y = max_y = y
-
-                while stack:
-                    cy, cx = stack.pop()
-                    pixels += 1
-                    if cx < min_x:
-                        min_x = cx
-                    if cx > max_x:
-                        max_x = cx
-                    if cy < min_y:
-                        min_y = cy
-                    if cy > max_y:
-                        max_y = cy
-
-                    for ny, nx in (
-                        (cy - 1, cx),
-                        (cy + 1, cx),
-                        (cy, cx - 1),
-                        (cy, cx + 1),
-                    ):
-                        if ny < 0 or ny >= height or nx < 0 or nx >= width:
-                            continue
-                        if visited[ny, nx] or not mask[ny, nx]:
-                            continue
-                        visited[ny, nx] = True
-                        stack.append((ny, nx))
-
-                components.append(
-                    {
-                        "pixels": pixels,
-                        "x1": min_x,
-                        "x2": max_x,
-                        "y1": min_y,
-                        "y2": max_y,
-                    }
-                )
-
-        components.sort(key=lambda item: item["pixels"], reverse=True)
-        return components[:20]
-
-    def _classify(
-        self,
-        area: float,
-        aspect_ratio: float,
-        box_w: int,
-        box_h: int,
-        frame_w: int,
-        frame_h: int,
-    ) -> tuple[str, float]:
-        frame_area = float(frame_w * frame_h)
-        area_ratio = area / frame_area
-
-        # Truck is a conservative label here: prefer "car" unless the box is
-        # really large in the frame. This avoids classifying a close car as a
-        # truck just because it dominates the camera view.
-        if area_ratio > 0.40 or box_w > frame_w * 0.68 or box_h > frame_h * 0.68:
-            vehicle_type = "truck"
-            confidence = min(0.95, 0.56 + area_ratio * 2.2)
-        elif aspect_ratio < 1.4 and box_w < frame_w * 0.25 and box_h < frame_h * 0.25:
-            vehicle_type = "motorcycle"
-            confidence = min(0.93, 0.58 + (1.4 - aspect_ratio) * 0.2 + area_ratio * 5.0)
-        else:
-            vehicle_type = "car"
-            confidence = min(0.94, 0.60 + area_ratio * 4.0 + max(0.0, min(aspect_ratio, 4.0) - 1.0) * 0.05)
-
-        return vehicle_type, round(max(0.5, confidence), 3)
+        ]
 
 
 vehicle_detector = VehicleDetector()
