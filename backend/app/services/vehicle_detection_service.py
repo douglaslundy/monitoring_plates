@@ -227,9 +227,19 @@ class VehicleDetector:
         class_ids = np.argmax(class_scores, axis=1)
         confidences = class_scores[np.arange(class_scores.shape[0]), class_ids]
 
-        conf_thr = settings.VEHICLE_CONF_THRESHOLD
-        vehicle_mask = np.isin(class_ids, list(_active_classes().keys()))
-        keep = (confidences >= conf_thr) & vehicle_mask
+        active = _active_classes()
+        cat_thr = {
+            "vehicle": settings.VEHICLE_CONF_THRESHOLD,
+            "person": settings.PERSON_CONF_THRESHOLD,
+            "animal": settings.ANIMAL_CONF_THRESHOLD,
+        }
+        # Threshold por detecção conforme a categoria da classe; classes inativas
+        # recebem 1.1 (sempre descartadas).
+        thr_vec = np.array(
+            [cat_thr.get(active[int(c)][0], 1.1) if int(c) in active else 1.1 for c in class_ids],
+            dtype=np.float32,
+        )
+        keep = confidences >= thr_vec
         if not np.any(keep):
             return []
 

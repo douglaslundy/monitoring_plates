@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Categorias extras de detecção (mesmo modelo YOLOv8n/COCO).
     DETECT_PERSONS: bool = True
     DETECT_ANIMALS: bool = True
+    # Confiança mínima por categoria. Pessoa/animal mais altos porque o YOLOv8n
+    # (nano) os confunde a distância (ex.: cachorro detectado como pessoa).
+    PERSON_CONF_THRESHOLD: float = 0.55
+    ANIMAL_CONF_THRESHOLD: float = 0.55
 
     # Qualidade das imagens (reduz perda por recompressão JPEG na cadeia
     # captura -> análise -> recorte salvo).
