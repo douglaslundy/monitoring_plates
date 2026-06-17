@@ -166,3 +166,35 @@ def test_client_admin_nao_cria_usuario_para_outro_cliente(client, client_b, admi
 
     res = client.post("/api/users", json=payload, headers=headers)
     assert res.status_code == 403
+
+
+def test_super_admin_edita_usuario(client, db, super_admin_user, user_b):
+    """PATCH atualiza nome/role/status do usuário."""
+    token = get_token(client, "superadmin@users.com", "Admin@123")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.patch(
+        f"/api/users/{user_b.id}",
+        json={"name": "User B Editado", "role": "client_admin", "is_active": False},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["name"] == "User B Editado"
+    assert data["role"] == "client_admin"
+    assert data["is_active"] is False
+
+
+def test_super_admin_exclui_usuario(client, db, super_admin_user, user_b):
+    token = get_token(client, "superadmin@users.com", "Admin@123")
+    headers = {"Authorization": f"Bearer {token}"}
+    uid = user_b.id
+    res = client.delete(f"/api/users/{uid}", headers=headers)
+    assert res.status_code == 204
+    assert db.query(User).filter(User.id == uid).first() is None
+
+
+def test_nao_pode_excluir_proprio_usuario(client, super_admin_user):
+    token = get_token(client, "superadmin@users.com", "Admin@123")
+    headers = {"Authorization": f"Bearer {token}"}
+    res = client.delete(f"/api/users/{super_admin_user.id}", headers=headers)
+    assert res.status_code == 400

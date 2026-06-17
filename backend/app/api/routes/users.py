@@ -107,5 +107,7 @@ def delete_user(
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     if current_user.role != UserRole.super_admin and user.client_id != current_user.client_id:
         raise HTTPException(status_code=403, detail="Acesso não autorizado")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Você não pode excluir o próprio usuário")
     db.delete(user)
     db.commit()

@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
+import { getMe } from "@/lib/auth";
 import { User, Client } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
-import { Plus } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 
 const roleLabel: Record<string, string> = {
   super_admin: "Super Admin",
@@ -21,9 +23,26 @@ const roleBadge: Record<string, "default" | "success" | "warning" | "secondary" 
   client_user: "secondary",
 };
 
-const EMPTY_FORM = { name: "", email: "", password: "", role: "client_user", client_id: "", is_active: true };
+interface UserForm {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  client_id: string;
+  is_active: boolean;
+}
+
+const EMPTY_FORM: UserForm = {
+  name: "",
+  email: "",
+  password: "",
+  role: "client_user",
+  client_id: "",
+  is_active: true,
+};
 
 export default function UsersPage() {
+  const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,11 +50,18 @@ export default function UsersPage() {
   const [filterClient, setFilterClient] = useState("");
   const [filterRole, setFilterRole] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<UserForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    getMe()
+      .then((m) => setCurrentUserId(m.id))
+      .catch(() => {});
+  }, []);
 
   async function fetchData() {
     setLoading(true);
@@ -54,36 +80,85 @@ export default function UsersPage() {
     }
   }
 
-  function openModal() {
+  function openCreate() {
+    setEditingId(null);
     setForm(EMPTY_FORM);
     setFormError("");
     setModalOpen(true);
   }
 
+  function openEdit(u: User) {
+    setEditingId(u.id);
+    setForm({
+      name: u.name,
+      email: u.email,
+      password: "",
+      role: u.role,
+      client_id: u.client_id ?? "",
+      is_active: u.is_active,
+    });
+    setFormError("");
+    setModalOpen(true);
+  }
+
+  const nameValid = form.name.trim().length > 0;
+  const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim());
+  // Na criação a senha é obrigatória (>= 8); na edição é opcional (vazia = manter).
+  const passwordValid = editingId
+    ? form.password.length === 0 || form.password.length >= 8
+    : form.password.length >= 8;
+  const formValid = nameValid && emailValid && passwordValid;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
-      setFormError("Preencha todos os campos obrigatórios");
+    if (!formValid) {
+      setFormError("Verifique os campos obrigatórios");
       return;
     }
     setSaving(true);
     setFormError("");
     try {
-      await api.post("/api/users", {
-        name: form.name.trim(),
-        email: form.email.trim(),
-        password: form.password,
-        role: form.role,
-        client_id: form.client_id || null,
-        is_active: form.is_active,
-      });
+      if (editingId) {
+        const payload: Record<string, unknown> = {
+          name: form.name.trim(),
+          email: form.email.trim(),
+          role: form.role,
+          client_id: form.client_id || null,
+          is_active: form.is_active,
+        };
+        if (form.password) payload.password = form.password;
+        await api.patch(`/api/users/${editingId}`, payload);
+        toast("Usuário atualizado");
+      } else {
+        await api.post("/api/users", {
+          name: form.name.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          role: form.role,
+          client_id: form.client_id || null,
+          is_active: form.is_active,
+        });
+        toast("Usuário criado");
+      }
       setModalOpen(false);
       fetchData();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setFormError(msg ?? "Erro ao criar usuário");
+      setFormError(msg ?? "Erro ao salvar usuário");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(u: User) {
+    if (!confirm(`Excluir o usuário "${u.name}"?`)) return;
+    try {
+      await api.delete(`/api/users/${u.id}`);
+      toast("Usuário excluido");
+      fetchData();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast(msg ?? "Falha ao excluir usuário");
     }
   }
 
@@ -135,6 +210,22 @@ export default function UsersPage() {
       header: "Criado em",
       render: (_, row) => new Date(row.created_at).toLocaleDateString("pt-BR"),
     },
+    {
+      key: "id",
+      header: "Ações",
+      render: (_, row) => (
+        <div className="flex gap-2">
+          <button onClick={() => openEdit(row)} className="p-1.5 rounded hover:bg-gray-100" title="Editar">
+            <Pencil className="h-4 w-4 text-blue-600" />
+          </button>
+          {row.id !== currentUserId && (
+            <button onClick={() => handleDelete(row)} className="p-1.5 rounded hover:bg-gray-100" title="Excluir">
+              <Trash2 className="h-4 w-4 text-red-600" />
+            </button>
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -142,7 +233,7 @@ export default function UsersPage() {
       <PageHeader
         title="Usuários"
         description="Gerencie os usuários do sistema"
-        action={{ label: "Novo Usuário", icon: Plus, onClick: openModal }}
+        action={{ label: "Novo Usuário", icon: Plus, onClick: openCreate }}
       />
 
       <div className="flex flex-wrap gap-3 mb-4">
@@ -187,7 +278,7 @@ export default function UsersPage() {
 
       <DataTable data={filtered} columns={columns} loading={loading} emptyMessage="Nenhum usuário encontrado" />
 
-      <Modal open={modalOpen} onOpenChange={setModalOpen} title="Novo Usuário">
+      <Modal open={modalOpen} onOpenChange={setModalOpen} title={editingId ? "Editar Usuário" : "Novo Usuário"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Nome *</label>
@@ -198,6 +289,7 @@ export default function UsersPage() {
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="Nome completo"
             />
+            {!nameValid && form.name.length > 0 && <p className="text-xs text-red-600 mt-1">Informe o nome.</p>}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">E-mail *</label>
@@ -208,16 +300,22 @@ export default function UsersPage() {
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="email@exemplo.com"
             />
+            {!emailValid && form.email.length > 0 && <p className="text-xs text-red-600 mt-1">E-mail inválido.</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Senha *</label>
+            <label className="block text-sm font-medium mb-1">
+              {editingId ? "Senha (deixe vazio para manter)" : "Senha *"}
+            </label>
             <input
               type="password"
               value={form.password}
               onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Mínimo 8 caracteres"
+              placeholder={editingId ? "••••••••" : "Mínimo 8 caracteres"}
             />
+            {!passwordValid && form.password.length > 0 && (
+              <p className="text-xs text-red-600 mt-1">Mínimo 8 caracteres.</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Perfil *</label>
@@ -271,10 +369,10 @@ export default function UsersPage() {
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !formValid}
               className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
-              {saving ? "Criando..." : "Criar Usuário"}
+              {saving ? "Salvando..." : editingId ? "Salvar" : "Criar Usuário"}
             </button>
           </div>
         </form>
