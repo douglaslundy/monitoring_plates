@@ -12,6 +12,8 @@ from app.api.deps import get_db, get_current_user
 from app.models.camera import Camera
 from app.models.client import Client
 from app.models.occurrence import Occurrence
+from app.models.vehicle_event import VehicleEvent
+from app.models.alert_sent import AlertSent
 from app.models.user import User, UserRole
 from app.schemas.camera import CameraCreate, CameraRead, CameraUpdate, CameraDetail, OccurrenceSmall
 from app.services.camera_service import generate_agent_token, capture_rtsp_frame, crop_half_frame
@@ -167,6 +169,24 @@ def delete_camera(
     current_user: User = Depends(get_current_user),
 ):
     camera = _get_camera_or_403(camera_id, current_user, db)
+
+    # Remove os registros dependentes antes da câmera. As FKs (occurrences,
+    # vehicle_events e alerts_sent) não têm cascade no banco, então sem isto o
+    # commit falha com IntegrityError ao excluir uma câmera que já detectou algo.
+    occ_ids = [
+        row[0]
+        for row in db.query(Occurrence.id).filter(Occurrence.camera_id == camera.id).all()
+    ]
+    if occ_ids:
+        db.query(AlertSent).filter(AlertSent.occurrence_id.in_(occ_ids)).delete(
+            synchronize_session=False
+        )
+    db.query(VehicleEvent).filter(VehicleEvent.camera_id == camera.id).delete(
+        synchronize_session=False
+    )
+    db.query(Occurrence).filter(Occurrence.camera_id == camera.id).delete(
+        synchronize_session=False
+    )
     db.delete(camera)
     db.commit()
 

@@ -467,3 +467,75 @@ def test_list_cameras_inclui_telemetria_preview(client, db, super_admin, tenant_
     assert data["quality_score"] == 81.0
     assert data["quality_label"] == "good"
     assert data["blur_score"] == 23.5
+
+
+# ── Camera deletion ─────────────────────────────────────────────────────────────
+
+def test_excluir_camera_com_dependentes(client, db, super_admin, tenant_a):
+    """Excluir câmera que já gerou ocorrências/eventos/alertas não deve falhar.
+
+    As FKs não têm cascade no banco; a rota remove os dependentes antes.
+    Reproduz o IntegrityError relatado ao excluir uma câmera.
+    """
+    from app.models.occurrence import Occurrence
+    from app.models.vehicle_event import VehicleEvent
+    from app.models.alert_sent import AlertSent, AlertChannel
+    from app.models.monitored_plate import MonitoredPlate
+
+    cam = Camera(
+        client_id=tenant_a.id,
+        name="Cam Del",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://x/y",
+        is_active=True,
+    )
+    db.add(cam)
+    db.commit()
+    db.refresh(cam)
+
+    occ = Occurrence(
+        camera_id=cam.id,
+        plate="DEL1234",
+        confidence=0.9,
+        image_path="cameras/x/img.jpg",
+    )
+    db.add(occ)
+    db.commit()
+    db.refresh(occ)
+
+    db.add(
+        VehicleEvent(
+            camera_id=cam.id,
+            occurrence_id=occ.id,
+            category="vehicle",
+            vehicle_type="car",
+            confidence=0.9,
+            bbox_x=0,
+            bbox_y=0,
+            bbox_w=10,
+            bbox_h=10,
+        )
+    )
+    mp = MonitoredPlate(client_id=tenant_a.id, plate="DEL1234", is_active=True)
+    db.add(mp)
+    db.commit()
+    db.add(
+        AlertSent(
+            occurrence_id=occ.id,
+            monitored_plate_id=mp.id,
+            channel=AlertChannel.websocket,
+            status="sent",
+        )
+    )
+    db.commit()
+
+    cam_id = cam.id
+    occ_id = occ.id
+    token = login(client, "admin@sistema.com")
+    res = client.delete(f"/api/cameras/{cam_id}", headers=auth(token))
+    assert res.status_code == 204, res.text
+
+    assert db.query(Camera).filter(Camera.id == cam_id).first() is None
+    assert db.query(Occurrence).filter(Occurrence.camera_id == cam_id).count() == 0
+    assert db.query(VehicleEvent).filter(VehicleEvent.camera_id == cam_id).count() == 0
+    assert db.query(AlertSent).filter(AlertSent.occurrence_id == occ_id).count() == 0
