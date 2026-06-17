@@ -1,13 +1,24 @@
-"""Rastreador multi-objeto por câmera (IoU + tempo), com contagem única.
+"""Rastreador multi-objeto por câmera (IoU + distância de centro), com contagem
+única e máquina de estados de salvamento.
 
-Substitui o dedup de slot-único. Cada objeto vira um *track*; um track só é
-contado **uma vez** (quando confirma `TRACK_MIN_HITS` frames). Enquanto o objeto
-permanece no frame — inclusive **parado** — o IoU mantém o mesmo track, então não
-há recontagem. Se o objeto sai (track expira por `TRACK_MAX_AGE_SECONDS`) e volta,
-um novo track é criado e ele conta de novo.
+Cada objeto vira um *track*. Um track é **contado/salvo uma única vez** — quando
+está confirmado (≥ `TRACK_MIN_HITS` frames associados) **e** aparece por completo
+no frame (bbox sem tocar as bordas) — ou, como fallback, após `TRACK_FORCE_SAVE_HITS`
+frames mesmo sem caber inteiro (veículo grande/cortado). Enquanto o objeto
+permanece no frame — inclusive **parado** — a associação por IoU/centro mantém o
+mesmo track, então **não há recontagem nem re-salvamento**.
 
-`update_tracks` é pura (testável sem Redis). `track_camera` adiciona persistência
-do estado no Redis por câmera.
+Só há um novo salvamento (re-save) do mesmo track quando muda a **classe** do
+objeto detectado. A mudança de **placa** é tratada pelo pipeline (occurrence).
+
+Sobre objeto parado + motion gating: a captura só enfileira frames quando há
+movimento, então uma cena estática não atualiza os tracks. Para um carro parado
+não ser "redescoberto" como novo a cada vez que algo passa, `TRACK_MAX_AGE_SECONDS`
+é generoso: o track sobrevive aos intervalos sem movimento e re-associa pelo
+centro/IoU quando o objeto reaparece na mesma posição.
+
+`update_tracks` é pura (testável sem Redis). `load_tracks/save_tracks` adicionam a
+persistência por câmera no Redis.
 """
 from __future__ import annotations
 
@@ -47,35 +58,65 @@ def _dist_gate(a: dict, b: dict) -> float:
     return mean_size * settings.TRACK_CENTER_DIST_GATE
 
 
+def _fully_in_frame(bbox: dict, frame_w: int | None, frame_h: int | None) -> bool:
+    """True se o bbox aparece por completo no frame (sem tocar as bordas).
+
+    Quando as dimensões do frame não são conhecidas (testes puros), assume True —
+    o gating de "objeto inteiro no frame" só se aplica quando há dimensões.
+    """
+    if not frame_w or not frame_h:
+        return True
+    margin_x = max(2.0, frame_w * settings.TRACK_EDGE_MARGIN_RATIO)
+    margin_y = max(2.0, frame_h * settings.TRACK_EDGE_MARGIN_RATIO)
+    x1 = bbox["bbox_x"]
+    y1 = bbox["bbox_y"]
+    x2 = x1 + bbox["bbox_w"]
+    y2 = y1 + bbox["bbox_h"]
+    return (
+        x1 >= margin_x
+        and y1 >= margin_y
+        and x2 <= frame_w - margin_x
+        and y2 <= frame_h - margin_y
+    )
+
+
 def update_tracks(
-    state: list[dict], detections: list[dict], now: float
+    state: list[dict],
+    detections: list[dict],
+    now: float,
+    frame_w: int | None = None,
+    frame_h: int | None = None,
 ) -> tuple[list[dict], list[dict], dict[int, dict]]:
     """Atualiza os tracks com as detecções do frame.
 
     Associação por IoU **e** por proximidade do centro: um objeto em movimento
     entre frames amostrados pode não ter sobreposição (IoU=0), mas seu centro
-    continua próximo, então segue o mesmo track e **não é recontado**. Só conta
-    após `TRACK_MIN_HITS` frames associados (confirma que está sendo rastreado).
+    continua próximo, então segue o mesmo track e **não é recontado**.
+
+    Um track é registrado (contado + frame salvo) quando confirmado
+    (`hits >= TRACK_MIN_HITS`) e: aparece inteiro no frame, OU já foi visto
+    `TRACK_FORCE_SAVE_HITS` vezes (fallback p/ objeto que nunca cabe inteiro).
+    Depois de registrado, só volta a `newly` se a **classe** mudar (re-save).
 
     Args:
-        state: tracks atuais (cada um: track_id, category, label, bbox,
-            first_seen_at, last_seen_at, hits, counted, [plate, plate_confidence,
-            occurrence_id]).
+        state: tracks atuais.
         detections: detecções do frame (category, label, confidence, bbox).
         now: timestamp (segundos).
+        frame_w, frame_h: dimensões do frame (para o gating "inteiro no frame").
 
     Returns:
-        (novo_estado, newly_counted, det_to_track).
-        - `newly_counted`: tracks que acabaram de ser contados neste frame, com
-          `det_index` apontando para a detecção que o originou.
-        - `det_to_track`: mapa índice_da_detecção → track (referência mutável
-          dentro de `novo_estado`), para o pipeline amarrar a placa ao track.
+        (novo_estado, newly, det_to_track).
+        - `newly`: registros deste frame. Cada item tem `det_index` e `reason`
+          ("new" = 1ª vez/contagem; "class_change" = re-save por mudança de classe).
+        - `det_to_track`: índice_da_detecção → track (referência mutável dentro de
+          `novo_estado`), p/ o pipeline amarrar a placa ao track.
     """
     iou_min = settings.TRACK_IOU_MIN
     max_age = settings.TRACK_MAX_AGE_SECONDS
     min_hits = settings.TRACK_MIN_HITS
+    force_hits = settings.TRACK_FORCE_SAVE_HITS
 
-    # 1. Expira tracks de objetos que saíram do frame.
+    # 1. Expira tracks de objetos que saíram do frame há mais que max_age.
     tracks = [t for t in state if now - float(t["last_seen_at"]) <= max_age]
 
     # 2. Associação gulosa (mesma categoria), 1-para-1. Candidato aceito por IoU
@@ -89,7 +130,6 @@ def update_tracks(
             iou = _iou(det["bbox"], tr["bbox"])
             dist = _center_dist(det["bbox"], tr["bbox"])
             if iou >= iou_min or dist <= _dist_gate(det["bbox"], tr["bbox"]):
-                # score: prioriza IoU; desempata pela menor distância (-dist).
                 pairs.append((iou, -dist, di, ti))
     pairs.sort(reverse=True)
 
@@ -104,6 +144,23 @@ def update_tracks(
     newly: list[dict] = []
     det_to_track: dict[int, dict] = {}
 
+    def _maybe_register(tr: dict, di: int) -> None:
+        """Decide se o track gera um registro (1ª vez ou re-save por classe)."""
+        bbox = detections[di]["bbox"]
+        confirmed = tr["hits"] >= min_hits
+        if not tr.get("counted"):
+            if not confirmed:
+                return
+            if _fully_in_frame(bbox, frame_w, frame_h) or tr["hits"] >= force_hits:
+                tr["counted"] = True
+                tr["saved_label"] = tr["label"]
+                newly.append({**tr, "det_index": di, "reason": "new"})
+        else:
+            # Já contado: re-save apenas se a classe detectada mudou.
+            if tr["label"] != tr.get("saved_label"):
+                tr["saved_label"] = tr["label"]
+                newly.append({**tr, "det_index": di, "reason": "class_change"})
+
     # 3. Atualiza tracks casados.
     for di, ti in matched_det.items():
         tr = tracks[ti]
@@ -111,9 +168,7 @@ def update_tracks(
         tr["label"] = detections[di]["label"]
         tr["last_seen_at"] = now
         tr["hits"] = int(tr.get("hits", 1)) + 1
-        if not tr.get("counted") and tr["hits"] >= min_hits:
-            tr["counted"] = True
-            newly.append({**tr, "det_index": di})
+        _maybe_register(tr, di)
         det_to_track[di] = tr
 
     # 4. Detecções sem casamento → novos tracks.
@@ -129,10 +184,9 @@ def update_tracks(
             "last_seen_at": now,
             "hits": 1,
             "counted": False,
+            "saved_label": None,
         }
-        if tr["hits"] >= min_hits:
-            tr["counted"] = True
-            newly.append({**tr, "det_index": di})
+        _maybe_register(tr, di)
         tracks.append(tr)
         det_to_track[di] = tr
 
@@ -181,7 +235,7 @@ def save_tracks(camera_id: str, state: list[dict]) -> None:
 
 
 def track_camera(camera_id: str, detections: list[dict], now: float) -> list[dict]:
-    """Carrega o estado, atualiza com as detecções, persiste e devolve newly_counted.
+    """Carrega o estado, atualiza com as detecções, persiste e devolve newly.
 
     Atalho que NÃO expõe o mapa det→track (sem amarração de placa). Para o
     pipeline com placa, use load_tracks/update_tracks/save_tracks explicitamente.

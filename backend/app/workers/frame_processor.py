@@ -220,9 +220,16 @@ try:
                 }
                 for d in detections
             ]
+            def _safe_dim(value) -> int:
+                # Detecções reais trazem int; em testes (MagicMock) ou fallback
+                # vem não-numérico/0 -> trata como desconhecido (inteiro no frame).
+                return int(value) if isinstance(value, (int, float)) else 0
+
+            frame_w = _safe_dim(detections[0].frame_w) if detections else 0
+            frame_h = _safe_dim(detections[0].frame_h) if detections else 0
             track_state = load_tracks(str(camera.id))
-            track_state, newly_counted, det_to_track = update_tracks(
-                track_state, tracker_dets, now_ts
+            track_state, newly, det_to_track = update_tracks(
+                track_state, tracker_dets, now_ts, frame_w, frame_h
             )
 
             # Melhor detecção de VEÍCULO → OCR de placa (roda a cada frame para dar
@@ -260,13 +267,16 @@ try:
                     vehicle_type = vehicle.vehicle_type
             maybe_publish_ocr_pipeline_alert(camera)
 
-            # Imagem de exibição: salva o FRAME CHEIO (resolução nativa, qualidade
-            # de captura, sem recompressão extra). O recorte pequeno de veículo
-            # distante ficava ilegível no histórico. Salvo uma vez por frame e
-            # reusado pela placa e pelos eventos de detecção.
-            display_image_path = None
-            if newly_counted or (result is not None and plate is not None):
-                display_image_path = save_bytes(analysis_bytes, camera_id)
+            # Imagem de exibição: salva o FRAME CHEIO (resolução nativa). Salva no
+            # MÁXIMO uma vez por frame e só quando algo é realmente persistido
+            # (registro de track novo/mudança de classe, ou occurrence de placa) —
+            # evita gravar imagens órfãs a cada frame de um objeto que permanece.
+            _display_cache: dict[str, str | None] = {}
+
+            def _display_image() -> str | None:
+                if "path" not in _display_cache:
+                    _display_cache["path"] = save_bytes(analysis_bytes, camera_id)
+                return _display_cache["path"]
 
             # Occurrence (placa) AMARRADA AO TRACK do veículo: uma única ocorrência
             # por rastreamento. Enquanto o veículo permanece rastreado a placa não
@@ -312,7 +322,7 @@ try:
                             camera_id=camera.id,
                             plate=plate,
                             confidence=confidence,
-                            image_path=display_image_path,
+                            image_path=_display_image(),
                             expires_at=expires_at,
                             vehicle_type=vehicle_type,
                             vehicle_color=result.get("vehicle_color"),
@@ -345,13 +355,15 @@ try:
                             occ.vehicle_make_model = result.get("vehicle_make_model")
                             occ.region_code = result.get("region_code")
                             occ.ocr_engine_used = result.get("engine")
-                            if display_image_path:
-                                occ.image_path = display_image_path
+                            # Placa mudou (leitura melhor) → re-salva o frame.
+                            occ.image_path = _display_image()
                             vehicle_track["plate"] = plate
                             vehicle_track["plate_confidence"] = float(confidence)
 
-            # Evento de detecção (contagem única): um por track recém-contado.
-            for tr in newly_counted:
+            # Evento de detecção: 1 por track. reason="new" → contagem única
+            # (insere); reason="class_change" → re-save (atualiza o evento
+            # existente do track, SEM contar de novo).
+            for tr in newly:
                 det = detections[tr["det_index"]]
                 link_occ = None
                 if (
@@ -362,6 +374,30 @@ try:
                     occ_id_str = vehicle_track.get("occurrence_id")
                     if occ_id_str:
                         link_occ = uuid.UUID(occ_id_str)
+
+                if tr.get("reason") == "class_change":
+                    existing = (
+                        db.query(VehicleEvent)
+                        .filter(
+                            VehicleEvent.camera_id == camera.id,
+                            VehicleEvent.track_id == tr["track_id"],
+                        )
+                        .order_by(VehicleEvent.detected_at.desc())
+                        .first()
+                    )
+                    if existing is not None:
+                        existing.category = tr["category"]
+                        existing.vehicle_type = tr["label"]
+                        existing.confidence = det.confidence
+                        existing.bbox_x = det.bbox_x
+                        existing.bbox_y = det.bbox_y
+                        existing.bbox_w = det.bbox_w
+                        existing.bbox_h = det.bbox_h
+                        existing.image_path = _display_image()
+                        if link_occ is not None:
+                            existing.occurrence_id = link_occ
+                        continue
+
                 db.add(
                     VehicleEvent(
                         camera_id=camera.id,
@@ -374,7 +410,7 @@ try:
                         bbox_y=det.bbox_y,
                         bbox_w=det.bbox_w,
                         bbox_h=det.bbox_h,
-                        image_path=display_image_path,
+                        image_path=_display_image(),
                     )
                 )
 

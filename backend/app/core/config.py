@@ -61,21 +61,30 @@ class Settings(BaseSettings):
 
     # Rastreador multi-objeto (object_tracker_service)
     TRACK_IOU_MIN: float = 0.20
-    # Tempo de vida do track sem ser visto. Maior que o intervalo entre frames
-    # amostrados, para o mesmo objeto não expirar e ser recontado entre frames.
-    TRACK_MAX_AGE_SECONDS: float = 8.0
-    # Frames mínimos para confirmar/contar um track. 1 = conta quando o objeto
-    # passa a ser rastreado; o próprio track (associação IoU + distância de
-    # centro abaixo, persistido no Redis por TRACK_MAX_AGE_SECONDS) impede a
-    # recontagem enquanto o objeto permanece — inclusive parado ou em movimento
-    # entre frames amostrados. É isso que elimina a detecção repetida no
-    # histórico. >1 exigiria estado no Redis SEMPRE presente e descartaria
-    # objetos vistos em um único frame amostrado (subcontagem).
+    # Tempo de vida do track sem ser visto. Generoso de propósito: com motion
+    # gating uma cena estática não atualiza os tracks, então um carro PARADO
+    # precisa sobreviver aos intervalos sem movimento para não ser redescoberto
+    # como novo (e re-salvo) toda vez que algo passa. Quanto maior, menos
+    # re-salvamento de objeto parado — mas dois veículos distintos no MESMO ponto
+    # dentro desta janela podem ser fundidos (subcontagem). Ajuste por câmera.
+    TRACK_MAX_AGE_SECONDS: float = 30.0
+    # Frames mínimos para CONFIRMAR um track. 1 = confirma ao aparecer (não
+    # subconta objetos vistos em um único frame amostrado e não exige estado
+    # SEMPRE no Redis). A contagem-única vem do flag `counted` do track + a
+    # máquina de salvamento (só salva quando o objeto aparece inteiro no frame e
+    # re-salva só em mudança de classe/placa), não de exigir vários frames.
     TRACK_MIN_HITS: int = 1
     # Associação por proximidade do centro (além do IoU): um objeto em movimento
     # pode não ter IoU entre frames amostrados, mas seu centro continua próximo.
     # Gate = este fator × tamanho médio do bbox (px). Mantém o mesmo track.
     TRACK_CENTER_DIST_GATE: float = 1.5
+    # Margem (fração da dimensão do frame) para considerar o objeto "inteiro no
+    # frame": o bbox não pode tocar as bordas. O frame só é salvo quando o objeto
+    # confirmado aparece por completo (ou após TRACK_FORCE_SAVE_HITS).
+    TRACK_EDGE_MARGIN_RATIO: float = 0.02
+    # Fallback: se o objeto for confirmado mas nunca couber inteiro no frame
+    # (veículo grande/cortado), salva mesmo assim após este nº de frames vistos.
+    TRACK_FORCE_SAVE_HITS: int = 4
 
     # Captura RTSP + motion gating (capture-runner)
     CAPTURE_FPS: float = 6.0

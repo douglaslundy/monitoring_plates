@@ -68,6 +68,9 @@ class VehicleDetection:
     bbox_w: int
     bbox_h: int
     crop_bytes: bytes
+    # Dimensões do frame analisado (para o gating "objeto inteiro no frame").
+    frame_w: int = 0
+    frame_h: int = 0
 
 
 def _model_path() -> str:
@@ -171,6 +174,8 @@ class VehicleDetector:
                     bbox_w=int(x2 - x1),
                     bbox_h=int(y2 - y1),
                     crop_bytes=crop_bytes,
+                    frame_w=int(w),
+                    frame_h=int(h),
                 )
             )
 
