@@ -126,7 +126,11 @@ try:
         from app.services.alert_service import process_alerts
         from app.models.vehicle_event import VehicleEvent
         from app.services.camera_service import crop_roi_frame
-        from app.services.object_tracker_service import track_camera
+        from app.services.object_tracker_service import (
+            load_tracks,
+            update_tracks,
+            save_tracks,
+        )
         from app.services.preview_telemetry_service import record_preview_frame
         from app.services.image_quality_service import record_image_quality
         from app.services.ocr_pipeline_metrics_service import record_ocr_pipeline_metrics
@@ -216,11 +220,24 @@ try:
                 }
                 for d in detections
             ]
-            newly_counted = track_camera(str(camera.id), tracker_dets, now_ts)
+            track_state = load_tracks(str(camera.id))
+            track_state, newly_counted, det_to_track = update_tracks(
+                track_state, tracker_dets, now_ts
+            )
 
             # Melhor detecção de VEÍCULO → OCR de placa (roda a cada frame para dar
-            # múltiplas chances de leitura; o dedup da placa é por Occurrence).
-            vehicle = next((d for d in detections if d.category == "vehicle"), None)
+            # múltiplas chances de leitura; a placa é amarrada ao TRACK do veículo
+            # — uma única ocorrência por rastreamento).
+            vehicle = None
+            vehicle_index = None
+            for idx, d in enumerate(detections):
+                if d.category == "vehicle":
+                    vehicle = d
+                    vehicle_index = idx
+                    break
+            vehicle_track = (
+                det_to_track.get(vehicle_index) if vehicle_index is not None else None
+            )
 
             result = None
             plate = None
@@ -251,53 +268,100 @@ try:
             if newly_counted or (result is not None and plate is not None):
                 display_image_path = save_bytes(analysis_bytes, camera_id)
 
-            # Occurrence (placa): dedup por placa na janela AGENT_DEDUP_SECONDS.
+            # Occurrence (placa) AMARRADA AO TRACK do veículo: uma única ocorrência
+            # por rastreamento. Enquanto o veículo permanece rastreado a placa não
+            # é recriada; só é ATUALIZADA se vier uma leitura de placa DIFERENTE com
+            # confiança MAIOR (corrige uma leitura inicial ruim).
             occ = None
             persistence_seconds: float | None = None
-            if result is not None and plate is not None:
-                cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.AGENT_DEDUP_SECONDS)
-                dup = (
-                    db.query(Occurrence)
-                    .filter(
-                        Occurrence.camera_id == camera.id,
-                        Occurrence.plate == plate,
-                        Occurrence.detected_at >= cutoff,
+            if (
+                result is not None
+                and plate is not None
+                and vehicle_track is not None
+                and vehicle_track.get("counted")
+            ):
+                existing_occ_id = vehicle_track.get("occurrence_id")
+                if existing_occ_id is None:
+                    # Primeira placa deste track. Mantém o dedup por placa na janela
+                    # AGENT_DEDUP_SECONDS p/ não duplicar entre tracks sobrepostos.
+                    cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.AGENT_DEDUP_SECONDS)
+                    dup = (
+                        db.query(Occurrence)
+                        .filter(
+                            Occurrence.camera_id == camera.id,
+                            Occurrence.plate == plate,
+                            Occurrence.detected_at >= cutoff,
+                        )
+                        .first()
                     )
-                    .first()
-                )
-                if dup:
-                    logger.debug("Dedup: plate=%s camera=%s ignored", plate, camera_id)
+                    if dup is not None:
+                        logger.debug("Dedup: plate=%s camera=%s ignored", plate, camera_id)
+                        vehicle_track["occurrence_id"] = str(dup.id)
+                        vehicle_track["plate"] = plate
+                        vehicle_track["plate_confidence"] = float(confidence)
+                    else:
+                        client = camera.client
+                        plan = client.plan
+                        expires_at = None
+                        if plan and plan.retention_days:
+                            expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
+
+                        persist_started_at = perf_counter()
+
+                        occ = Occurrence(
+                            camera_id=camera.id,
+                            plate=plate,
+                            confidence=confidence,
+                            image_path=display_image_path,
+                            expires_at=expires_at,
+                            vehicle_type=vehicle_type,
+                            vehicle_color=result.get("vehicle_color"),
+                            vehicle_make_model=result.get("vehicle_make_model"),
+                            region_code=result.get("region_code"),
+                            ocr_engine_used=result.get("engine"),
+                        )
+                        db.add(occ)
+                        db.flush()
+
+                        process_alerts(str(occ.id), db)
+                        persistence_seconds = perf_counter() - persist_started_at
+
+                        vehicle_track["occurrence_id"] = str(occ.id)
+                        vehicle_track["plate"] = plate
+                        vehicle_track["plate_confidence"] = float(confidence)
                 else:
-                    client = camera.client
-                    plan = client.plan
-                    expires_at = None
-                    if plan and plan.retention_days:
-                        expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
-
-                    persist_started_at = perf_counter()
-
-                    occ = Occurrence(
-                        camera_id=camera.id,
-                        plate=plate,
-                        confidence=confidence,
-                        image_path=display_image_path,
-                        expires_at=expires_at,
-                        vehicle_type=vehicle_type,
-                        vehicle_color=result.get("vehicle_color"),
-                        vehicle_make_model=result.get("vehicle_make_model"),
-                        region_code=result.get("region_code"),
-                        ocr_engine_used=result.get("engine"),
-                    )
-                    db.add(occ)
-                    db.flush()
-
-                    process_alerts(str(occ.id), db)
-                    persistence_seconds = perf_counter() - persist_started_at
+                    prev_conf = float(vehicle_track.get("plate_confidence") or 0.0)
+                    if plate != vehicle_track.get("plate") and confidence > prev_conf:
+                        occ = (
+                            db.query(Occurrence)
+                            .filter(Occurrence.id == uuid.UUID(existing_occ_id))
+                            .first()
+                        )
+                        if occ is not None:
+                            occ.plate = plate
+                            occ.confidence = confidence
+                            occ.vehicle_type = vehicle_type
+                            occ.vehicle_color = result.get("vehicle_color")
+                            occ.vehicle_make_model = result.get("vehicle_make_model")
+                            occ.region_code = result.get("region_code")
+                            occ.ocr_engine_used = result.get("engine")
+                            if display_image_path:
+                                occ.image_path = display_image_path
+                            vehicle_track["plate"] = plate
+                            vehicle_track["plate_confidence"] = float(confidence)
 
             # Evento de detecção (contagem única): um por track recém-contado.
             for tr in newly_counted:
                 det = detections[tr["det_index"]]
-                link_occ = occ.id if (occ is not None and tr["category"] == "vehicle") else None
+                link_occ = None
+                if (
+                    tr["category"] == "vehicle"
+                    and vehicle_track is not None
+                    and tr["track_id"] == vehicle_track.get("track_id")
+                ):
+                    occ_id_str = vehicle_track.get("occurrence_id")
+                    if occ_id_str:
+                        link_occ = uuid.UUID(occ_id_str)
                 db.add(
                     VehicleEvent(
                         camera_id=camera.id,
@@ -315,6 +379,9 @@ try:
                 )
 
             db.commit()
+            # Persiste o estado dos tracks (hits/counted/placa/occurrence_id) para
+            # o próximo frame não recontar nem recriar a placa do mesmo objeto.
+            save_tracks(str(camera.id), track_state)
             if persistence_seconds is not None:
                 record_ocr_pipeline_metrics(
                     str(camera.id),

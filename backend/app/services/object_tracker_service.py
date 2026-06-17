@@ -32,21 +32,44 @@ def _iou(a: dict, b: dict) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def _center(b: dict) -> tuple[float, float]:
+    return (b["bbox_x"] + b["bbox_w"] / 2.0, b["bbox_y"] + b["bbox_h"] / 2.0)
+
+
+def _center_dist(a: dict, b: dict) -> float:
+    ca, cb = _center(a), _center(b)
+    return ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2) ** 0.5
+
+
+def _dist_gate(a: dict, b: dict) -> float:
+    """Limite de distância de centro aceitável = fator × tamanho médio do bbox."""
+    mean_size = (a["bbox_w"] + a["bbox_h"] + b["bbox_w"] + b["bbox_h"]) / 4.0
+    return mean_size * settings.TRACK_CENTER_DIST_GATE
+
+
 def update_tracks(
     state: list[dict], detections: list[dict], now: float
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], dict[int, dict]]:
     """Atualiza os tracks com as detecções do frame.
+
+    Associação por IoU **e** por proximidade do centro: um objeto em movimento
+    entre frames amostrados pode não ter sobreposição (IoU=0), mas seu centro
+    continua próximo, então segue o mesmo track e **não é recontado**. Só conta
+    após `TRACK_MIN_HITS` frames associados (confirma que está sendo rastreado).
 
     Args:
         state: tracks atuais (cada um: track_id, category, label, bbox,
-            first_seen_at, last_seen_at, hits, counted).
+            first_seen_at, last_seen_at, hits, counted, [plate, plate_confidence,
+            occurrence_id]).
         detections: detecções do frame (category, label, confidence, bbox).
         now: timestamp (segundos).
 
     Returns:
-        (novo_estado, newly_counted). Cada item de `newly_counted` é o track que
-        acabou de ser contado, com `det_index` apontando para a detecção que o
-        originou neste frame (para o pipeline recortar/gravar o frame).
+        (novo_estado, newly_counted, det_to_track).
+        - `newly_counted`: tracks que acabaram de ser contados neste frame, com
+          `det_index` apontando para a detecção que o originou.
+        - `det_to_track`: mapa índice_da_detecção → track (referência mutável
+          dentro de `novo_estado`), para o pipeline amarrar a placa ao track.
     """
     iou_min = settings.TRACK_IOU_MIN
     max_age = settings.TRACK_MAX_AGE_SECONDS
@@ -55,36 +78,43 @@ def update_tracks(
     # 1. Expira tracks de objetos que saíram do frame.
     tracks = [t for t in state if now - float(t["last_seen_at"]) <= max_age]
 
-    # 2. Associação gulosa por IoU (mesma categoria), 1-para-1.
-    pairs: list[tuple[float, int, int]] = []
+    # 2. Associação gulosa (mesma categoria), 1-para-1. Candidato aceito por IoU
+    #    suficiente OU centro dentro do gate de distância. Ordena por IoU (desc)
+    #    e, empatado, pelo centro mais próximo.
+    pairs: list[tuple[float, float, int, int]] = []
     for di, det in enumerate(detections):
         for ti, tr in enumerate(tracks):
             if det["category"] != tr["category"]:
                 continue
             iou = _iou(det["bbox"], tr["bbox"])
-            if iou >= iou_min:
-                pairs.append((iou, di, ti))
+            dist = _center_dist(det["bbox"], tr["bbox"])
+            if iou >= iou_min or dist <= _dist_gate(det["bbox"], tr["bbox"]):
+                # score: prioriza IoU; desempata pela menor distância (-dist).
+                pairs.append((iou, -dist, di, ti))
     pairs.sort(reverse=True)
 
     matched_det: dict[int, int] = {}
     matched_track: set[int] = set()
-    for _iou_val, di, ti in pairs:
+    for _iou_val, _neg_dist, di, ti in pairs:
         if di in matched_det or ti in matched_track:
             continue
         matched_det[di] = ti
         matched_track.add(ti)
 
     newly: list[dict] = []
+    det_to_track: dict[int, dict] = {}
 
     # 3. Atualiza tracks casados.
     for di, ti in matched_det.items():
         tr = tracks[ti]
         tr["bbox"] = detections[di]["bbox"]
+        tr["label"] = detections[di]["label"]
         tr["last_seen_at"] = now
         tr["hits"] = int(tr.get("hits", 1)) + 1
         if not tr.get("counted") and tr["hits"] >= min_hits:
             tr["counted"] = True
             newly.append({**tr, "det_index": di})
+        det_to_track[di] = tr
 
     # 4. Detecções sem casamento → novos tracks.
     for di, det in enumerate(detections):
@@ -104,8 +134,9 @@ def update_tracks(
             tr["counted"] = True
             newly.append({**tr, "det_index": di})
         tracks.append(tr)
+        det_to_track[di] = tr
 
-    return tracks, newly
+    return tracks, newly, det_to_track
 
 
 # ─── Persistência por câmera (Redis) ──────────────────────────────────────────
@@ -150,8 +181,12 @@ def save_tracks(camera_id: str, state: list[dict]) -> None:
 
 
 def track_camera(camera_id: str, detections: list[dict], now: float) -> list[dict]:
-    """Carrega o estado, atualiza com as detecções, persiste e devolve newly_counted."""
+    """Carrega o estado, atualiza com as detecções, persiste e devolve newly_counted.
+
+    Atalho que NÃO expõe o mapa det→track (sem amarração de placa). Para o
+    pipeline com placa, use load_tracks/update_tracks/save_tracks explicitamente.
+    """
     state = load_tracks(camera_id)
-    state, newly = update_tracks(state, detections, now)
+    state, newly, _det_to_track = update_tracks(state, detections, now)
     save_tracks(camera_id, state)
     return newly

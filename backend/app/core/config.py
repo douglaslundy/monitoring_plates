@@ -56,12 +56,18 @@ class Settings(BaseSettings):
     DETECTION_MIN_CROP_SIDE: int = 320
 
     # Rastreador multi-objeto (object_tracker_service)
-    TRACK_IOU_MIN: float = 0.30
-    TRACK_MAX_AGE_SECONDS: float = 3.0
-    # Frames mínimos para confirmar/contar um track. 1 = conta ao aparecer (o
-    # próprio track impede recontagem enquanto o objeto permanece). Aumente para
-    # filtrar detecções espúrias de 1 frame.
-    TRACK_MIN_HITS: int = 1
+    TRACK_IOU_MIN: float = 0.20
+    # Tempo de vida do track sem ser visto. Maior que o intervalo entre frames
+    # amostrados, para o mesmo objeto não expirar e ser recontado entre frames.
+    TRACK_MAX_AGE_SECONDS: float = 8.0
+    # Frames mínimos para confirmar/contar um track. 2 = só conta APÓS rastrear
+    # (objeto precisa ser visto/associado em >=2 frames), evitando contagem de
+    # detecções espúrias de 1 frame e dando estabilidade à contagem única.
+    TRACK_MIN_HITS: int = 2
+    # Associação por proximidade do centro (além do IoU): um objeto em movimento
+    # pode não ter IoU entre frames amostrados, mas seu centro continua próximo.
+    # Gate = este fator × tamanho médio do bbox (px). Mantém o mesmo track.
+    TRACK_CENTER_DIST_GATE: float = 1.5
 
     # Captura RTSP + motion gating (capture-runner)
     CAPTURE_FPS: float = 6.0
