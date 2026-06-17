@@ -18,6 +18,7 @@ import {
   X,
   Shield,
   ScanLine,
+  ScanSearch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/lib/auth";
@@ -38,14 +39,15 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/users", label: "Usuarios", icon: Users },
   { href: "/admin/cameras", label: "Cameras", icon: Camera },
   { href: "/admin/live", label: "Live", icon: Radio },
-  { href: "/admin/detections", label: "Deteccoes", icon: Search },
+  { href: "/admin/search", label: "Placas", icon: Search },
+  { href: "/admin/detections", label: "Deteccoes", icon: ScanSearch },
   { href: "/admin/ocr-config", label: "Motores OCR", icon: ScanLine },
 ];
 
 export const CLIENT_NAV: NavItem[] = [
   { href: "/client", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/client/search", label: "Placas", icon: Search },
-  { href: "/client/detections", label: "Historico", icon: Search },
+  { href: "/client/detections", label: "Deteccoes", icon: ScanSearch },
   { href: "/client/alerts", label: "Alertas", icon: Bell },
   { href: "/client/cameras", label: "Cameras", icon: Camera },
   { href: "/client/live", label: "Live", icon: Radio },
