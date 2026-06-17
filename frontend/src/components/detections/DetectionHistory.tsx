@@ -79,6 +79,15 @@ function formatDateTime(value: string): string {
   });
 }
 
+// O input datetime-local dá a hora LOCAL escolhida (sem fuso). Converte para o
+// instante UTC (ISO com 'Z') que o backend compara contra detected_at. Sem isso
+// o filtro de data/hora ficava deslocado pelo fuso (parecia não funcionar).
+function localToIso(local: string): string | undefined {
+  if (!local) return undefined;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 function HourChart({ data }: { data: { hour: number; count: number }[] }) {
   const max = Math.max(...data.map((item) => item.count), 1);
   return (
@@ -163,8 +172,8 @@ export default function DetectionHistory({ title, description }: { title: string
             category: category || undefined,
             camera_id: cameraId || undefined,
             vehicle_type: vehicleType || undefined,
-            date_from: dateFrom || undefined,
-            date_to: dateTo || undefined,
+            date_from: localToIso(dateFrom),
+            date_to: localToIso(dateTo),
             page: targetPage,
             limit: 24,
           },
@@ -210,8 +219,10 @@ export default function DetectionHistory({ title, description }: { title: string
     if (category) params.set("category", category);
     if (cameraId) params.set("camera_id", cameraId);
     if (vehicleType) params.set("vehicle_type", vehicleType);
-    if (dateFrom) params.set("date_from", dateFrom);
-    if (dateTo) params.set("date_to", dateTo);
+    const isoFrom = localToIso(dateFrom);
+    const isoTo = localToIso(dateTo);
+    if (isoFrom) params.set("date_from", isoFrom);
+    if (isoTo) params.set("date_to", isoTo);
     window.open(`${API_BASE}/api/vehicles/export?${params.toString()}`, "_blank", "noopener,noreferrer");
   }, [category, cameraId, dateFrom, dateTo, vehicleType]);
 

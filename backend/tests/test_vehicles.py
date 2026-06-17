@@ -787,3 +787,36 @@ def test_process_frame_nao_duplica_veiculo_parado(db, camera_agent_a):
         assert db.query(VehicleEvent).count() == 1
     finally:
         worker_db.close()
+
+
+def test_vehicles_list_filtra_por_data(client, db, camera_rtsp_a, super_admin_user):
+    """Filtro de data/hora em /api/vehicles (a pagina /detections envia ISO UTC)."""
+    from datetime import timedelta
+    from app.models.vehicle_event import VehicleEvent
+
+    now = datetime.now(timezone.utc)
+    old = now - timedelta(days=2)
+
+    def _ev(dt, label):
+        return VehicleEvent(
+            camera_id=camera_rtsp_a.id, category="vehicle", vehicle_type=label,
+            confidence=0.8, bbox_x=0, bbox_y=0, bbox_w=10, bbox_h=10, detected_at=dt,
+        )
+
+    db.add_all([_ev(old, "car"), _ev(now, "truck")])
+    db.commit()
+    h = _auth_header(super_admin_user)
+
+    # date_from = ontem -> só o evento recente (truck) entra.
+    cutoff = (now - timedelta(days=1)).isoformat()
+    r = client.get("/api/vehicles", params={"date_from": cutoff}, headers=h)
+    assert r.status_code == 200
+    types = [it["vehicle_type"] for it in r.json()["items"]]
+    assert "truck" in types and "car" not in types
+
+    # date_to = 3 dias atrás -> só o antigo (car) entra.
+    upper = (now - timedelta(days=1)).isoformat()
+    r2 = client.get("/api/vehicles", params={"date_to": upper}, headers=h)
+    assert r2.status_code == 200
+    types2 = [it["vehicle_type"] for it in r2.json()["items"]]
+    assert "car" in types2 and "truck" not in types2
