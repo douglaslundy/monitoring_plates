@@ -129,6 +129,57 @@ def test_detector_reconhece_pessoa_e_animal():
         assert best.vehicle_type == exp_label
 
 
+def _fake_yolo_two_boxes(
+    box_a: tuple[float, float, float, float],
+    class_a: int,
+    score_a: float,
+    box_b: tuple[float, float, float, float],
+    class_b: int,
+    score_b: float,
+):
+    """Saída YOLOv8 [1,84,8400] com DUAS detecções (cx,cy,w,h no espaço 640)."""
+    import numpy as np
+
+    out = np.zeros((1, 84, 8400), dtype=np.float32)
+    for anchor, (cx, cy, w, h), cls, score in (
+        (0, box_a, class_a, score_a),
+        (1, box_b, class_b, score_b),
+    ):
+        out[0, 0, anchor] = cx
+        out[0, 1, anchor] = cy
+        out[0, 2, anchor] = w
+        out[0, 3, anchor] = h
+        out[0, 4 + cls, anchor] = score
+    return out
+
+
+def test_detector_pessoa_e_cachorro_sobrepostos_ambos_detectados():
+    """Pessoa + cachorro sobrepostos (pessoa passeando com o cão) → AMBOS detectados.
+
+    Regressão: o NMS era class-agnostic e suprimia a caixa de classe diferente com
+    menor confiança (o cachorro), sobrando só a pessoa no histórico.
+    """
+    import sys
+    from unittest.mock import patch
+
+    from app.services.vehicle_detection_service import VehicleDetector
+
+    # Pessoa (alta conf) e cachorro (conf menor) com caixas sobrepostas (IoU > 0.45).
+    person_box = (320.0, 300.0, 120.0, 260.0)
+    dog_box = (330.0, 320.0, 130.0, 230.0)
+    output = _fake_yolo_two_boxes(person_box, 0, 0.90, dog_box, 16, 0.70)
+
+    detector = VehicleDetector()
+    mock_ort = _mock_onnxruntime(output)
+    with patch.dict(sys.modules, {"onnxruntime": mock_ort}), \
+         patch("os.path.exists", return_value=True):
+        detections = detector.detect(_make_vehicle_image())
+
+    categories = {d.category for d in detections}
+    assert "person" in categories, "pessoa deveria ser detectada"
+    assert "animal" in categories, "cachorro (animal) sobreposto à pessoa não pode ser suprimido pelo NMS"
+
+
 def test_vehicle_stats_endpoint_conta_por_tipo(client, db):
     from app.models.vehicle_event import VehicleEvent
 

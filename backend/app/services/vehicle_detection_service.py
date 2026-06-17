@@ -1,9 +1,10 @@
-"""Detecção de veículos com YOLOv8n em ONNX Runtime (CPU, leve, offline).
+"""Detecção de objetos com YOLOv8s em ONNX Runtime (CPU, leve, offline).
 
 Substitui a heurística antiga de bordas/contornos por um modelo real de
-detecção de objetos. Roda só as classes de veículo do COCO
-(car/motorcycle/bus/truck), em uma única passada por frame (~dezenas de ms na
-CPU). O modelo (`yolov8n.onnx`) é embutido na imagem Docker no build.
+detecção de objetos. Roda as classes de interesse do COCO (veículos +
+pessoas/animais conforme as flags), em uma única passada por frame. O modelo
+(`yolov8s.onnx`, configurável pelo build-arg YOLO_MODEL) é embutido na imagem
+Docker no build; o caminho vem de VEHICLE_MODEL_PATH.
 
 Importações de `onnxruntime`/`cv2`/`numpy` são preguiçosas para permitir mock
 nos testes e para não quebrar caso o modelo não esteja presente (modo
@@ -73,11 +74,11 @@ def _model_path() -> str:
     explicit = os.getenv("VEHICLE_MODEL_PATH")
     if explicit:
         return explicit
-    return os.path.join(os.getenv("MODELS_DIR", "/app/models"), "yolov8n.onnx")
+    return os.path.join(os.getenv("MODELS_DIR", "/app/models"), "yolov8s.onnx")
 
 
 class VehicleDetector:
-    """Detector de veículos baseado em YOLOv8n (ONNX Runtime, CPU)."""
+    """Detector de objetos baseado em YOLOv8s (ONNX Runtime, CPU)."""
 
     def __init__(self) -> None:
         self._session = None
@@ -111,7 +112,7 @@ class VehicleDetector:
                 sess_options.intra_op_num_threads = max(1, settings.VEHICLE_DETECTOR_THREADS)
                 self._session = ort.InferenceSession(path, sess_options=sess_options, providers=providers)
                 self._input_name = self._session.get_inputs()[0].name
-                logger.info("Detector YOLOv8n carregado de %s", path)
+                logger.info("Detector YOLOv8s carregado de %s", path)
             except Exception as exc:
                 logger.error("Falha ao carregar modelo de veículos (%s) — modo degradado", exc)
                 self._unavailable = True
@@ -174,7 +175,11 @@ class VehicleDetector:
             )
 
         detections.sort(key=lambda d: self._score(d, w, h), reverse=True)
-        return detections[:3]
+        # Cap mais alto que 3: em cenas reais (vários veículos + pessoa + animal)
+        # o limite antigo, somado ao _score que privilegia objetos grandes/centrais,
+        # descartava objetos pequenos (um cachorro) mesmo detectados. Cada objeto
+        # vira um track contado uma vez — manter mais detecções é barato.
+        return detections[: max(1, settings.MAX_DETECTIONS_PER_FRAME)]
 
     # ── Pré/pós-processamento ──────────────────────────────────────────────
     def _preprocess(self, image):
@@ -260,7 +265,14 @@ class VehicleDetector:
         y2 = np.clip(y2, 0, orig_h)
 
         xyxy = np.stack([x1, y1, x2, y2], axis=1)
-        keep_idx = self._nms(xyxy, confidences, settings.VEHICLE_IOU_THRESHOLD)
+        # NMS class-aware: objetos de classes diferentes (ex.: uma pessoa e o
+        # cachorro ao seu lado) podem se sobrepor sem que um deva suprimir o
+        # outro. Deslocamos as caixas por um offset proporcional à classe antes
+        # do NMS, de modo que só caixas da MESMA classe competem entre si. Sem
+        # isto, o cachorro (menor confiança) sumia quando encostava na pessoa.
+        max_coord = float(max(orig_w, orig_h)) + 1.0
+        offset = class_ids.astype(np.float32)[:, None] * max_coord
+        keep_idx = self._nms(xyxy + offset, confidences, settings.VEHICLE_IOU_THRESHOLD)
 
         results = []
         for i in keep_idx:

@@ -35,17 +35,21 @@ class Settings(BaseSettings):
     OCR_PIPELINE_ALERT_COOLDOWN_SECONDS: int = 300
     OCR_ALLOWLIST: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-    # Detecção de veículos (YOLOv8n ONNX)
+    # Detecção de objetos (YOLOv8s ONNX, COCO)
     VEHICLE_CONF_THRESHOLD: float = 0.35
     VEHICLE_IOU_THRESHOLD: float = 0.45
     VEHICLE_DETECTOR_THREADS: int = 1
-    # Categorias extras de detecção (mesmo modelo YOLOv8n/COCO).
+    # Máximo de objetos retornados por frame (cada um vira um track contado uma
+    # vez). Mais alto p/ não descartar objetos pequenos em cenas com vários alvos.
+    MAX_DETECTIONS_PER_FRAME: int = 10
+    # Categorias extras de detecção (mesmo modelo YOLOv8s/COCO).
     DETECT_PERSONS: bool = True
     DETECT_ANIMALS: bool = True
-    # Confiança mínima por categoria. Pessoa/animal mais altos porque o YOLOv8n
-    # (nano) os confunde a distância (ex.: cachorro detectado como pessoa).
-    PERSON_CONF_THRESHOLD: float = 0.55
-    ANIMAL_CONF_THRESHOLD: float = 0.55
+    # Confiança mínima por categoria. Animal mais baixo (recall): o yolov8s erra
+    # menos que o nano antigo, então 0.55 perdia cachorros legítimos. Pessoa segue
+    # um pouco mais alta p/ reduzir cachorro classificado como pessoa à distância.
+    PERSON_CONF_THRESHOLD: float = 0.50
+    ANIMAL_CONF_THRESHOLD: float = 0.40
 
     # Qualidade das imagens (reduz perda por recompressão JPEG na cadeia
     # captura -> análise -> recorte salvo).
