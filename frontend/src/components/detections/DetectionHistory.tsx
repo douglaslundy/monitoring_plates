@@ -78,10 +78,21 @@ function HourChart({ data }: { data: { hour: number; count: number }[] }) {
         {data.map((item) => (
           <div
             key={item.hour}
-            className="flex-1 rounded-t-md bg-primary/75 hover:bg-primary transition-colors"
-            style={{ height: `${Math.max((item.count / max) * 100, item.count > 0 ? 5 : 0)}%` }}
+            className="flex-1 flex flex-col items-stretch h-full"
             title={`${item.hour}h: ${item.count}`}
-          />
+          >
+            {/* Rótulo com a quantidade de cada coluna (oculto quando zero). */}
+            <span className="h-3 text-center text-[10px] leading-3 text-muted-foreground tabular-nums">
+              {item.count > 0 ? item.count : ""}
+            </span>
+            {/* Área da barra: % resolve contra esta região (altura - rótulo). */}
+            <div className="flex-1 flex items-end">
+              <div
+                className="w-full rounded-t-md bg-primary/75 hover:bg-primary transition-colors"
+                style={{ height: `${Math.max((item.count / max) * 100, item.count > 0 ? 5 : 0)}%` }}
+              />
+            </div>
+          </div>
         ))}
       </div>
       <div className="mt-1 flex gap-1">

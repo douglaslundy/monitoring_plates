@@ -18,14 +18,22 @@ import { Camera as CameraIcon, Shield, Activity, BarChart2, CarFront, Truck, Bik
 function BarChart({ data }: { data: { hour: number; count: number }[] }) {
   const max = Math.max(...data.map((d) => d.count), 1);
   return (
-    <div className="flex items-end gap-px h-20">
+    <div className="flex items-end gap-px h-24">
       {data.map(({ hour, count }) => (
-        <div
-          key={hour}
-          className="flex-1 bg-primary/70 hover:bg-primary rounded-t-sm transition-colors cursor-default min-h-[2px]"
-          style={{ height: `${Math.max((count / max) * 100, count > 0 ? 4 : 0)}%` }}
-          title={`${hour}h: ${count}`}
-        />
+        <div key={hour} className="flex-1 flex flex-col items-stretch h-full" title={`${hour}h: ${count}`}>
+          {/* Rótulo com a quantidade da coluna (oculto quando zero). */}
+          <span className="h-3 text-center text-[9px] leading-3 text-muted-foreground tabular-nums">
+            {count > 0 ? count : ""}
+          </span>
+          {/* Área da barra: % resolve contra esta região (container - rótulo),
+              então a barra nunca estoura a altura mesmo no valor máximo. */}
+          <div className="flex-1 flex items-end">
+            <div
+              className="w-full bg-primary/70 hover:bg-primary rounded-t-sm transition-colors cursor-default min-h-[2px]"
+              style={{ height: `${Math.max((count / max) * 100, count > 0 ? 4 : 0)}%` }}
+            />
+          </div>
+        </div>
       ))}
     </div>
   );
