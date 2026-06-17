@@ -83,14 +83,56 @@ def _model_path() -> str:
 class VehicleDetector:
     """Detector de objetos baseado em YOLOv8s (ONNX Runtime, CPU)."""
 
+    # Intervalo (s) p/ reler qual modelo o admin selecionou (sem custo por frame).
+    _MODEL_CHECK_INTERVAL = 10.0
+
     def __init__(self) -> None:
         self._session = None
         self._input_name: Optional[str] = None
         self._lock = threading.Lock()
         self._unavailable = False
+        self._loaded_model: Optional[str] = None  # modelo atualmente carregado
+        self._model_name: Optional[str] = None     # último selecionado lido
+        self._model_checked_at = 0.0
+
+    def _selected_model(self) -> Optional[str]:
+        """Nome do modelo selecionado pelo admin (cacheado por _MODEL_CHECK_INTERVAL)."""
+        import time
+
+        now = time.time()
+        if self._model_name is None or now - self._model_checked_at > self._MODEL_CHECK_INTERVAL:
+            try:
+                from app.services.detector_model_service import get_selected_model
+
+                self._model_name = get_selected_model()
+            except Exception:
+                pass
+            self._model_checked_at = now
+        return self._model_name
+
+    def _resolve_path(self, model_name: Optional[str]) -> str:
+        if model_name:
+            try:
+                from app.services.detector_model_service import model_path
+
+                candidate = model_path(model_name)
+                if os.path.exists(candidate):
+                    return candidate
+            except Exception:
+                pass
+        return _model_path()  # fallback: env/default
 
     # ── Sessão ONNX ────────────────────────────────────────────────────────
     def _get_session(self):
+        desired = self._selected_model()
+        # Admin trocou o modelo -> recarrega a sessão ONNX.
+        if self._session is not None and desired and desired != self._loaded_model:
+            with self._lock:
+                logger.info("Detector: modelo alterado %s -> %s, recarregando", self._loaded_model, desired)
+                self._session = None
+                self._input_name = None
+                self._unavailable = False
+
         if self._session is not None or self._unavailable:
             return self._session
         with self._lock:
@@ -103,7 +145,7 @@ class VehicleDetector:
                 self._unavailable = True
                 return None
 
-            path = _model_path()
+            path = self._resolve_path(desired)
             if not os.path.exists(path):
                 logger.warning("Modelo de veículos não encontrado em %s — modo degradado", path)
                 self._unavailable = True
@@ -115,7 +157,8 @@ class VehicleDetector:
                 sess_options.intra_op_num_threads = max(1, settings.VEHICLE_DETECTOR_THREADS)
                 self._session = ort.InferenceSession(path, sess_options=sess_options, providers=providers)
                 self._input_name = self._session.get_inputs()[0].name
-                logger.info("Detector YOLOv8s carregado de %s", path)
+                self._loaded_model = desired
+                logger.info("Detector YOLO carregado de %s", path)
             except Exception as exc:
                 logger.error("Falha ao carregar modelo de veículos (%s) — modo degradado", exc)
                 self._unavailable = True

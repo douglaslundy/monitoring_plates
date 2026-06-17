@@ -1,9 +1,10 @@
 # ─── Stage 1: export YOLOv8 (n/s/m) → ONNX (ultralytics/torch só no build) ───
-# O runtime NÃO leva PyTorch: só copiamos o .onnx resultante. O modelo é
-# escolhido pelo build-arg YOLO_MODEL (default yolov8s; troque p/ yolov8m/n).
+# O runtime NÃO leva PyTorch: só copiamos os .onnx resultantes. O admin escolhe
+# em runtime qual modelo usar (yolov8n/s/m) — todos são embutidos aqui.
 FROM python:3.11-slim AS model-export
-ARG YOLO_MODEL=yolov8s
-ENV YOLO_OFFLINE=True
+# Modelos a exportar. n/s vêm dos .pt no repo (offline); m é baixado no build.
+ARG YOLO_MODELS="yolov8n yolov8s yolov8m"
+ENV YOLO_MODELS=${YOLO_MODELS}
 # Torch CPU 2.4.1: usa o exportador ONNX legado (sem onnxscript) e evita ~2GB de
 # wheels CUDA. Instalado antes do ultralytics p/ ele não puxar a versão CUDA.
 RUN pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 \
@@ -14,10 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /export
-# Pesos enviados no repo (a VPS não baixa do github) → export 100% local.
-COPY ${YOLO_MODEL}.pt /export/${YOLO_MODEL}.pt
-RUN python -c "from ultralytics import YOLO; YOLO('${YOLO_MODEL}.pt').export(format='onnx', imgsz=640, opset=12, simplify=True)" \
-    && test -f ${YOLO_MODEL}.onnx
+# Pesos enviados no repo (yolov8n/s) → export local; os demais são baixados.
+COPY yolov8n.pt yolov8s.pt /export/
+COPY export_models.py /export/export_models.py
+RUN python export_models.py && ls -1 *.onnx
 
 # ─── Stage 2: runtime leve (onnxruntime + fast-alpr, sem torch/easyocr) ───
 FROM python:3.11-slim
@@ -40,8 +41,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Modelo de detecção de objetos (YOLOv8, default yolov8s) gerado no estágio anterior.
-COPY --from=model-export /export/${YOLO_MODEL}.onnx /app/models/${YOLO_MODEL}.onnx
+# Modelos de detecção (YOLOv8 n/s/m...) gerados no estágio anterior. Todos são
+# embutidos; o admin escolhe em runtime (detector_model_service). VEHICLE_MODEL_PATH
+# (yolov8s) é o fallback sempre presente.
+COPY --from=model-export /export/*.onnx /app/models/
 
 # Pré-baixa os modelos do fast-alpr durante o build (build tem internet) para
 # que o container rode 100% OFFLINE na VPS. O cache fica embutido na imagem.

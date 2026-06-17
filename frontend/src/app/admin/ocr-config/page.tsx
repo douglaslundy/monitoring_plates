@@ -15,6 +15,7 @@ import {
   XCircle,
   FlaskConical,
   Power,
+  Cpu,
 } from "lucide-react";
 
 type EngineType = "easyocr" | "plate_recognizer";
@@ -76,6 +77,9 @@ export default function OcrConfigPage() {
   const [saving, setSaving] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [testing, setTesting] = useState<string | null>(null);
+  // Modelo de detecção (YOLO) — Tarefa A.
+  const [detModel, setDetModel] = useState<{ current: string; default: string; available: string[] } | null>(null);
+  const [savingModel, setSavingModel] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -87,6 +91,30 @@ export default function OcrConfigPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    api
+      .get<{ current: string; default: string; available: string[] }>("/api/detector/model")
+      .then((r) => setDetModel(r.data))
+      .catch(() => setDetModel(null));
+  }, []);
+
+  async function changeDetectorModel(model: string) {
+    setSavingModel(true);
+    setError("");
+    try {
+      const r = await api.put<{ current: string; default: string; available: string[] }>(
+        "/api/detector/model",
+        { model }
+      );
+      setDetModel(r.data);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(msg || "Erro ao alterar o modelo de detecção");
+    } finally {
+      setSavingModel(false);
+    }
+  }
 
   function openCreate() {
     setEditing(null);
@@ -181,6 +209,44 @@ export default function OcrConfigPage() {
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {/* Modelo de detecção de objetos (YOLO) — Tarefa A */}
+      {detModel && (
+        <div className="mb-6 bg-white border rounded-xl p-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+              <Cpu className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold">Modelo de detecção (YOLO)</h3>
+              <p className="text-sm text-muted-foreground">
+                Modelo usado para detectar veículos, pessoas e animais. Modelos maiores
+                (m {">"} s {">"} n) acertam mais a classe, porém são mais lentos na CPU.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            <select
+              value={detModel.current}
+              disabled={savingModel || detModel.available.length === 0}
+              onChange={(e) => changeDetectorModel(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+            >
+              {detModel.available.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                  {m === detModel.default ? " (padrão)" : ""}
+                </option>
+              ))}
+            </select>
+            {savingModel && <span className="text-sm text-muted-foreground">Aplicando…</span>}
+            <Badge variant="info">Atual: {detModel.current}</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            A troca vale para novas detecções (os workers recarregam o modelo em alguns segundos).
+          </p>
         </div>
       )}
 

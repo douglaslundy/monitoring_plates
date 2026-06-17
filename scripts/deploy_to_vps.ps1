@@ -36,16 +36,20 @@ function Copy-Path($localRelative, $remoteParent) {
 # 1) Sincroniza os fontes (cobre todos os arquivos do lote) + o script remoto.
 Copy-Path "backend/app"             "$RemoteDir/backend/"
 Copy-Path "backend/alembic"         "$RemoteDir/backend/"
+Copy-Path "backend/Dockerfile"      "$RemoteDir/backend/"
+Copy-Path "backend/export_models.py" "$RemoteDir/backend/"
+Copy-Path "backend/yolov8n.pt"      "$RemoteDir/backend/"
+Copy-Path "backend/yolov8s.pt"      "$RemoteDir/backend/"
 Copy-Path "frontend/src"            "$RemoteDir/frontend/"
 Copy-Path "infra/go2rtc.yaml"       "$RemoteDir/infra/"
-Copy-Path "scripts/remote_deploy.sh" "$RemoteDir/scripts/"
+Copy-Path "scripts/remote_deploy.sh" "$RemoteDir/"
 
 # 2) Rebuild + restart na VPS rodando o script remoto (backend roda
 #    `alembic upgrade head` no start -> migra). Executar um ARQUIVO via bash evita
 #    o mangling de aspas/linhas que ocorre ao passar comando multi-linha por
 #    PowerShell -> plink.
 Write-Host "[deploy] executando rebuild remoto via plink..."
-& $plink -batch -hostkey $HostKey -pw $Password $target "bash $RemoteDir/scripts/remote_deploy.sh"
+& $plink -batch -hostkey $HostKey -pw $Password $target "bash $RemoteDir/remote_deploy.sh"
 if ($LASTEXITCODE -ne 0) { throw "plink/rebuild remoto falhou (exit $LASTEXITCODE)" }
 
 Write-Host "[deploy] concluido."
