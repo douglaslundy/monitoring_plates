@@ -45,11 +45,12 @@ class Settings(BaseSettings):
     # Categorias extras de detecção (mesmo modelo YOLOv8s/COCO).
     DETECT_PERSONS: bool = True
     DETECT_ANIMALS: bool = True
-    # Confiança mínima por categoria. Animal mais baixo (recall): o yolov8s erra
-    # menos que o nano antigo, então 0.55 perdia cachorros legítimos. Pessoa segue
-    # um pouco mais alta p/ reduzir cachorro classificado como pessoa à distância.
-    PERSON_CONF_THRESHOLD: float = 0.50
-    ANIMAL_CONF_THRESHOLD: float = 0.40
+    # Confiança mínima por categoria. Elevadas (T4) para reduzir classificações
+    # erradas de baixa confiança (homem como urso, cão como pessoa). O voto de
+    # classe ao longo do track (object_tracker_service) corrige o resto: um erro
+    # pontual de 1 frame é vencido pela maioria.
+    PERSON_CONF_THRESHOLD: float = 0.55
+    ANIMAL_CONF_THRESHOLD: float = 0.55
 
     # Qualidade das imagens (reduz perda por recompressão JPEG na cadeia
     # captura -> análise -> recorte salvo).
@@ -78,6 +79,11 @@ class Settings(BaseSettings):
     # pode não ter IoU entre frames amostrados, mas seu centro continua próximo.
     # Gate = este fator × tamanho médio do bbox (px). Mantém o mesmo track.
     TRACK_CENTER_DIST_GATE: float = 1.5
+    # Associação CROSS-CATEGORY (T4): sobreposição (IoU) >= este limiar ALTO entre
+    # uma detecção e um track de categoria diferente = mesmo objeto físico
+    # classificado de formas diferentes entre frames (cão/pessoa, homem/urso).
+    # Permite ao track VOTAR a classe correta sem fundir objetos distintos.
+    TRACK_SAME_OBJECT_IOU: float = 0.70
     # Margem (fração da dimensão do frame) para considerar o objeto "inteiro no
     # frame": o bbox não pode tocar as bordas. O frame só é salvo quando o objeto
     # confirmado aparece por completo (ou após TRACK_FORCE_SAVE_HITS).

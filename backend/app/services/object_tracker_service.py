@@ -58,6 +58,17 @@ def _dist_gate(a: dict, b: dict) -> float:
     return mean_size * settings.TRACK_CENTER_DIST_GATE
 
 
+def _vote_key(category: str, label: str) -> str:
+    return f"{category}|{label}"
+
+
+def _winning_class(votes: dict) -> tuple[str, str]:
+    """Categoria/label com mais votos no track (voto temporal de classe)."""
+    key = max(votes, key=lambda k: votes[k])
+    category, _, label = key.partition("|")
+    return category, label
+
+
 def _fully_in_frame(bbox: dict, frame_w: int | None, frame_h: int | None) -> bool:
     """True se o bbox aparece por completo no frame (sem tocar as bordas).
 
@@ -148,24 +159,53 @@ def update_tracks(
         matched_det[di] = ti
         matched_track.add(ti)
 
+    # 2b. Associação CROSS-CATEGORY por IoU muito alto: o mesmo objeto físico
+    #     classificado de formas diferentes entre frames (cão ora "dog" ora
+    #     "person") mantém caixas quase idênticas. Sobreposição >= limiar alto =
+    #     mesmo objeto -> associa para o track VOTAR a classe (corrige o erro por
+    #     maioria), sem fundir objetos realmente distintos (que não se sobrepõem
+    #     tanto).
+    same_obj_iou = settings.TRACK_SAME_OBJECT_IOU
+    cross: list[tuple[float, int, int]] = []
+    for di, det in enumerate(detections):
+        if di in matched_det:
+            continue
+        for ti, tr in enumerate(tracks):
+            if ti in matched_track or det["category"] == tr["category"]:
+                continue
+            iou = _iou(det["bbox"], tr["bbox"])
+            if iou >= same_obj_iou:
+                cross.append((iou, di, ti))
+    cross.sort(reverse=True)
+    for _iou_val, di, ti in cross:
+        if di in matched_det or ti in matched_track:
+            continue
+        matched_det[di] = ti
+        matched_track.add(ti)
+
     newly: list[dict] = []
     det_to_track: dict[int, dict] = {}
 
     def _maybe_register(tr: dict, di: int) -> None:
-        """Decide se o track gera um registro (1ª vez ou re-save por classe)."""
+        """Decide se o track gera um registro (1ª vez ou re-save por classe).
+
+        A classe usada é a VOTADA (maioria ao longo do track), não a do frame —
+        um erro pontual de classificação não vira registro nem dispara re-save.
+        """
         bbox = detections[di]["bbox"]
         confirmed = tr["hits"] >= min_hits
+        current_class = _vote_key(tr["category"], tr["label"])
         if not tr.get("counted"):
             if not confirmed:
                 return
             if _fully_in_frame(bbox, frame_w, frame_h) or tr["hits"] >= force_hits:
                 tr["counted"] = True
-                tr["saved_label"] = tr["label"]
+                tr["saved_class"] = current_class
                 newly.append({**tr, "det_index": di, "reason": "new"})
         else:
-            # Já contado: re-save apenas se a classe detectada mudou.
-            if tr["label"] != tr.get("saved_label"):
-                tr["saved_label"] = tr["label"]
+            # Já contado: re-save apenas se a classe VOTADA mudou (maioria virou).
+            if current_class != tr.get("saved_class"):
+                tr["saved_class"] = current_class
                 newly.append({**tr, "det_index": di, "reason": "class_change"})
 
     # 3. Atualiza tracks casados.
@@ -185,7 +225,11 @@ def update_tracks(
             and tr["avg_disp"] <= settings.TRACK_STATIONARY_RADIUS_RATIO * mean_size
         )
         tr["bbox"] = new_bbox
-        tr["label"] = detections[di]["label"]
+        # Voto temporal de classe: acumula votos e adota a categoria/label de maioria.
+        votes = tr.setdefault("votes", {})
+        vk = _vote_key(detections[di]["category"], detections[di]["label"])
+        votes[vk] = votes.get(vk, 0) + 1
+        tr["category"], tr["label"] = _winning_class(votes)
         tr["last_seen_at"] = now
         tr["hits"] = int(tr.get("hits", 1)) + 1
         _maybe_register(tr, di)
@@ -199,12 +243,13 @@ def update_tracks(
             "track_id": uuid.uuid4().hex[:16],
             "category": det["category"],
             "label": det["label"],
+            "votes": {_vote_key(det["category"], det["label"]): 1},
             "bbox": det["bbox"],
             "first_seen_at": now,
             "last_seen_at": now,
             "hits": 1,
             "counted": False,
-            "saved_label": None,
+            "saved_class": None,
             "avg_disp": None,
             "stationary": False,
         }

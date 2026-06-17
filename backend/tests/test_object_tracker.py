@@ -131,18 +131,42 @@ def test_force_save_apos_n_hits_mesmo_cortado():
     assert total == 1
 
 
-def test_resave_quando_classe_muda():
-    # Registra como car; depois a classe vira truck -> re-save (reason class_change),
-    # sem nova contagem.
+def test_resave_quando_classe_votada_muda():
+    # Conta como car; só re-salva quando a classe VOTADA (maioria) vira truck.
     state: list = []
     state, newly, _ = update_tracks(state, [_box(100, 100, label="car")], now=9000.0, frame_w=640, frame_h=480)
-    assert _count_new(newly) == 1  # contou como car
-    state, newly, _ = update_tracks(state, [_box(100, 100, label="car")], now=9000.5, frame_w=640, frame_h=480)
-    assert newly == []  # nada muda
+    assert _count_new(newly) == 1  # contou como car (car:1)
+    state, newly, _ = update_tracks(state, [_box(100, 100, label="truck")], now=9000.5, frame_w=640, frame_h=480)
+    assert newly == []  # empate car:1/truck:1 -> ainda car, sem re-save
     state, newly, _ = update_tracks(state, [_box(100, 100, label="truck")], now=9001.0, frame_w=640, frame_h=480)
-    reasons = [n.get("reason") for n in newly]
-    assert reasons == ["class_change"]
+    assert [n.get("reason") for n in newly] == ["class_change"]  # truck virou maioria
     assert _count_new(newly) == 0  # não conta de novo
+
+
+# ── Voto temporal de classe (T4) ─────────────────────────────────────────────
+
+
+def test_voto_corrige_erro_pontual_cross_category():
+    # Mesmo objeto (mesma caixa) ora "person" ora "bear": cross-category associa,
+    # a maioria (person) vence e o track NÃO vira dois objetos.
+    person = _box(200, 150, w=60, h=120, category="person", label="person")
+    bear = _box(200, 150, w=60, h=120, category="animal", label="bear")
+    state: list = []
+    state, _, _ = update_tracks(state, [person], now=14000.0, frame_w=640, frame_h=480)
+    state, _, _ = update_tracks(state, [bear], now=14000.5, frame_w=640, frame_h=480)
+    state, _, _ = update_tracks(state, [person], now=14001.0, frame_w=640, frame_h=480)
+    assert len(state) == 1
+    assert state[0]["category"] == "person"
+    assert state[0]["label"] == "person"
+
+
+def test_cross_category_nao_funde_objetos_distantes():
+    # Pessoa e cão em posições diferentes (IoU baixo) NÃO se fundem.
+    person = _box(50, 50, category="person", label="person")
+    dog = _box(500, 400, category="animal", label="dog")
+    state: list = []
+    state, _, _ = update_tracks(state, [person, dog], now=15000.0, frame_w=640, frame_h=480)
+    assert len(state) == 2
 
 
 def test_parado_com_gap_curto_de_movimento_nao_reconta():
