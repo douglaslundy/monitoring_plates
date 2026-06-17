@@ -100,6 +100,56 @@ def test_deletar_plano(client, db, sa_user, regular_plan):
     assert db.query(Plan).filter(Plan.id == regular_plan.id).first() is None
 
 
+def test_deletar_plano_em_uso_bloqueado(client, db, sa_user, regular_plan):
+    """Plano com cliente vinculado não pode ser excluído (409)."""
+    from app.models.client import Client
+
+    cli = Client(name="Cli", email="cli@x.com", plan_id=regular_plan.id, is_active=True)
+    db.add(cli)
+    db.commit()
+
+    res = client.delete(f"/api/plans/{regular_plan.id}", headers=_auth(sa_user))
+    assert res.status_code == 409
+    from app.models.plan import Plan
+    assert db.query(Plan).filter(Plan.id == regular_plan.id).first() is not None
+
+
+def test_listar_inclui_inativos_quando_pedido(client, db, sa_user):
+    """include_inactive=true retorna também planos inativos (gestão)."""
+    from app.models.plan import Plan
+
+    inativo = Plan(
+        name="Plano Inativo",
+        max_cameras=1,
+        retention_days=10,
+        email_alerts=False,
+        realtime_alerts=False,
+        price_monthly=10,
+        is_active=False,
+    )
+    db.add(inativo)
+    db.commit()
+
+    ativos = client.get("/api/plans/", headers=_auth(sa_user)).json()
+    assert "Plano Inativo" not in [p["name"] for p in ativos]
+
+    todos = client.get("/api/plans/?include_inactive=true", headers=_auth(sa_user)).json()
+    assert "Plano Inativo" in [p["name"] for p in todos]
+
+
+def test_atualizar_plano_para_ilimitado(client, db, sa_user, regular_plan):
+    """PATCH com max_cameras/retention_days null torna o plano ilimitado."""
+    res = client.patch(
+        f"/api/plans/{regular_plan.id}",
+        json={"max_cameras": None, "retention_days": None},
+        headers=_auth(sa_user),
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["max_cameras"] is None
+    assert data["retention_days"] is None
+
+
 def test_criar_plano_sem_permissao(client, db):
     """client_user cannot create a plan (requires super_admin)."""
     user = User(

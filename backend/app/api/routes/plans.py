@@ -26,10 +26,16 @@ def _build_plan_read(plan: Plan, db: Session) -> PlanRead:
 
 @router.get("", response_model=List[PlanRead])
 def list_plans(
+    include_inactive: bool = False,
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    plans = db.query(Plan).filter(Plan.is_active == True).all()  # noqa: E712
+    # Por padrão só planos ativos (seleção de plano no cadastro de cliente). A
+    # tela de gestão usa include_inactive=true para administrar todos.
+    query = db.query(Plan)
+    if not include_inactive:
+        query = query.filter(Plan.is_active == True)  # noqa: E712
+    plans = query.order_by(Plan.price_monthly.asc()).all()
     return [_build_plan_read(p, db) for p in plans]
 
 
@@ -58,7 +64,9 @@ def update_plan(
     plan = db.query(Plan).filter(Plan.id == plan_id).first()
     if not plan:
         raise HTTPException(status_code=404, detail="Plano não encontrado")
-    for k, v in payload.model_dump(exclude_none=True).items():
+    # exclude_unset: aplica apenas os campos enviados (permite setar null p/
+    # ilimitado em max_cameras/retention_days, sem zerar os demais campos).
+    for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(plan, k, v)
     db.commit()
     db.refresh(plan)
@@ -74,5 +82,13 @@ def delete_plan(
     plan = db.query(Plan).filter(Plan.id == plan_id).first()
     if not plan:
         raise HTTPException(status_code=404, detail="Plano não encontrado")
+    # Não permite excluir um plano em uso (FK clients.plan_id); orienta a
+    # migrar os clientes antes. Evita IntegrityError no commit.
+    in_use = db.query(func.count(Client.id)).filter(Client.plan_id == plan.id).scalar() or 0
+    if in_use:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Plano em uso por {in_use} cliente(s). Migre-os para outro plano antes de excluir.",
+        )
     db.delete(plan)
     db.commit()
