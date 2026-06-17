@@ -359,28 +359,6 @@ class VehicleDetector:
         new_h = max(1, int(round(h * scale)))
         return cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
-    def display_crop_bytes(self, frame_bytes: bytes, bbox_x: int, bbox_y: int, bbox_w: int, bbox_h: int) -> bytes:
-        """Recorte de EXIBIÇÃO centrado no objeto, com margem simétrica e alta
-        qualidade — centraliza o veículo/objeto na imagem salva (sem sobra
-        excessiva nem corte na placa). Fallback: devolve o frame original."""
-        image = self._decode_image(frame_bytes)
-        if image is None:
-            return frame_bytes
-        h, w = image.shape[:2]
-        margin = settings.DETECTION_DISPLAY_MARGIN
-        cx = bbox_x + bbox_w / 2.0
-        cy = bbox_y + bbox_h / 2.0
-        half_w = bbox_w * (1.0 + margin) / 2.0
-        half_h = bbox_h * (1.0 + margin) / 2.0
-        x1 = max(0, int(round(cx - half_w)))
-        y1 = max(0, int(round(cy - half_h)))
-        x2 = min(w, int(round(cx + half_w)))
-        y2 = min(h, int(round(cy + half_h)))
-        if x2 <= x1 or y2 <= y1:
-            return frame_bytes
-        crop = self._upscale_to_min(image[y1:y2, x1:x2])
-        return self._encode_jpeg(crop) or frame_bytes
-
     def _encode_jpeg(self, image) -> bytes | None:
         try:
             import cv2

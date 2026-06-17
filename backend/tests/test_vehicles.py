@@ -299,28 +299,6 @@ def test_crop_pequeno_e_ampliado_para_legibilidade():
     assert max(big.shape[0], big.shape[1]) <= 1000
 
 
-def test_display_crop_centraliza_o_objeto():
-    """display_crop_bytes recorta CENTRADO no objeto com margem simétrica."""
-    import cv2
-    import numpy as np
-
-    from app.services.vehicle_detection_service import VehicleDetector
-
-    detector = VehicleDetector()
-    img = np.zeros((1000, 1000, 3), dtype=np.uint8)
-    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])
-    frame_bytes = buf.tobytes()
-
-    # objeto 200x200 em (400,400) -> margem 0.5 -> crop ~300x300 centrado.
-    out = detector.display_crop_bytes(frame_bytes, 400, 400, 200, 200)
-    assert out and out != frame_bytes
-    dec = cv2.imdecode(np.frombuffer(out, np.uint8), cv2.IMREAD_COLOR)
-    h, w = dec.shape[:2]
-    assert abs(w - h) <= 4  # quadrado-ish (bbox quadrado + margem simétrica)
-    assert w < 1000  # é um recorte, não o frame inteiro
-    assert w >= 300  # contexto suficiente (margem)
-
-
 def test_stats_by_category_e_filtro(client, db, camera_rtsp_a, super_admin_user):
     from app.models.vehicle_event import VehicleEvent
 

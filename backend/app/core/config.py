@@ -54,9 +54,6 @@ class Settings(BaseSettings):
     # Upscale (cúbico) de recortes cujo maior lado seja menor que isto, p/ a
     # imagem salva ficar maior e mais legível a olho. 0 desliga.
     DETECTION_MIN_CROP_SIDE: int = 320
-    # Margem simétrica ao redor do objeto na imagem de exibição (centraliza o
-    # objeto com contexto). 0.5 = recorte ~1.5x o bbox em cada eixo.
-    DETECTION_DISPLAY_MARGIN: float = 0.5
 
     # Rastreador multi-objeto (object_tracker_service)
     TRACK_IOU_MIN: float = 0.30
