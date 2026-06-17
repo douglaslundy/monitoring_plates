@@ -166,10 +166,6 @@ def _build_operational_detail(
         reasons.append(
             f"fila OCR em {queue_depth} frames (limite {settings.WORKER_DELAY_QUEUE_THRESHOLD})"
         )
-    if avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.35:
-        ratio = _format_ratio(avg_ocr_success_rate)
-        if ratio:
-            reasons.append(f"taxa de sucesso do OCR em {ratio}")
     if low_quality_cameras > 0:
         reasons.append(f"{low_quality_cameras} camera(s) com baixa qualidade")
     if avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0:
@@ -178,10 +174,7 @@ def _build_operational_detail(
     if reasons:
         return _sentence_case("; ".join(reasons)) + "."
 
-    if avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.6:
-        ratio = _format_ratio(avg_ocr_success_rate)
-        if ratio:
-            return f"Taxa de sucesso do OCR abaixo do ideal ({ratio})."
+    # A taxa de sucesso do OCR NÃO entra na saúde operacional (ver build_operational_metrics).
     if low_quality_cameras > 0 or (
         avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0
     ):
@@ -319,24 +312,12 @@ def build_operational_metrics(db: Session, current_user: User) -> OperationalMet
             avg_preview_latency_seconds=avg_preview_latency_seconds,
             avg_ocr_success_rate=avg_ocr_success_rate,
         )
-    elif avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.35:
-        operational_status = "degraded"
-        operational_status_detail = _build_operational_detail(
-            online_cameras=online_cameras,
-            degraded_cameras=degraded_cameras,
-            low_quality_cameras=low_quality_cameras,
-            queue_depth=queue_depth,
-            avg_preview_latency_seconds=avg_preview_latency_seconds,
-            avg_ocr_success_rate=avg_ocr_success_rate,
-        )
-    elif avg_ocr_success_rate is not None and avg_ocr_success_rate < 0.6:
-        operational_status = "warning"
-        ratio = _format_ratio(avg_ocr_success_rate)
-        operational_status_detail = (
-            f"Taxa de sucesso do OCR abaixo do ideal ({ratio})."
-            if ratio
-            else "A taxa de sucesso do OCR precisa de ajuste."
-        )
+    # OBS: a TAXA DE SUCESSO do OCR (quantos veículos têm placa legível) NÃO entra
+    # mais na saúde operacional — é naturalmente baixa em muitas cenas (veículos
+    # distantes/sem placa visível) e marcava a operação como "degradada" mesmo com
+    # câmeras, captura e detecção saudáveis (e o reset não resolvia, pois a taxa
+    # se reconstituía baixa). A saúde do OCR fica no card dedicado "Saúde OCR"
+    # (ocr_pipeline_status), com seus próprios limiares.
     elif low_quality_cameras > 0 or (avg_preview_latency_seconds is not None and avg_preview_latency_seconds > 4.0):
         operational_status = "warning"
         details: list[str] = []

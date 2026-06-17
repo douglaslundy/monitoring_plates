@@ -1212,8 +1212,57 @@ def test_operational_metrics_degraded_detail_explains_causa(monkeypatch, db):
 
     assert metrics.operational_status == "degraded"
     assert "fila OCR" in metrics.operational_status_detail
-    assert "taxa de sucesso do OCR" in metrics.operational_status_detail
     assert "baixa qualidade" in metrics.operational_status_detail
+    # Tarefa C: a taxa de sucesso do OCR NAO entra mais na saude operacional.
+    assert "sucesso do OCR" not in metrics.operational_status_detail
+
+
+def test_saude_operacional_saudavel_mesmo_com_ocr_baixo(db, monkeypatch):
+    """Tarefa C: camera saudavel (online/streaming/boa qualidade, fila ok) com taxa
+    de leitura de placa MUITO baixa NAO deve marcar a operacao como degradada."""
+    from app.models.plan import Plan
+    from app.models.client import Client
+    from app.models.camera import Camera, ConnectionType
+    from app.models.user import User, UserRole
+    from app.core.security import hash_password
+    from app.services import operational_metrics_service as ops_service
+    from app.services.image_quality_service import ImageQuality
+    from app.services.ocr_pipeline_metrics_service import OcrPipelineMetrics
+    from app.services.preview_telemetry_service import PreviewTelemetry
+
+    plan = Plan(name="P-opsC", max_cameras=5, retention_days=30, email_alerts=False,
+                realtime_alerts=False, price_monthly=0, is_active=True)
+    db.add(plan); db.commit(); db.refresh(plan)
+    tenant = Client(name="OpsC", email="opsc@test.com", plan_id=plan.id, is_active=True)
+    db.add(tenant); db.commit(); db.refresh(tenant)
+    camera = Camera(client_id=tenant.id, name="Cam OpsC", connection_type=ConnectionType.rtsp,
+                    rtsp_url="rtsp://example/c", is_active=True, last_seen_at=datetime.now(timezone.utc))
+    db.add(camera); db.commit(); db.refresh(camera)
+    admin = User(email="opsc@sistema.com", name="OpsC", password_hash=hash_password("Admin@123"),
+                 role=UserRole.super_admin, is_active=True)
+    db.add(admin); db.commit(); db.refresh(admin)
+
+    class FakeRedis:
+        def llen(self, key: str):
+            return 0
+
+    monkeypatch.setattr(ops_service, "_redis_client", lambda: FakeRedis())
+    monkeypatch.setattr(ops_service, "get_preview_telemetry",
+                        lambda *_a, **_k: PreviewTelemetry(2.4, 144, 1234.0, 1.2, "streaming"))
+    monkeypatch.setattr(ops_service, "get_image_quality",
+                        lambda *_a, **_k: ImageQuality(84.0, "good", 26.0, 56.0, 20.0))
+    monkeypatch.setattr(ops_service, "get_ocr_pipeline_metrics",
+                        lambda *_a, **_k: OcrPipelineMetrics(
+                            capture_attempts=50, capture_successes=50, capture_failures=0,
+                            ocr_attempts=50, ocr_successes=1, ocr_failures=49, ocr_false_positives=0,
+                            persistence_attempts=1, avg_capture_seconds=0.2, avg_ocr_seconds=0.4,
+                            avg_persistence_seconds=0.1, capture_success_rate=1.0,
+                            ocr_success_rate=0.02, ocr_false_positive_rate=0.0,
+                            last_attempt_at=datetime.now(timezone.utc).timestamp()))
+
+    metrics = ops_service.build_operational_metrics(db, admin)
+    assert metrics.avg_ocr_success_rate == 0.02   # taxa de placa baixa (real)
+    assert metrics.operational_status == "healthy"  # mas a operacao esta saudavel
 
 
 def test_warm_worker_models_chama_warmup_do_ocr(monkeypatch):
