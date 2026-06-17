@@ -39,6 +39,20 @@ def _allowed_camera_ids(db: Session, user: User) -> Optional[List[UUID]]:
     return [c.id for c in db.query(Camera).filter(Camera.client_id == user.client_id).all()]
 
 
+def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    """Normaliza datetime para timezone-aware em UTC.
+
+    Um datetime sem timezone (naive) comparado a uma coluna timestamptz é
+    ambíguo no PostgreSQL. O frontend envia o instante já em UTC (ISO com 'Z'),
+    mas, por robustez, datetimes naive são assumidos como UTC aqui.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _filter_query(
     db: Session,
     camera_ids: Optional[List[UUID]],
@@ -47,6 +61,8 @@ def _filter_query(
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
 ):
+    date_from = _as_utc(date_from)
+    date_to = _as_utc(date_to)
     q = db.query(Occurrence).options(joinedload(Occurrence.camera))
     if camera_ids is not None:
         q = q.filter(Occurrence.camera_id.in_(camera_ids))

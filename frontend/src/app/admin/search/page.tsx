@@ -54,6 +54,14 @@ function HighlightPlate({ plate, query }: { plate: string; query: string }) {
   );
 }
 
+// O input datetime-local fornece a hora LOCAL escolhida (sem fuso). Converte
+// para o instante UTC (ISO com 'Z') que o backend compara contra detected_at.
+function localToIso(local: string): string | undefined {
+  if (!local) return undefined;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 function formatDt(s: string) {
   return new Date(s).toLocaleString("pt-BR", {
     day: "2-digit",
@@ -92,8 +100,8 @@ export default function AdminSearchPage() {
         const res = await api.post<OccurrencePage>("/api/occurrences/search", {
           plate: plate.trim() || undefined,
           camera_ids: cameraId ? [cameraId] : undefined,
-          date_from: dateFrom || undefined,
-          date_to: dateTo || undefined,
+          date_from: localToIso(dateFrom),
+          date_to: localToIso(dateTo),
           page: p,
           limit: 20,
         });
@@ -116,8 +124,10 @@ export default function AdminSearchPage() {
     const params = new URLSearchParams();
     if (plate.trim()) params.set("plate", plate.trim());
     if (cameraId) params.set("camera_id", cameraId);
-    if (dateFrom) params.set("date_from", dateFrom);
-    if (dateTo) params.set("date_to", dateTo);
+    const isoFrom = localToIso(dateFrom);
+    const isoTo = localToIso(dateTo);
+    if (isoFrom) params.set("date_from", isoFrom);
+    if (isoTo) params.set("date_to", isoTo);
     window.open(`${API_BASE}/api/occurrences/export?${params}`, "_blank");
   }
 

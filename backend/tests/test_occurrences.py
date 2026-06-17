@@ -124,6 +124,45 @@ def test_busca_com_filtro_date_to(client, db, user_a, camera_rtsp_a):
     assert data["items"][0]["plate"] == "OLD1234"
 
 
+def test_busca_date_from_formato_z_utc(client, db, user_a, camera_rtsp_a):
+    """date_from no formato ISO com 'Z' (enviado pelo frontend) funciona."""
+    now = datetime.now(timezone.utc)
+    _occ(db, camera_rtsp_a, "OLD1234", delta_minutes=120)
+    _occ(db, camera_rtsp_a, "NEW1234", delta_minutes=10)
+
+    # toISOString() do JS produz "...Z" (não "+00:00")
+    date_from = (now - timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    res = client.post(
+        "/api/occurrences/search",
+        json={"plate": "", "date_from": date_from},
+        headers=_auth(user_a),
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == 1
+    assert data["items"][0]["plate"] == "NEW1234"
+
+
+def test_busca_date_from_naive_assume_utc(client, db, user_a, camera_rtsp_a):
+    """date_from sem timezone (naive) é assumido como UTC, não quebra a busca."""
+    now = datetime.now(timezone.utc)
+    _occ(db, camera_rtsp_a, "OLD1234", delta_minutes=120)
+    _occ(db, camera_rtsp_a, "NEW1234", delta_minutes=10)
+
+    date_from = (now - timedelta(minutes=30)).replace(tzinfo=None).isoformat()
+
+    res = client.post(
+        "/api/occurrences/search",
+        json={"plate": "", "date_from": date_from},
+        headers=_auth(user_a),
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == 1
+    assert data["items"][0]["plate"] == "NEW1234"
+
+
 # ── Paginação ─────────────────────────────────────────────────────────────────
 
 def test_paginacao_primeira_pagina(client, db, user_a, camera_rtsp_a):
