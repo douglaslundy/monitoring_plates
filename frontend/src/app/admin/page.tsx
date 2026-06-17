@@ -5,6 +5,7 @@ import Link from "next/link";
 import api from "@/lib/api";
 import { Client } from "@/types";
 import { MetricCard } from "@/components/ui/MetricCard";
+import { SystemResources } from "@/components/live/SystemResources";
 import { Building2, Users, CreditCard, AlertTriangle } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -85,6 +86,8 @@ export default function AdminDashboard() {
           description="Próximos 30 dias"
         />
       </div>
+
+      <SystemResources />
 
       {expiringClients.length > 0 && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
