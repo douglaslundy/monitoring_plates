@@ -62,3 +62,49 @@ def test_ops_metrics_endpoint_retorna_resumo_operacional(client, db):
     assert "queue_depth" in data
     assert "operational_status" in data
     assert "ocr_pipeline_status" in data
+
+
+class _FakeRedis:
+    """Redis fake que registra as chaves apagadas (sem servidor real)."""
+
+    def __init__(self) -> None:
+        self.deleted: list[str] = []
+
+    def delete(self, *keys: str) -> int:
+        self.deleted.extend(keys)
+        return len(keys)
+
+
+def test_ops_metrics_reset_admin(client, camera_rtsp_a, admin_a):
+    """client_admin reseta as métricas das câmeras do próprio cliente."""
+    from unittest.mock import patch
+
+    from tests.conftest import _auth_header
+
+    fake = _FakeRedis()
+    with patch("app.services.operational_metrics_service._redis_client", return_value=fake):
+        res = client.post("/api/ops/metrics/reset", headers=_auth_header(admin_a))
+    assert res.status_code == 200, res.text
+    assert res.json()["cameras_reset"] == 1
+    # Apagou as 4 chaves de telemetria da única câmera do cliente.
+    assert any(f"camera-telemetry:{camera_rtsp_a.id}:ocr-pipeline" == k for k in fake.deleted)
+
+
+def test_ops_metrics_reset_super_admin_todas(client, camera_rtsp_a, camera_b, super_admin_user):
+    """super_admin reseta as métricas de todas as câmeras."""
+    from unittest.mock import patch
+
+    from tests.conftest import _auth_header
+
+    with patch("app.services.operational_metrics_service._redis_client", return_value=_FakeRedis()):
+        res = client.post("/api/ops/metrics/reset", headers=_auth_header(super_admin_user))
+    assert res.status_code == 200, res.text
+    assert res.json()["cameras_reset"] == 2
+
+
+def test_ops_metrics_reset_client_user_proibido(client, camera_rtsp_a, user_a):
+    """client_user não pode resetar métricas (apenas visualiza)."""
+    from tests.conftest import _auth_header
+
+    res = client.post("/api/ops/metrics/reset", headers=_auth_header(user_a))
+    assert res.status_code == 403

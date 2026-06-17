@@ -90,6 +90,36 @@ def _camera_scope_query(db: Session, current_user: User) -> list[Camera]:
     return query.all()
 
 
+def reset_camera_metrics(db: Session, current_user: User) -> int:
+    """Zera as métricas acumuladas no Redis das câmeras do escopo do usuário.
+
+    Limpa as chaves de telemetria (pipeline OCR, frames de preview, qualidade e
+    tracks) de cada câmera visível ao usuário. NÃO mexe na fila do Celery
+    (`frames`/`celery`), que reflete trabalho realmente pendente. Retorna quantas
+    câmeras tiveram métricas resetadas.
+    """
+    client = _redis_client()
+    cameras = _camera_scope_query(db, current_user)
+    if client is None:
+        return 0
+
+    reset = 0
+    for camera in cameras:
+        cid = str(camera.id)
+        keys = [
+            f"camera-telemetry:{cid}:ocr-pipeline",
+            f"camera-telemetry:{cid}:preview-frames",
+            f"camera-telemetry:{cid}:quality",
+            f"camera-tracks:{cid}",
+        ]
+        try:
+            client.delete(*keys)
+            reset += 1
+        except Exception:
+            continue
+    return reset
+
+
 def _queue_depth() -> int:
     client = _redis_client()
     if client is None:

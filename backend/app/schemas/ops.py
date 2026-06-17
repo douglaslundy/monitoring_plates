@@ -31,6 +31,10 @@ class OpsMetricsRead(BaseModel):
     generated_at: datetime
 
 
+class OpsMetricsResetRead(BaseModel):
+    cameras_reset: int
+
+
 class SystemMetricsRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
