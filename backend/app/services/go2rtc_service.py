@@ -34,30 +34,46 @@ def public_stream_url(camera_id: str) -> str:
     return f"{base}/stream.html?src={stream_name(camera_id)}"
 
 
-def register_stream(camera_id: str, rtsp_url: str, dual_lens: bool = False) -> bool:
-    """Cadastra/atualiza um stream RTSP no go2rtc (idempotente).
+def build_source(rtsp_url: str, dual_lens: bool = False, lens_side: str | None = None) -> str:
+    """Monta a fonte (`src`) do stream para o go2rtc.
 
-    Câmeras **dual-lens** NÃO são registradas por aqui: o go2rtc recusa fontes
-    com espaço (filtro ffmpeg) via API ("source with spaces may be insecure"),
-    então o stream recortado da lente configurada é definido no `go2rtc.yaml`
-    (config), usando o UUID da câmera como nome. Registrar o RTSP cru aqui
-    sobrescreveria esse stream recortado (voltaria a exibir as 2 lentes).
+    - Câmera normal: a própria URL RTSP.
+    - Câmera **dual-lens**: uma fonte ffmpeg que referencia o template de recorte
+      definido no `go2rtc.yaml` (`lens_lower` / `lens_upper`). A string fica SEM
+      espaços (`ffmpeg:<rtsp>#video=lens_lower`), então passa pela checagem da API
+      do go2rtc ("source with spaces may be insecure") — ao contrário de mandar o
+      comando ffmpeg inteiro (cheio de espaços), que era recusado.
+    """
+    if dual_lens and lens_side in ("upper", "lower"):
+        template = "lens_lower" if lens_side == "lower" else "lens_upper"
+        return f"ffmpeg:{rtsp_url}#video={template}"
+    return rtsp_url
+
+
+def register_stream(
+    camera_id: str, rtsp_url: str, dual_lens: bool = False, lens_side: str | None = None
+) -> bool:
+    """Cadastra/atualiza um stream no go2rtc (idempotente).
+
+    Funciona para câmeras normais **e** dual-lens: a fonte da dual-lens referencia
+    o template de recorte por nome (`#video=lens_lower`), uma string sem espaços
+    aceita pela API. Assim a troca de lente feita pelo usuário reflete no live
+    WebRTC (basta re-registrar a câmera) sem editar arquivos de config à mão.
     """
     if not settings.GO2RTC_ENABLED or not rtsp_url:
         return False
-    if dual_lens:
-        return False
+    src = build_source(rtsp_url, dual_lens, lens_side)
     try:
         import requests
 
         resp = requests.put(
             f"{_api_base()}/api/streams",
-            params={"name": stream_name(camera_id), "src": rtsp_url},
+            params={"name": stream_name(camera_id), "src": src},
             timeout=_TIMEOUT,
         )
         ok = resp.status_code < 400
         if not ok:
-            logger.warning("go2rtc register %s -> HTTP %s", camera_id, resp.status_code)
+            logger.warning("go2rtc register %s -> HTTP %s (src=%s)", camera_id, resp.status_code, src)
         return ok
     except Exception as exc:
         logger.warning("go2rtc indisponível ao registrar %s: %s", camera_id, exc)
@@ -98,7 +114,9 @@ def sync_streams(db) -> int:
     )
     count = 0
     for camera in cameras:
-        if register_stream(str(camera.id), camera.rtsp_url, bool(camera.dual_lens)):
+        if register_stream(
+            str(camera.id), camera.rtsp_url, bool(camera.dual_lens), camera.lens_side
+        ):
             count += 1
     logger.info("go2rtc: %s/%s streams sincronizados", count, len(cameras))
     return count

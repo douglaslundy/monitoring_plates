@@ -1,15 +1,12 @@
 # go2rtc — config LOCAL (NÃO versionado; copie para go2rtc.local.yaml).
 #
-# Aqui ficam os streams das câmeras DUAL-LENS, que precisam de filtro ffmpeg
-# (crop) e por isso não podem ser registrados via API do go2rtc
-# ("source with spaces may be insecure"). Como este arquivo fica FORA do repo,
-# um re-sync (scp/rsync do repositório) nunca o sobrescreve.
+# OBS: câmeras DUAL-LENS NÃO precisam mais ser definidas aqui. O backend agora as
+# registra automaticamente via API, referenciando os templates de recorte
+# (`lens_lower` / `lens_upper`) definidos no go2rtc.yaml — fonte sem espaços
+# (`ffmpeg:<rtsp>#video=lens_lower`), aceita pela API. Se você tinha um stream
+# dual-lens fixado aqui com o UUID da câmera, pode REMOVÊ-LO (o registro via API
+# passa a valer e refletir a lente configurada na tela).
 #
-# Use o UUID da câmera como nome do stream (o front consome por UUID) e recorte
-# a lente configurada:
-#   - lower (metade de baixo):  crop=iw:ih/2:0:ih/2
-#   - upper (metade de cima):   crop=iw:ih/2:0:0
-# O scale=1280:-2 reduz o custo de encode e dá um live mais fluido.
+# Mantenha este arquivo para sobrescritas manuais pontuais, se precisar.
 
-streams:
-  # <camera-uuid>: "exec:ffmpeg -rtsp_transport tcp -i <rtsp-url> -an -vf crop=iw:ih/2:0:ih/2,scale=1280:-2 -c:v libx264 -preset superfast -tune zerolatency -profile:v baseline -pix_fmt yuv420p -g 30 -f rtsp -rtsp_transport tcp {output}"
+streams: {}

@@ -2,22 +2,25 @@
 # Câmeras normais são cadastradas dinamicamente pelo backend/capture-runner via
 # API (REST PUT /api/streams) e não precisam ser listadas aqui.
 #
-# Câmeras DUAL-LENS são a exceção: o go2rtc recusa fontes com espaço/filtro via
-# API ("source with spaces may be insecure"), então o stream recortado da lente
-# configurada precisa ser definido AQUI, no config (que aceita). Use o UUID da
-# câmera como nome do stream (o front consome por UUID) e recorte a lente:
-#   - lower (metade de baixo):  crop=iw:ih/2:0:ih/2
-#   - upper (metade de cima):   crop=iw:ih/2:0:0
-#
-# streams:
-#   <camera-uuid>: "exec:ffmpeg -rtsp_transport tcp -i <rtsp-url> -an
-#     -vf crop=iw:ih/2:0:ih/2,scale=1280:-2 -c:v libx264 -preset superfast
-#     -tune zerolatency -profile:v baseline -pix_fmt yuv420p -g 30
-#     -f rtsp -rtsp_transport tcp {output}"
-# (o stream acima deve ser UMA linha; aqui está quebrado só para leitura)
+# Câmeras DUAL-LENS também são cadastradas via API — sem precisar editar este
+# arquivo nem o go2rtc.local.yaml. O go2rtc recusa via API fontes que contenham
+# ESPAÇOS ("source with spaces may be insecure"), o que antes impedia mandar o
+# comando ffmpeg de recorte. A solução: os templates de recorte (`lens_lower` /
+# `lens_upper`) ficam definidos AQUI (config, que aceita espaços) e o backend
+# registra cada câmera com uma fonte SEM espaços que apenas referencia o
+# template por nome, ex.:  ffmpeg:<rtsp-url>#video=lens_lower
+#   - lens_lower (metade de baixo): crop=iw:ih/2:0:ih/2
+#   - lens_upper (metade de cima):  crop=iw:ih/2:0:0
 
 api:
   listen: ":1984"
+
+# Templates ffmpeg reutilizáveis para o recorte de lente (transcodifica para
+# H.264 de baixa latência já recortado). Referenciados pela fonte da câmera via
+# `#video=lens_lower` / `#video=lens_upper` — string sem espaços, aceita pela API.
+ffmpeg:
+  lens_lower: "-codec:v libx264 -g:v 30 -preset:v superfast -tune:v zerolatency -profile:v baseline -pix_fmt:v yuv420p -vf crop=iw:ih/2:0:ih/2"
+  lens_upper: "-codec:v libx264 -g:v 30 -preset:v superfast -tune:v zerolatency -profile:v baseline -pix_fmt:v yuv420p -vf crop=iw:ih/2:0:0"
 
 webrtc:
   # Candidato ICE para o navegador conectar ao go2rtc. Ajuste o IP para o host

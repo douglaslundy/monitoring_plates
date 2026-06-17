@@ -260,7 +260,7 @@ class CaptureManager:
                 try:
                     from app.services.go2rtc_service import register_stream
 
-                    register_stream(camera_id, cfg["rtsp_url"], cfg["dual_lens"])
+                    register_stream(camera_id, cfg["rtsp_url"], cfg["dual_lens"], cfg["lens_side"])
                 except Exception:
                     pass
                 worker = CameraCapture(camera_id, cfg["rtsp_url"], cfg["dual_lens"], cfg["lens_side"])

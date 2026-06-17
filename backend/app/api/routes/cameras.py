@@ -320,19 +320,18 @@ def camera_webrtc(
 
     camera = _get_camera_or_403(camera_id, current_user, db)
 
-    # Dual-lens cai no preview MJPEG (`/stream`), que recorta a lente configurada
-    # dinamicamente a cada frame. O live WebRTC do go2rtc seria estático (definido
-    # no go2rtc.yaml) e não refletiria a troca de lente feita pelo usuário.
+    # Dual-lens TAMBÉM usa o live WebRTC: o stream é registrado com a fonte de
+    # recorte (`ffmpeg:<rtsp>#video=lens_lower`), que reflete a lente configurada.
     if (
         not settings.GO2RTC_ENABLED
         or camera.connection_type != "rtsp"
         or not camera.rtsp_url
-        or camera.dual_lens
     ):
         return {"enabled": False, "src": None, "url": None}
 
-    # Garante o stream no go2rtc (idempotente) mesmo que o startup tenha falhado.
-    register_stream(str(camera.id), camera.rtsp_url, bool(camera.dual_lens))
+    # Garante o stream no go2rtc (idempotente) mesmo que o startup tenha falhado;
+    # re-registra com a lente atual para refletir uma troca de lente recente.
+    register_stream(str(camera.id), camera.rtsp_url, bool(camera.dual_lens), camera.lens_side)
     return {
         "enabled": True,
         "src": stream_name(str(camera.id)),

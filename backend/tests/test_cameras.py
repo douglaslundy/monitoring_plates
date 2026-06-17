@@ -541,8 +541,10 @@ def test_excluir_camera_com_dependentes(client, db, super_admin, tenant_a):
     assert db.query(AlertSent).filter(AlertSent.occurrence_id == occ_id).count() == 0
 
 
-def test_webrtc_dual_lens_cai_no_mjpeg(client, db, super_admin, tenant_a):
-    """Câmera dual-lens não usa WebRTC estático; cai no preview MJPEG dinâmico."""
+def test_webrtc_dual_lens_usa_webrtc_recortado(client, db, super_admin, tenant_a):
+    """Câmera dual-lens usa WebRTC com a fonte de recorte (lente configurada)."""
+    from app.services import go2rtc_service
+
     cam = Camera(
         client_id=tenant_a.id,
         name="Cam Dual",
@@ -557,6 +559,13 @@ def test_webrtc_dual_lens_cai_no_mjpeg(client, db, super_admin, tenant_a):
     db.refresh(cam)
 
     token = login(client, "admin@sistema.com")
-    res = client.get(f"/api/cameras/{cam.id}/webrtc", headers=auth(token))
+    with patch.object(go2rtc_service, "register_stream", return_value=True) as reg:
+        res = client.get(f"/api/cameras/{cam.id}/webrtc", headers=auth(token))
     assert res.status_code == 200
-    assert res.json() == {"enabled": False, "src": None, "url": None}
+    body = res.json()
+    assert body["enabled"] is True
+    assert body["src"] == str(cam.id)
+    assert f"src={cam.id}" in body["url"]
+    # registrou passando a lente configurada (para refletir o recorte no live)
+    assert reg.call_args.args[0] == str(cam.id)
+    assert reg.call_args.args[3] == "upper"
