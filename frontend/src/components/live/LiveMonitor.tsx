@@ -25,10 +25,10 @@ export default function LiveMonitor({
   const [previewMode, setPreviewMode] = useState<Record<string, "stream" | "fallback">>({});
   const [metrics, setMetrics] = useState<OperationalMetrics | null>(null);
   const [webrtcUrls, setWebrtcUrls] = useState<Record<string, string | null>>({});
-  // Live HD (WebRTC do go2rtc) é OPCIONAL e desligado por padrão: ele aponta
-  // para o IP/host do go2rtc (LAN), inalcançável fora da rede local. O preview
-  // MJPEG (same-origin via /api) é o padrão confiável. O operador na LAN pode
-  // ligar o HD por câmera.
+  // Live em tempo real (WebRTC do go2rtc) é o PADRÃO quando disponível — é o
+  // vídeo ao vivo de verdade. O botão "Ver preview" troca para o MJPEG
+  // (same-origin via /api), útil de fora da LAN do go2rtc, onde o WebRTC (que
+  // aponta para o IP da LAN) não conecta.
   const [webrtcOn, setWebrtcOn] = useState<Record<string, boolean>>({});
   const [canReset, setCanReset] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -393,9 +393,9 @@ export default function LiveMonitor({
             const streamSrc = previewUrls[camera.id];
             const webrtcUrl = webrtcUrls[camera.id];
             const webrtcAvailable = camera.connection_type === "rtsp" && !!webrtcUrl;
-            // Padrão = preview MJPEG (same-origin, confiável). WebRTC HD só quando
-            // o operador liga explicitamente (funciona dentro da LAN do go2rtc).
-            const useWebrtc = webrtcAvailable && (webrtcOn[camera.id] ?? false);
+            // Padrão = WebRTC (vídeo ao vivo). O operador pode trocar para o
+            // preview MJPEG (botão "Ver preview") se o WebRTC não conectar.
+            const useWebrtc = webrtcAvailable && (webrtcOn[camera.id] ?? true);
 
             return (
               <div key={camera.id} className="border rounded-lg p-3 bg-white shadow-sm">
