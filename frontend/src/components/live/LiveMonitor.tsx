@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
+import { getMe } from "@/lib/auth";
 import type { Camera, OperationalMetrics } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { MetricCard } from "@/components/ui/MetricCard";
-import { Camera as CameraIcon, RefreshCw, Video, AlertTriangle } from "lucide-react";
+import { Camera as CameraIcon, RefreshCw, Video, AlertTriangle, Radio, Trash2 } from "lucide-react";
 import { SystemResources } from "./SystemResources";
 
 export default function LiveMonitor({
@@ -24,6 +25,13 @@ export default function LiveMonitor({
   const [previewMode, setPreviewMode] = useState<Record<string, "stream" | "fallback">>({});
   const [metrics, setMetrics] = useState<OperationalMetrics | null>(null);
   const [webrtcUrls, setWebrtcUrls] = useState<Record<string, string | null>>({});
+  // Live HD (WebRTC do go2rtc) é OPCIONAL e desligado por padrão: ele aponta
+  // para o IP/host do go2rtc (LAN), inalcançável fora da rede local. O preview
+  // MJPEG (same-origin via /api) é o padrão confiável. O operador na LAN pode
+  // ligar o HD por câmera.
+  const [webrtcOn, setWebrtcOn] = useState<Record<string, boolean>>({});
+  const [canReset, setCanReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const webrtcFetched = useRef<Set<string>>(new Set());
 
   const activeCameras = useMemo(
@@ -89,6 +97,31 @@ export default function LiveMonitor({
   useEffect(() => {
     void syncCameras(true);
   }, [syncCameras]);
+
+  // Só administradores podem resetar métricas (client_user apenas visualiza).
+  useEffect(() => {
+    getMe()
+      .then((me) => setCanReset(me.role === "super_admin" || me.role === "client_admin"))
+      .catch(() => setCanReset(false));
+  }, []);
+
+  const resetMetrics = useCallback(async () => {
+    if (resetting) return;
+    setResetting(true);
+    setError("");
+    try {
+      await api.post("/api/ops/metrics/reset");
+      await syncCameras(false);
+    } catch {
+      setError("Erro ao resetar metricas.");
+    } finally {
+      setResetting(false);
+    }
+  }, [resetting, syncCameras]);
+
+  const toggleWebrtc = useCallback((cameraId: string) => {
+    setWebrtcOn((current) => ({ ...current, [cameraId]: !current[cameraId] }));
+  }, []);
 
   // Busca a URL do live WebRTC (go2rtc) por câmera RTSP no backend (com
   // verificação de acesso). O backend resolve o host público do go2rtc.
@@ -244,6 +277,17 @@ export default function LiveMonitor({
           <Video className="h-4 w-4" />
           Recarregar streams
         </button>
+        {canReset && (
+          <button
+            onClick={() => void resetMetrics()}
+            className="px-3 py-2 rounded border border-red-300 text-red-700 text-sm inline-flex items-center gap-2 disabled:opacity-60"
+            disabled={resetting}
+            title="Zera as métricas acumuladas (OCR, FPS, latência, qualidade) das câmeras"
+          >
+            <Trash2 className="h-4 w-4" />
+            {resetting ? "Resetando..." : "Resetar métricas"}
+          </button>
+        )}
       </div>
 
       <SystemResources />
@@ -348,72 +392,17 @@ export default function LiveMonitor({
             const status = previewStatus[camera.id] ?? "loading";
             const streamSrc = previewUrls[camera.id];
             const webrtcUrl = webrtcUrls[camera.id];
-            const useWebrtc = camera.connection_type === "rtsp" && !!webrtcUrl;
+            const webrtcAvailable = camera.connection_type === "rtsp" && !!webrtcUrl;
+            // Padrão = preview MJPEG (same-origin, confiável). WebRTC HD só quando
+            // o operador liga explicitamente (funciona dentro da LAN do go2rtc).
+            const useWebrtc = webrtcAvailable && (webrtcOn[camera.id] ?? false);
 
             return (
               <div key={camera.id} className="border rounded-lg p-3 bg-white shadow-sm">
-                <div className="flex items-center justify-between mb-2 gap-3">
-                  <div>
-                    <p className="font-medium">{camera.name}</p>
-                    <p className="text-xs text-muted-foreground">{camera.location || "Sem local"}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge variant={camera.is_online ? "success" : "secondary"}>
-                      {camera.is_online ? "online" : "offline"}
-                    </Badge>
-                    <Badge variant={detectorVariant(camera.detector_status)}>
-                      detector {detectorLabel(camera.detector_status)} ({camera.detector_health_score.toFixed(0)})
-                    </Badge>
-                    <span title="Saúde da leitura de placa (0–100): 100 saudável · 65 atenção · 35 degradado · 20 sem leitura. Degradado = sucesso < 35%, leitura > 2,5s, ou sem leitura há 15 min.">
-                      <Badge variant={ocrVariant(camera.ocr_pipeline_status)}>
-                        OCR {ocrLabel(camera.ocr_pipeline_status)} ({camera.ocr_pipeline_health_score.toFixed(0)})
-                      </Badge>
-                    </span>
-                    <Badge variant="secondary">
-                      live {camera.preview_refresh_seconds.toFixed(1)}s
-                    </Badge>
-                    <Badge
-                      variant={
-                        camera.preview_status === "streaming"
-                          ? "success"
-                          : camera.preview_status === "degraded"
-                            ? "warning"
-                            : camera.preview_status === "stale"
-                              ? "secondary"
-                              : "info"
-                      }
-                      >
-                      {camera.preview_status === "streaming"
-                        ? "preview fluido"
-                        : camera.preview_status === "degraded"
-                          ? "preview lento"
-                          : camera.preview_status === "stale"
-                            ? "preview parado"
-                            : camera.preview_status === "idle"
-                              ? "aguardando"
-                              : "offline"}
-                    </Badge>
-                    <Badge
-                      variant={
-                        camera.quality_label === "excellent" || camera.quality_label === "good"
-                          ? "success"
-                          : camera.quality_label === "fair"
-                            ? "warning"
-                            : camera.quality_label === "poor"
-                              ? "danger"
-                              : "secondary"
-                      }
-                    >
-                      Qualidade{" "}
-                      {camera.quality_label === "unknown"
-                        ? "indisponível"
-                        : `${camera.quality_label} (${camera.quality_score.toFixed(0)})`}
-                    </Badge>
-                  </div>
+                <div className="mb-2">
+                  <p className="font-medium">{camera.name}</p>
+                  <p className="text-xs text-muted-foreground">{camera.location || "Sem local"}</p>
                 </div>
-                {camera.detector_status_detail && (
-                  <p className="mb-2 text-[11px] text-muted-foreground">{camera.detector_status_detail}</p>
-                )}
 
                 <div className="relative aspect-video rounded border bg-black overflow-hidden mb-2">
                   {useWebrtc ? (
@@ -461,14 +450,86 @@ export default function LiveMonitor({
                   )}
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => restoreStreamPreview(camera.id)}
-                    className="px-2 py-1 text-xs border rounded inline-flex items-center gap-1"
+                {/* Informações da câmera, todas inline (T3). */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  <Badge variant={camera.is_online ? "success" : "secondary"}>
+                    {camera.is_online ? "online" : "offline"}
+                  </Badge>
+                  <Badge variant={detectorVariant(camera.detector_status)}>
+                    detector {detectorLabel(camera.detector_status)} ({camera.detector_health_score.toFixed(0)})
+                  </Badge>
+                  <span title="Saúde da leitura de placa (0–100): 100 saudável · 65 atenção · 35 degradado · 20 sem leitura. Degradado = sucesso < 35%, leitura > 2,5s, ou sem leitura há 15 min.">
+                    <Badge variant={ocrVariant(camera.ocr_pipeline_status)}>
+                      OCR {ocrLabel(camera.ocr_pipeline_status)} ({camera.ocr_pipeline_health_score.toFixed(0)})
+                    </Badge>
+                  </span>
+                  <Badge variant="secondary">
+                    live {camera.preview_refresh_seconds.toFixed(1)}s
+                  </Badge>
+                  <Badge
+                    variant={
+                      camera.preview_status === "streaming"
+                        ? "success"
+                        : camera.preview_status === "degraded"
+                          ? "warning"
+                          : camera.preview_status === "stale"
+                            ? "secondary"
+                            : "info"
+                    }
                   >
-                    <RefreshCw className="h-3 w-3" />
-                    Reconectar
-                  </button>
+                    {camera.preview_status === "streaming"
+                      ? "preview fluido"
+                      : camera.preview_status === "degraded"
+                        ? "preview lento"
+                        : camera.preview_status === "stale"
+                          ? "preview parado"
+                          : camera.preview_status === "idle"
+                            ? "aguardando"
+                            : "offline"}
+                  </Badge>
+                  <Badge
+                    variant={
+                      camera.quality_label === "excellent" || camera.quality_label === "good"
+                        ? "success"
+                        : camera.quality_label === "fair"
+                          ? "warning"
+                          : camera.quality_label === "poor"
+                            ? "danger"
+                            : "secondary"
+                    }
+                  >
+                    Qualidade{" "}
+                    {camera.quality_label === "unknown"
+                      ? "indisponível"
+                      : `${camera.quality_label} (${camera.quality_score.toFixed(0)})`}
+                  </Badge>
+                </div>
+                {camera.detector_status_detail && (
+                  <p className="mb-2 text-[11px] text-muted-foreground">{camera.detector_status_detail}</p>
+                )}
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => restoreStreamPreview(camera.id)}
+                      className="px-2 py-1 text-xs border rounded inline-flex items-center gap-1"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Reconectar
+                    </button>
+                    {webrtcAvailable && (
+                      <button
+                        onClick={() => toggleWebrtc(camera.id)}
+                        className={`px-2 py-1 text-xs border rounded inline-flex items-center gap-1 ${
+                          useWebrtc ? "bg-black text-white" : ""
+                        }`}
+                        title="Vídeo ao vivo em HD (WebRTC). Requer acesso à rede local da câmera."
+                      >
+                        <Radio className="h-3 w-3" />
+                        {useWebrtc ? "Ver preview" : "Ao vivo HD"}
+                      </button>
+                    )}
+                  </div>
                   <span className="text-[11px] text-muted-foreground">
                     {camera.connection_type.toUpperCase()}
                   </span>
