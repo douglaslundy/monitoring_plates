@@ -1,4 +1,4 @@
-"""Task 2.1 / T1: rastreador multi-objeto (IoU+distância, count-once, min_hits)."""
+"""Task 2.1 / T1: rastreador multi-objeto (IoU+distância, count-once)."""
 from app.services.object_tracker_service import update_tracks
 
 
@@ -36,12 +36,12 @@ def test_objeto_sai_e_volta_conta_de_novo():
     box = _box(100, 100)
     state: list = []
     total = 0
-    # presente por 2 frames -> conta 1 (confirma com min_hits)
+    # presente -> conta 1
     state, newly, _ = update_tracks(state, [box], now=3000.0)
     total += len(newly)
     state, newly, _ = update_tracks(state, [box], now=3000.5)
     total += len(newly)
-    # some por > TRACK_MAX_AGE_SECONDS (sem frames) e volta
+    # some por > TRACK_MAX_AGE_SECONDS (sem frames) e volta -> conta de novo
     state, newly, _ = update_tracks(state, [box], now=3012.0)
     total += len(newly)
     state, newly, _ = update_tracks(state, [box], now=3012.5)
@@ -49,15 +49,14 @@ def test_objeto_sai_e_volta_conta_de_novo():
     assert total == 2
 
 
-def test_min_hits_so_conta_apos_rastrear():
-    # TRACK_MIN_HITS=2: um único frame NÃO conta (precisa rastrear).
+def test_um_frame_ja_conta_e_nao_recontabiliza():
+    # TRACK_MIN_HITS=1: conta ao aparecer; o track impede recontagem enquanto
+    # o objeto permanece (mesmo que o bbox mude um pouco entre frames).
     box = _box(100, 100)
     state, newly, _ = update_tracks([], [box], now=4000.0)
-    assert len(newly) == 0
-    # segundo frame (mesmo objeto, associado) confirma e conta uma vez
+    assert len(newly) == 1
     state, newly2, _ = update_tracks(state, [box], now=4000.5)
-    assert len(newly2) == 1
-    # frames seguintes não recontabilizam
+    assert len(newly2) == 0
     state, newly3, _ = update_tracks(state, [box], now=4001.0)
     assert len(newly3) == 0
 
@@ -79,9 +78,7 @@ def test_objeto_em_movimento_sem_iou_segue_mesmo_track():
 def test_det_to_track_referencia_mutavel():
     a = _box(50, 50, label="car")
     b = _box(600, 400, category="person", label="person")
-    # 2 frames para confirmar
-    state, _, _ = update_tracks([], [a, b], now=6000.0)
-    state, newly, det_to_track = update_tracks(state, [a, b], now=6000.5)
+    state, newly, det_to_track = update_tracks([], [a, b], now=6000.0)
     assert len(newly) == 2
     assert set(det_to_track.keys()) == {0, 1}
     # mutação no mapa reflete no estado (amarração de placa pelo pipeline)
