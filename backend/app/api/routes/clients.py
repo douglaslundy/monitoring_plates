@@ -1,4 +1,6 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+﻿from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List
@@ -58,6 +60,7 @@ def create_client(
         email=payload.email,
         plan_id=payload.plan_id,
         plan_expires_at=payload.plan_expires_at,
+        plan_activated_at=datetime.now(timezone.utc),
         is_active=payload.is_active,
     )
     db.add(client)
@@ -106,7 +109,12 @@ def update_client(
     )
     if not client:
         raise HTTPException(status_code=404, detail="Cliente nao encontrado")
-    for k, v in payload.model_dump(exclude_none=True).items():
+    data = payload.model_dump(exclude_none=True)
+    # Troca de plano reativa a data de ativação (próximo vencimento é informado
+    # à parte em plan_expires_at).
+    if "plan_id" in data and data["plan_id"] != client.plan_id:
+        client.plan_activated_at = datetime.now(timezone.utc)
+    for k, v in data.items():
         setattr(client, k, v)
     db.commit()
     db.refresh(client)

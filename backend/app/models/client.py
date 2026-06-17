@@ -15,6 +15,9 @@ class Client(Base):
     email = Column(String(255), unique=True, nullable=False)
     plan_id = Column(Uuid(as_uuid=True), ForeignKey("plans.id"), nullable=False)
     plan_expires_at = Column(DateTime(timezone=True), nullable=True)
+    # Data de ativação do plano atual (preenchida no cadastro e atualizada
+    # quando o plano do cliente muda).
+    plan_activated_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

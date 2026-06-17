@@ -22,6 +22,7 @@ class ClientBase(BaseModel):
     email: str
     plan_id: UUID
     plan_expires_at: Optional[datetime] = None
+    plan_activated_at: Optional[datetime] = None
     is_active: bool = True
 
 

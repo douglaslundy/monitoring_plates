@@ -42,6 +42,12 @@ const emptyForm: CreateForm = {
   admin_role: "client_admin",
 };
 
+function fmtDate(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
+}
+
 export default function ClientsPage() {
   const { toast } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
@@ -165,6 +171,29 @@ export default function ClientsPage() {
     },
     { key: "plan", header: "Plano", render: (_, row) => <span>{row.plan?.name ?? "-"}</span> },
     { key: "camera_count", header: "Cameras", render: (_, row) => <span>{row.camera_count}</span> },
+    {
+      key: "created_at",
+      header: "Cadastro",
+      render: (_, row) => <span className="text-sm">{fmtDate(row.created_at)}</span>,
+    },
+    {
+      key: "plan_activated_at",
+      header: "Ativacao do plano",
+      render: (_, row) => <span className="text-sm">{fmtDate(row.plan_activated_at)}</span>,
+    },
+    {
+      key: "plan_expires_at",
+      header: "Proximo vencimento",
+      render: (_, row) => {
+        if (!row.plan_expires_at) return <span className="text-sm text-muted-foreground">Sem vencimento</span>;
+        const overdue = new Date(row.plan_expires_at).getTime() < Date.now();
+        return (
+          <span className={`text-sm ${overdue ? "text-red-600 font-medium" : ""}`}>
+            {fmtDate(row.plan_expires_at)}
+          </span>
+        );
+      },
+    },
     {
       key: "is_active",
       header: "Status",

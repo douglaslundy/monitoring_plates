@@ -34,6 +34,7 @@ export interface Client {
   email: string;
   plan_id: string;
   plan_expires_at: string | null;
+  plan_activated_at: string | null;
   is_active: boolean;
   created_at: string;
   plan?: Plan | null;
