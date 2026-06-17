@@ -17,6 +17,7 @@ pillow==11.0.0
 boto3==1.35.76
 python-dotenv==1.0.1
 pydantic-settings==2.6.1
+psutil==6.1.0
 websockets==14.1
 resend==2.5.1
 slowapi==0.1.9

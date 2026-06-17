@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { Camera as CameraIcon, RefreshCw, Video, AlertTriangle } from "lucide-react";
+import { SystemResources } from "./SystemResources";
 
 export default function LiveMonitor({
   title,
@@ -244,6 +245,8 @@ export default function LiveMonitor({
           Recarregar streams
         </button>
       </div>
+
+      <SystemResources />
 
       {metrics && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

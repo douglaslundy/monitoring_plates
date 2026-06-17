@@ -178,6 +178,21 @@ export interface VehicleEventStats {
   latest_event: LatestVehicleEvent | null;
 }
 
+export interface SystemMetrics {
+  available: boolean;
+  cpu_percent: number;
+  cpu_count: number;
+  load_avg_1m: number;
+  mem_total_mb: number;
+  mem_used_mb: number;
+  mem_available_mb: number;
+  mem_percent: number;
+  disk_total_gb: number;
+  disk_used_gb: number;
+  disk_free_gb: number;
+  disk_percent: number;
+}
+
 export interface VehicleCameraMin {
   id: string;
   name: string;

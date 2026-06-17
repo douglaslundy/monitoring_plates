@@ -29,3 +29,20 @@ class OpsMetricsRead(BaseModel):
     operational_status: str
     operational_status_detail: str
     generated_at: datetime
+
+
+class SystemMetricsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    available: bool
+    cpu_percent: float
+    cpu_count: int
+    load_avg_1m: float
+    mem_total_mb: int
+    mem_used_mb: int
+    mem_available_mb: int
+    mem_percent: float
+    disk_total_gb: float
+    disk_used_gb: float
+    disk_free_gb: float
+    disk_percent: float
