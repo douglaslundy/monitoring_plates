@@ -19,6 +19,11 @@ class VehicleEvent(Base):
     category = Column(String(10), nullable=False, default="vehicle", server_default="vehicle", index=True)
     # Label da detecção (car/truck/person/dog/cat/...). Nome mantido por compat.
     vehicle_type = Column(String(20), nullable=False, index=True)
+    # Acompanhante agrupado na MESMA detecção (T5): piloto de moto. A moto é o
+    # registro principal e a pessoa fica como companion — uma única imagem, mas
+    # ambos contados nas estatísticas.
+    companion_category = Column(String(10), nullable=True)
+    companion_type = Column(String(20), nullable=True)
     # Id do rastro (object_tracker_service) que originou o evento — count-once.
     track_id = Column(String(40), nullable=True, index=True)
     confidence = Column(Float, nullable=False)

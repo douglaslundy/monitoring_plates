@@ -363,11 +363,30 @@ try:
                             vehicle_track["plate"] = plate
                             vehicle_track["plate_confidence"] = float(confidence)
 
+            # Agrupamento piloto+moto (T5): pessoa "em cima" da moto vira UMA
+            # detecção (moto principal + pessoa como companion). person_det -> moto_det.
+            from app.services.detection_grouping_service import group_riders
+
+            rider_to_moto = group_riders(detections)
+            moto_to_rider = {m: p for p, m in rider_to_moto.items()}
+
             # Evento de detecção: 1 por track. reason="new" → contagem única
             # (insere); reason="class_change" → re-save (atualiza o evento
             # existente do track, SEM contar de novo).
             for tr in newly:
-                det = detections[tr["det_index"]]
+                di = tr["det_index"]
+                det = detections[di]
+
+                # Piloto: não grava evento standalone — representado pela moto.
+                if tr["category"] == "person" and di in rider_to_moto:
+                    continue
+
+                companion_category = companion_type = None
+                if di in moto_to_rider:
+                    rider = detections[moto_to_rider[di]]
+                    companion_category = rider.category
+                    companion_type = rider.vehicle_type
+
                 link_occ = None
                 if (
                     tr["category"] == "vehicle"
@@ -397,6 +416,9 @@ try:
                         existing.bbox_w = det.bbox_w
                         existing.bbox_h = det.bbox_h
                         existing.image_path = _display_image()
+                        if companion_category is not None:
+                            existing.companion_category = companion_category
+                            existing.companion_type = companion_type
                         if link_occ is not None:
                             existing.occurrence_id = link_occ
                         continue
@@ -414,6 +436,8 @@ try:
                         bbox_w=det.bbox_w,
                         bbox_h=det.bbox_h,
                         image_path=_display_image(),
+                        companion_category=companion_category,
+                        companion_type=companion_type,
                     )
                 )
 

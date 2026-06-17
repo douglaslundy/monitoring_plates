@@ -10,6 +10,8 @@ class VehicleEventBase(BaseModel):
     occurrence_id: Optional[UUID] = None
     category: str = "vehicle"
     vehicle_type: str
+    companion_category: Optional[str] = None
+    companion_type: Optional[str] = None
     confidence: float
     bbox_x: int
     bbox_y: int

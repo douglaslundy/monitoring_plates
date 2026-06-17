@@ -379,6 +379,43 @@ def test_stats_by_category_e_filtro(client, db, camera_rtsp_a, super_admin_user)
     assert page["items"][0]["category"] == "person"
 
 
+def test_stats_conta_companion_piloto_moto(client, db, camera_rtsp_a, super_admin_user):
+    """T5: uma detecção moto+pessoa conta os dois nas estatísticas."""
+    from app.models.vehicle_event import VehicleEvent
+
+    # Um único registro: moto com piloto (pessoa) agrupado.
+    db.add(
+        VehicleEvent(
+            camera_id=camera_rtsp_a.id,
+            category="vehicle",
+            vehicle_type="motorcycle",
+            companion_category="person",
+            companion_type="person",
+            confidence=0.8,
+            bbox_x=0,
+            bbox_y=0,
+            bbox_w=10,
+            bbox_h=10,
+        )
+    )
+    db.commit()
+    h = _auth_header(super_admin_user)
+
+    stats = client.get("/api/vehicles/stats", headers=h).json()
+    by_cat = {c["category"]: c["count"] for c in stats["by_category"]}
+    by_type = {t["vehicle_type"]: t["count"] for t in stats["by_type"]}
+    # Um registro, mas conta moto E pessoa.
+    assert by_cat.get("vehicle") == 1
+    assert by_cat.get("person") == 1
+    assert by_type.get("motorcycle") == 1
+    assert by_type.get("person") == 1
+
+    # listagem: um único item, exibindo o companion.
+    page = client.get("/api/vehicles", headers=h).json()
+    assert page["total"] == 1
+    assert page["items"][0]["companion_type"] == "person"
+
+
 def test_vehicle_list_endpoint_retorna_historico_paginado(client, db):
     from app.models.vehicle_event import VehicleEvent
     from app.models.occurrence import Occurrence

@@ -75,6 +75,8 @@ def _serialize_event(event: VehicleEvent) -> VehicleEventWithCamera:
         occurrence_id=event.occurrence_id,
         category=event.category,
         vehicle_type=event.vehicle_type,
+        companion_category=event.companion_category,
+        companion_type=event.companion_type,
         confidence=event.confidence,
         bbox_x=event.bbox_x,
         bbox_y=event.bbox_y,
@@ -126,17 +128,45 @@ def get_stats(
     total_today = base.filter(VehicleEvent.detected_at >= today_start).count()
     total_week = base.filter(VehicleEvent.detected_at >= week_start).count()
 
+    # Contagem por tipo. Inclui o COMPANION (T5): a pessoa-piloto agrupada na moto
+    # também é contada (a moto é o registro, mas os dois entram nas estatísticas).
+    type_counts: dict[str, int] = {}
     type_query = _scoped(db.query(VehicleEvent.vehicle_type, func.count(VehicleEvent.id).label("cnt")))
-    type_agg = type_query.group_by(VehicleEvent.vehicle_type).order_by(func.count(VehicleEvent.id).desc()).all()
-    by_type = [VehicleEventTypeCount(vehicle_type=row.vehicle_type, count=row.cnt) for row in type_agg]
+    for row in type_query.group_by(VehicleEvent.vehicle_type).all():
+        type_counts[row.vehicle_type] = type_counts.get(row.vehicle_type, 0) + row.cnt
+    comp_type_q = db.query(VehicleEvent.companion_type, func.count(VehicleEvent.id).label("cnt")).filter(
+        VehicleEvent.companion_type.isnot(None)
+    )
+    if camera_ids is not None:
+        comp_type_q = comp_type_q.filter(VehicleEvent.camera_id.in_(camera_ids))
+    if category:  # filtro por categoria: companion conta se a categoria dele bate
+        comp_type_q = comp_type_q.filter(VehicleEvent.companion_category == category)
+    for row in comp_type_q.group_by(VehicleEvent.companion_type).all():
+        type_counts[row.companion_type] = type_counts.get(row.companion_type, 0) + row.cnt
+    by_type = [
+        VehicleEventTypeCount(vehicle_type=t, count=c)
+        for t, c in sorted(type_counts.items(), key=lambda kv: kv[1], reverse=True)
+    ]
 
     # by_category ignora o filtro de categoria (mostra todas, p/ as abas), mas
-    # respeita o escopo de câmera.
+    # respeita o escopo de câmera. Também inclui o companion (piloto).
+    cat_counts: dict[str, int] = {}
     cat_query = db.query(VehicleEvent.category, func.count(VehicleEvent.id).label("cnt"))
     if camera_ids is not None:
         cat_query = cat_query.filter(VehicleEvent.camera_id.in_(camera_ids))
-    cat_agg = cat_query.group_by(VehicleEvent.category).order_by(func.count(VehicleEvent.id).desc()).all()
-    by_category = [CategoryCount(category=row.category, count=row.cnt) for row in cat_agg]
+    for row in cat_query.group_by(VehicleEvent.category).all():
+        cat_counts[row.category] = cat_counts.get(row.category, 0) + row.cnt
+    comp_cat_q = db.query(VehicleEvent.companion_category, func.count(VehicleEvent.id).label("cnt")).filter(
+        VehicleEvent.companion_category.isnot(None)
+    )
+    if camera_ids is not None:
+        comp_cat_q = comp_cat_q.filter(VehicleEvent.camera_id.in_(camera_ids))
+    for row in comp_cat_q.group_by(VehicleEvent.companion_category).all():
+        cat_counts[row.companion_category] = cat_counts.get(row.companion_category, 0) + row.cnt
+    by_category = [
+        CategoryCount(category=c, count=n)
+        for c, n in sorted(cat_counts.items(), key=lambda kv: kv[1], reverse=True)
+    ]
 
     cam_query = _scoped(db.query(VehicleEvent.camera_id, func.count(VehicleEvent.id).label("cnt")))
     cam_agg = cam_query.group_by(VehicleEvent.camera_id).order_by(func.count(VehicleEvent.id).desc()).limit(5).all()

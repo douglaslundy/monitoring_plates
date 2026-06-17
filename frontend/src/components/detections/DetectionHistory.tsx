@@ -47,6 +47,15 @@ function labelFor(type: string): string {
   return LABELS[type] ?? type;
 }
 
+// Rótulo de exibição: agrupa piloto+moto em "Moto + Pessoa" (T5).
+function displayLabel(event: { vehicle_type: string; companion_type?: string | null }): string {
+  const main = labelFor(event.vehicle_type);
+  if (event.companion_type) {
+    return `${main} + ${labelFor(event.companion_type)}`;
+  }
+  return main;
+}
+
 const CATEGORIES = [
   { value: "", label: "Todos", icon: Layers3 },
   { value: "vehicle", label: "Veículos", icon: Car },
@@ -437,7 +446,7 @@ export default function DetectionHistory({ title, description }: { title: string
                 <div className="space-y-2 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                      {labelFor(event.vehicle_type)}
+                      {displayLabel(event)}
                     </span>
                     <span className="text-xs text-muted-foreground">{Math.round(event.confidence * 100)}%</span>
                   </div>
@@ -479,7 +488,7 @@ export default function DetectionHistory({ title, description }: { title: string
       <Modal
         open={selected !== null}
         onOpenChange={(open) => !open && setSelected(null)}
-        title={selected ? labelFor(selected.vehicle_type) : ""}
+        title={selected ? displayLabel(selected) : ""}
         description={selected ? `${selected.camera.name}${selected.camera.location ? ` • ${selected.camera.location}` : ""}` : undefined}
         className="max-w-2xl"
       >
@@ -508,7 +517,7 @@ export default function DetectionHistory({ title, description }: { title: string
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Tipo</p>
-                <p className="font-medium">{labelFor(selected.vehicle_type)}</p>
+                <p className="font-medium">{displayLabel(selected)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Placa</p>

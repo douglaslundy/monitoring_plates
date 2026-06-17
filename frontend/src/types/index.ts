@@ -206,6 +206,8 @@ export interface VehicleEventWithCamera {
   occurrence_id: string | null;
   category: string;
   vehicle_type: string;
+  companion_category?: string | null;
+  companion_type?: string | null;
   confidence: number;
   bbox_x: number;
   bbox_y: number;
