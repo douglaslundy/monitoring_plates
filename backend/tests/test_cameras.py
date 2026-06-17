@@ -539,3 +539,24 @@ def test_excluir_camera_com_dependentes(client, db, super_admin, tenant_a):
     assert db.query(Occurrence).filter(Occurrence.camera_id == cam_id).count() == 0
     assert db.query(VehicleEvent).filter(VehicleEvent.camera_id == cam_id).count() == 0
     assert db.query(AlertSent).filter(AlertSent.occurrence_id == occ_id).count() == 0
+
+
+def test_webrtc_dual_lens_cai_no_mjpeg(client, db, super_admin, tenant_a):
+    """Câmera dual-lens não usa WebRTC estático; cai no preview MJPEG dinâmico."""
+    cam = Camera(
+        client_id=tenant_a.id,
+        name="Cam Dual",
+        connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://x/y",
+        dual_lens=True,
+        lens_side="upper",
+        is_active=True,
+    )
+    db.add(cam)
+    db.commit()
+    db.refresh(cam)
+
+    token = login(client, "admin@sistema.com")
+    res = client.get(f"/api/cameras/{cam.id}/webrtc", headers=auth(token))
+    assert res.status_code == 200
+    assert res.json() == {"enabled": False, "src": None, "url": None}

@@ -189,6 +189,15 @@ class CameraCapture(threading.Thread):
             logger.debug("Camera %s: last_seen update falhou (%s)", self.camera_id, exc)
 
 
+def _worker_needs_restart(worker: "CameraCapture", cfg: dict) -> bool:
+    """True se a config de captura (RTSP/lente) divergir da thread em execução."""
+    return (
+        cfg["rtsp_url"] != worker.rtsp_url
+        or bool(cfg["dual_lens"]) != bool(worker.dual_lens)
+        or cfg["lens_side"] != worker.lens_side
+    )
+
+
 class CaptureManager:
     """Sincroniza threads de captura com as câmeras RTSP ativas do banco."""
 
@@ -234,11 +243,13 @@ class CaptureManager:
             logger.warning("Falha ao listar câmeras: %s", exc)
             return
 
-        # Encerra threads de câmeras removidas/desativadas ou com RTSP alterado.
+        # Encerra threads de câmeras removidas/desativadas ou cuja config de
+        # captura mudou (RTSP, dual_lens ou lens_side). Sem checar a lente, trocar
+        # a lente exibida não tinha efeito: o worker seguia recortando a antiga.
         for camera_id in list(self._workers.keys()):
             worker = self._workers[camera_id]
             cfg = desired.get(camera_id)
-            if cfg is None or cfg["rtsp_url"] != worker.rtsp_url:
+            if cfg is None or _worker_needs_restart(worker, cfg):
                 worker.stop()
                 del self._workers[camera_id]
 
