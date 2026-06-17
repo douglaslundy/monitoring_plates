@@ -275,7 +275,10 @@ try:
 
             def _display_image() -> str | None:
                 if "path" not in _display_cache:
-                    _display_cache["path"] = save_bytes(analysis_bytes, camera_id)
+                    from app.services.detection_overlay_service import draw_detections
+
+                    drawn = draw_detections(analysis_bytes, detections)
+                    _display_cache["path"] = save_bytes(drawn, camera_id)
                 return _display_cache["path"]
 
             # Occurrence (placa) AMARRADA AO TRACK do veículo: uma única ocorrência
