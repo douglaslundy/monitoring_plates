@@ -1,12 +1,20 @@
 # go2rtc — config LOCAL (NÃO versionado; copie para go2rtc.local.yaml).
 #
-# OBS: câmeras DUAL-LENS NÃO precisam mais ser definidas aqui. O backend agora as
-# registra automaticamente via API, referenciando os templates de recorte
-# (`lens_lower` / `lens_upper`) definidos no go2rtc.yaml — fonte sem espaços
-# (`ffmpeg:<rtsp>#video=lens_lower`), aceita pela API. Se você tinha um stream
-# dual-lens fixado aqui com o UUID da câmera, pode REMOVÊ-LO (o registro via API
-# passa a valer e refletir a lente configurada na tela).
+# Câmeras DUAL-LENS podem ser servidas de duas formas:
 #
-# Mantenha este arquivo para sobrescritas manuais pontuais, se precisar.
+# 1) Automática (sem editar nada aqui): o backend registra via API usando os
+#    templates de recorte do go2rtc.yaml — fonte sem espaços
+#    (`ffmpeg:<rtsp>#video=lens_lower`). Usa o stream PRINCIPAL da câmera.
+#
+# 2) Manual aqui (RECOMENDADO p/ baixa latência): defina um `exec:ffmpeg` usando
+#    o SUBSTREAM da câmera (menor resolução) com flags de baixa latência. Isso
+#    deixa o LIVE fluido; o ANPR/YOLO continua no stream principal via
+#    capture-runner (independente do live). Um stream definido aqui (pelo UUID da
+#    câmera) tem prioridade sobre o registro automático via API.
+#
+#    Exemplo (lente inferior, substream stream=1, baixa latência):
+#    streams:
+#      <camera-uuid>: "exec:ffmpeg -fflags nobuffer -flags low_delay -rtsp_transport tcp -i rtsp://<sub-stream-url> -an -vf crop=iw:ih/2:0:ih/2 -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -pix_fmt yuv420p -g 12 -f rtsp -rtsp_transport tcp {output}"
+#    (lente superior: crop=iw:ih/2:0:0 · adicione ,scale=W:-2 se quiser limitar a largura)
 
 streams: {}
