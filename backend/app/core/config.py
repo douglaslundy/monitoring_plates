@@ -77,8 +77,14 @@ class Settings(BaseSettings):
     TRACK_MIN_HITS: int = 1
     # Associação por proximidade do centro (além do IoU): um objeto em movimento
     # pode não ter IoU entre frames amostrados, mas seu centro continua próximo.
-    # Gate = este fator × tamanho médio do bbox (px). Mantém o mesmo track.
-    TRACK_CENTER_DIST_GATE: float = 1.5
+    # Gate = este fator × tamanho médio do bbox (px). Maior = associa objetos que
+    # se deslocam mais entre frames processados (o worker processa < captura por
+    # causa do OCR), evitando fragmentar em vários tracks (3-4 registros). Usado
+    # junto com a previsão por velocidade (_predict_bbox).
+    TRACK_CENTER_DIST_GATE: float = 2.5
+    # Re-save por mudança de classe só dispara quando a nova classe votada tem ESTE
+    # nº de votos a mais que a salva — evita re-save a cada flicker (bus<->car).
+    TRACK_CLASS_CHANGE_MARGIN: int = 3
     # Associação CROSS-CATEGORY (T4): sobreposição (IoU) >= este limiar ALTO entre
     # uma detecção e um track de categoria diferente = mesmo objeto físico
     # classificado de formas diferentes entre frames (cão/pessoa, homem/urso).
@@ -102,6 +108,11 @@ class Settings(BaseSettings):
     # médio do bbox, após TRACK_STATIONARY_MIN_HITS frames.
     TRACK_STATIONARY_RADIUS_RATIO: float = 0.25
     TRACK_STATIONARY_MIN_HITS: int = 3
+    # Agrupamento piloto+moto (T5): uma pessoa é considerada PILOTO de uma moto
+    # quando seu bbox sobrepõe a moto em >= esta fração da área da pessoa e seu
+    # centro horizontal cai dentro da moto. Vira UMA detecção (moto principal +
+    # pessoa como companion), contando os dois nas estatísticas.
+    RIDER_OVERLAP_MIN: float = 0.30
 
     # Captura RTSP + motion gating (capture-runner)
     CAPTURE_FPS: float = 6.0

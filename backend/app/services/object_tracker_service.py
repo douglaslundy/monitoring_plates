@@ -58,6 +58,29 @@ def _dist_gate(a: dict, b: dict) -> float:
     return mean_size * settings.TRACK_CENTER_DIST_GATE
 
 
+def _predict_bbox(tr: dict, now: float) -> dict:
+    """Posição ESPERADA do track agora, extrapolando pela velocidade (px/s).
+
+    O worker processa frames mais devagar que a captura (latência do OCR), então
+    um objeto em movimento se desloca bastante entre frames processados. Prever a
+    posição pela velocidade do track evita que ele perca a associação e seja
+    recontado (causa de 3-4 registros do mesmo objeto). Sem velocidade ainda
+    (track novo), devolve o próprio bbox.
+    """
+    dt = max(0.0, now - float(tr.get("last_seen_at", now)))
+    vx = float(tr.get("vx", 0.0) or 0.0)
+    vy = float(tr.get("vy", 0.0) or 0.0)
+    b = tr["bbox"]
+    if dt <= 0 or (vx == 0.0 and vy == 0.0):
+        return b
+    return {
+        "bbox_x": b["bbox_x"] + vx * dt,
+        "bbox_y": b["bbox_y"] + vy * dt,
+        "bbox_w": b["bbox_w"],
+        "bbox_h": b["bbox_h"],
+    }
+
+
 def _vote_key(category: str, label: str) -> str:
     return f"{category}|{label}"
 
@@ -145,9 +168,10 @@ def update_tracks(
         for ti, tr in enumerate(tracks):
             if det["category"] != tr["category"]:
                 continue
-            iou = _iou(det["bbox"], tr["bbox"])
-            dist = _center_dist(det["bbox"], tr["bbox"])
-            if iou >= iou_min or dist <= _dist_gate(det["bbox"], tr["bbox"]):
+            ptr = _predict_bbox(tr, now)
+            iou = _iou(det["bbox"], ptr)
+            dist = _center_dist(det["bbox"], ptr)
+            if iou >= iou_min or dist <= _dist_gate(det["bbox"], ptr):
                 pairs.append((iou, -dist, di, ti))
     pairs.sort(reverse=True)
 
@@ -173,7 +197,7 @@ def update_tracks(
         for ti, tr in enumerate(tracks):
             if ti in matched_track or det["category"] == tr["category"]:
                 continue
-            iou = _iou(det["bbox"], tr["bbox"])
+            iou = _iou(det["bbox"], _predict_bbox(tr, now))
             if iou >= same_obj_iou:
                 cross.append((iou, di, ti))
     cross.sort(reverse=True)
@@ -203,10 +227,17 @@ def update_tracks(
                 tr["saved_class"] = current_class
                 newly.append({**tr, "det_index": di, "reason": "new"})
         else:
-            # Já contado: re-save apenas se a classe VOTADA mudou (maioria virou).
-            if current_class != tr.get("saved_class"):
-                tr["saved_class"] = current_class
-                newly.append({**tr, "det_index": di, "reason": "class_change"})
+            # Já contado: re-save só se a classe VOTADA mudar DE FORMA ESTÁVEL —
+            # a nova classe precisa ter uma margem de votos sobre a salva. Isso
+            # evita re-save a cada flicker do detector (ex.: bus<->car alternando),
+            # que gerava vários registros do mesmo objeto.
+            saved_class = tr.get("saved_class")
+            if current_class != saved_class:
+                votes = tr.get("votes", {})
+                margin = votes.get(current_class, 0) - votes.get(saved_class, 0)
+                if margin >= settings.TRACK_CLASS_CHANGE_MARGIN:
+                    tr["saved_class"] = current_class
+                    newly.append({**tr, "det_index": di, "reason": "class_change"})
 
     # 3. Atualiza tracks casados.
     for di, ti in matched_det.items():
@@ -224,6 +255,18 @@ def update_tracks(
             and mean_size > 0
             and tr["avg_disp"] <= settings.TRACK_STATIONARY_RADIUS_RATIO * mean_size
         )
+        # Velocidade (px/s) do centro, com suavização (EMA), p/ prever a posição
+        # no próximo frame processado e manter a associação de objetos em movimento.
+        dt = now - float(tr["last_seen_at"])
+        if dt > 0:
+            oc = _center(tr["bbox"])
+            nc = _center(new_bbox)
+            vx, vy = (nc[0] - oc[0]) / dt, (nc[1] - oc[1]) / dt
+            if tr.get("vx") is None:
+                tr["vx"], tr["vy"] = vx, vy
+            else:
+                tr["vx"] = 0.5 * float(tr["vx"]) + 0.5 * vx
+                tr["vy"] = 0.5 * float(tr["vy"]) + 0.5 * vy
         tr["bbox"] = new_bbox
         # Voto temporal de classe: acumula votos e adota a categoria/label de maioria.
         votes = tr.setdefault("votes", {})
@@ -252,6 +295,8 @@ def update_tracks(
             "saved_class": None,
             "avg_disp": None,
             "stationary": False,
+            "vx": None,
+            "vy": None,
         }
         _maybe_register(tr, di)
         tracks.append(tr)

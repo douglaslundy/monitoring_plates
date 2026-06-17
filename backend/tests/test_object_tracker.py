@@ -131,16 +131,39 @@ def test_force_save_apos_n_hits_mesmo_cortado():
     assert total == 1
 
 
-def test_resave_quando_classe_votada_muda():
-    # Conta como car; só re-salva quando a classe VOTADA (maioria) vira truck.
+def test_resave_so_quando_classe_muda_de_forma_estavel():
+    # Conta como car; só re-salva quando truck vira maioria com MARGEM (>=3 votos),
+    # nao a cada flicker. car:1 fixo; truck precisa chegar a 4 (margem 3).
     state: list = []
     state, newly, _ = update_tracks(state, [_box(100, 100, label="car")], now=9000.0, frame_w=640, frame_h=480)
     assert _count_new(newly) == 1  # contou como car (car:1)
-    state, newly, _ = update_tracks(state, [_box(100, 100, label="truck")], now=9000.5, frame_w=640, frame_h=480)
-    assert newly == []  # empate car:1/truck:1 -> ainda car, sem re-save
-    state, newly, _ = update_tracks(state, [_box(100, 100, label="truck")], now=9001.0, frame_w=640, frame_h=480)
-    assert [n.get("reason") for n in newly] == ["class_change"]  # truck virou maioria
+    # 3 frames de truck: empate/maioria fraca -> NAO re-salva (margem < 3)
+    for i, t in enumerate((9000.5, 9001.0, 9001.5)):
+        state, newly, _ = update_tracks(state, [_box(100, 100, label="truck")], now=t, frame_w=640, frame_h=480)
+        assert newly == [], f"flicker nao deve re-salvar (frame {i})"
+    # 4o truck -> truck:4 vs car:1 (margem 3) -> re-save
+    state, newly, _ = update_tracks(state, [_box(100, 100, label="truck")], now=9002.0, frame_w=640, frame_h=480)
+    assert [n.get("reason") for n in newly] == ["class_change"]
     assert _count_new(newly) == 0  # não conta de novo
+
+
+def test_velocidade_mantem_track_apos_frame_lento():
+    # Estabelece velocidade com um passo curto; depois um GAP longo (worker lento)
+    # cujo deslocamento (180px) superaria o gate (2.5*60=150) SEM previsao. A
+    # previsao por velocidade preve a posicao e mantem 1 unico track.
+    state: list = []
+    total = 0
+    state, newly, _ = update_tracks(state, [_box(100, 300, w=60, h=60)], now=20000.0, frame_w=2000, frame_h=600)
+    total += _count_new(newly)  # conta (1)
+    # passo curto (60px em 0.5s) -> estabelece vx=120 px/s
+    state, newly, _ = update_tracks(state, [_box(160, 300, w=60, h=60)], now=20000.5, frame_w=2000, frame_h=600)
+    total += _count_new(newly)
+    assert len(state) == 1
+    # gap de 1.5s: objeto a 120px/s anda 180px (>150 gate). So associa por previsao.
+    state, newly, _ = update_tracks(state, [_box(340, 300, w=60, h=60)], now=20002.0, frame_w=2000, frame_h=600)
+    total += _count_new(newly)
+    assert len(state) == 1   # continua 1 track (previsao manteve a associacao)
+    assert total == 1        # contado uma unica vez
 
 
 # ── Voto temporal de classe (T4) ─────────────────────────────────────────────
