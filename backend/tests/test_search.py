@@ -398,6 +398,19 @@ def test_criar_placa_monitorada(client, db, setup_tenant):
     assert res.json()["plate"] == "ABC1234"
 
 
+def test_criar_placa_sem_client_id_usa_usuario(client, db, setup_tenant):
+    """O frontend não envia client_id; deve vir do usuário logado (sem 422)."""
+    plan, tenant, camera, admin, _ = setup_tenant
+    res = client.post(
+        "/api/monitored-plates/",
+        json={"plate": "QWE4567", "description": None, "alert_email": None},
+        headers=_auth(_tok(admin)),
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["client_id"] == str(tenant.id)
+    assert res.json()["plate"] == "QWE4567"
+
+
 def test_toggle_placa_monitorada(client, db, setup_tenant):
     plan, tenant, camera, admin, _ = setup_tenant
     mp = MonitoredPlate(

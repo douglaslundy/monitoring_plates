@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import api from "@/lib/api";
+import { extractErrorMessage } from "@/lib/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import type { MonitoredPlate } from "@/types";
@@ -74,10 +75,7 @@ export default function ClientAlertsPage() {
       setForm(EMPTY_FORM);
       await load();
     } catch (e: unknown) {
-      const msg =
-        (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Erro ao salvar. Tente novamente.";
-      setFormError(msg);
+      setFormError(extractErrorMessage(e, "Erro ao salvar. Tente novamente."));
     } finally {
       setSaving(false);
     }
@@ -85,7 +83,7 @@ export default function ClientAlertsPage() {
 
   async function toggleActive(p: MonitoredPlate) {
     try {
-      await api.put(`/api/monitored-plates/${p.id}`, { is_active: !p.is_active });
+      await api.patch(`/api/monitored-plates/${p.id}`, { is_active: !p.is_active });
       setPlates((prev) =>
         prev.map((pl) => (pl.id === p.id ? { ...pl, is_active: !pl.is_active } : pl))
       );

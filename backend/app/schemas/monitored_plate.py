@@ -12,8 +12,14 @@ class MonitoredPlateBase(BaseModel):
     is_active: bool = True
 
 
-class MonitoredPlateCreate(MonitoredPlateBase):
-    pass
+class MonitoredPlateCreate(BaseModel):
+    plate: str
+    description: Optional[str] = None
+    alert_email: Optional[str] = None
+    is_active: bool = True
+    # client_id NÃO é exigido do corpo: para usuários de cliente vem do próprio
+    # usuário logado; só super_admin pode informá-lo explicitamente.
+    client_id: Optional[UUID] = None
 
 
 class MonitoredPlateUpdate(BaseModel):

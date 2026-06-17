@@ -31,9 +31,21 @@ def create_plate(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role != UserRole.super_admin and payload.client_id != current_user.client_id:
-        raise HTTPException(status_code=403, detail="Acesso negado")
-    plate = MonitoredPlate(**payload.model_dump())
+    # client_id vem do usuário logado; super_admin pode informá-lo no corpo.
+    if current_user.role == UserRole.super_admin:
+        if payload.client_id is None:
+            raise HTTPException(status_code=400, detail="client_id é obrigatório para super_admin.")
+        client_id = payload.client_id
+    else:
+        client_id = current_user.client_id
+
+    plate = MonitoredPlate(
+        client_id=client_id,
+        plate=payload.plate.upper().strip(),
+        description=payload.description,
+        alert_email=payload.alert_email,
+        is_active=payload.is_active,
+    )
     db.add(plate)
     db.commit()
     db.refresh(plate)
