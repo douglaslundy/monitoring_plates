@@ -292,6 +292,56 @@ def test_clean_old_occurrences_removes_expired(db):
     assert "NONE" in plates
 
 
+def test_clean_old_vehicle_events_por_plano(db):
+    """Detecções vencem pela retenção do plano; arquivo compartilhado não some."""
+    import importlib
+
+    from app.models.plan import Plan
+    from app.models.client import Client
+    from app.models.camera import Camera, ConnectionType
+    from app.models.occurrence import Occurrence
+    from app.models.vehicle_event import VehicleEvent
+
+    plan = Plan(name="P30", max_cameras=1, retention_days=30, email_alerts=False,
+                realtime_alerts=False, price_monthly=0, is_active=True)
+    db.add(plan); db.commit(); db.refresh(plan)
+    tenant = Client(name="TR", email="tr@t.com", plan_id=plan.id, is_active=True)
+    db.add(tenant); db.commit(); db.refresh(tenant)
+    cam = Camera(client_id=tenant.id, name="CR", location="L",
+                 connection_type=ConnectionType.rtsp, rtsp_url="rtsp://x/sr", is_active=True)
+    db.add(cam); db.commit(); db.refresh(cam)
+
+    now = datetime.now(timezone.utc)
+
+    def _ev(label, path, days_ago, category="vehicle"):
+        return VehicleEvent(
+            camera_id=cam.id, category=category, vehicle_type=label, confidence=0.8,
+            bbox_x=0, bbox_y=0, bbox_w=10, bbox_h=10, image_path=path,
+            detected_at=now - timedelta(days=days_ago),
+        )
+
+    old_ev = _ev("old", "cameras/oldev.jpg", 40)            # > 30 dias -> apaga
+    new_ev = _ev("newp", "cameras/newev.jpg", 5, "person")  # 5 dias -> fica
+    shared_ev = _ev("shared", "cameras/shared.jpg", 40)     # velho, mas...
+    shared_occ = Occurrence(camera_id=cam.id, plate="SHARED1", confidence=0.9,
+                            image_path="cameras/shared.jpg", expires_at=now + timedelta(days=10))
+    db.add_all([old_ev, new_ev, shared_ev, shared_occ]); db.commit()
+
+    deleted: list[str] = []
+    with patch("app.core.database.SessionLocal", return_value=db), \
+         patch("app.services.storage_service.delete_file", side_effect=lambda p: deleted.append(p)):
+        from app.workers import retention_cleaner
+        importlib.reload(retention_cleaner)
+        retention_cleaner.clean_old_occurrences()
+
+    paths = {e.image_path for e in db.query(VehicleEvent).all()}
+    assert "cameras/newev.jpg" in paths        # detecção recente fica
+    assert "cameras/oldev.jpg" not in paths     # detecção vencida sai do banco
+    assert "cameras/shared.jpg" not in paths    # shared_ev (vencido) sai do banco
+    assert "cameras/oldev.jpg" in deleted       # arquivo órfão apagado
+    assert "cameras/shared.jpg" not in deleted  # ainda referenciado pela ocorrência
+
+
 # ── frame_processor (process_frame task body) ─────────────────────────────────
 
 def test_process_frame_cria_ocorrencia(db):
