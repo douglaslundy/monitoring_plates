@@ -39,10 +39,19 @@ def create_client(
     db: Session = Depends(get_db),
     _=Depends(require_super_admin),
 ):
+    # Papel do usuário de acesso: admin do cliente ou usuário comum (nunca
+    # super_admin via este fluxo).
+    try:
+        access_role = UserRole(payload.admin_role)
+    except ValueError:
+        access_role = UserRole.client_admin
+    if access_role == UserRole.super_admin:
+        raise HTTPException(status_code=400, detail="Papel inválido para usuário de cliente")
+
     if db.query(Client).filter(Client.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email de cliente ja cadastrado")
     if db.query(User).filter(User.email == payload.admin_email).first():
-        raise HTTPException(status_code=400, detail="Email do administrador ja cadastrado")
+        raise HTTPException(status_code=400, detail="Email do usuário de acesso ja cadastrado")
 
     client = Client(
         name=payload.name,
@@ -58,7 +67,7 @@ def create_client(
         name=payload.admin_name,
         email=payload.admin_email,
         password_hash=hash_password(payload.admin_password),
-        role=UserRole.client_admin,
+        role=access_role,
         client_id=client.id,
         is_active=True,
     )

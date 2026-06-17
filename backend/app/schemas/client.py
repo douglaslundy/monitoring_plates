@@ -30,9 +30,13 @@ class ClientCreate(ClientBase):
 
 
 class ClientCreateWithAdmin(ClientBase):
+    # Usuário de acesso criado junto com o cliente (todo cliente precisa de ao
+    # menos um usuário para entrar). admin_role define se ele entra como admin
+    # do cliente (gerencia usuários/câmeras) ou usuário comum (só visualiza).
     admin_name: str
     admin_email: str
     admin_password: str
+    admin_role: str = "client_admin"
 
 
 class ClientUpdate(BaseModel):

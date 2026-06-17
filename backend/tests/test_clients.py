@@ -70,6 +70,49 @@ def test_criar_cliente_com_admin(client, db, super_admin, test_plan):
     assert str(admin.client_id) == data["id"]
 
 
+def test_criar_cliente_com_usuario_comum(client, db, super_admin, test_plan):
+    """admin_role=client_user cria o usuário de acesso como usuário comum."""
+    token = get_token(client, "super@sistema.com", "Admin@123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = {
+        "name": "Empresa Beta",
+        "email": "beta@empresa.com",
+        "plan_id": str(test_plan.id),
+        "is_active": True,
+        "admin_name": "User Beta",
+        "admin_email": "user@beta.com",
+        "admin_password": "Senha@123",
+        "admin_role": "client_user",
+    }
+
+    res = client.post("/api/clients", json=payload, headers=headers)
+    assert res.status_code == 201
+
+    user = db.query(User).filter(User.email == "user@beta.com").first()
+    assert user is not None
+    assert user.role == UserRole.client_user
+
+
+def test_criar_cliente_admin_role_super_admin_rejeitado(client, db, super_admin, test_plan):
+    """admin_role=super_admin é rejeitado (papel inválido para usuário de cliente)."""
+    token = get_token(client, "super@sistema.com", "Admin@123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = {
+        "name": "Empresa Gama",
+        "email": "gama@empresa.com",
+        "plan_id": str(test_plan.id),
+        "is_active": True,
+        "admin_name": "X",
+        "admin_email": "x@gama.com",
+        "admin_password": "Senha@123",
+        "admin_role": "super_admin",
+    }
+    res = client.post("/api/clients", json=payload, headers=headers)
+    assert res.status_code == 400
+
+
 def test_listar_clientes_inclui_plano_e_contagem_cameras(client, db, super_admin, test_plan):
     token = get_token(client, "super@sistema.com", "Admin@123")
     headers = {"Authorization": f"Bearer {token}"}

@@ -19,6 +19,7 @@ interface CreateForm {
   admin_name: string;
   admin_email: string;
   admin_password: string;
+  admin_role: string;
 }
 
 interface EditForm {
@@ -38,6 +39,7 @@ const emptyForm: CreateForm = {
   admin_name: "",
   admin_email: "",
   admin_password: "",
+  admin_role: "client_admin",
 };
 
 export default function ClientsPage() {
@@ -200,22 +202,46 @@ export default function ClientsPage() {
 
       <DataTable data={clients} columns={columns} loading={loading} emptyMessage="Nenhum cliente" />
 
-      <Modal open={modalOpen} onOpenChange={setModalOpen} title="Novo Cliente" description="Cadastro de cliente e admin">
-        <form onSubmit={handleSubmit} className="space-y-3">
+      <Modal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        title="Novo Cliente"
+        description="Cadastre o cliente e o usuário que vai acessar a plataforma"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
           {submitError && <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{submitError}</div>}
-          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <select className="w-full border rounded px-3 py-2 text-sm" value={form.plan_id} onChange={(e) => setForm({ ...form, plan_id: e.target.value })}>
-            <option value="">Selecione o plano</option>
-            {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <input type="date" className="w-full border rounded px-3 py-2 text-sm" value={form.plan_expires_at} onChange={(e) => setForm({ ...form, plan_expires_at: e.target.value })} />
-          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Nome admin" value={form.admin_name} onChange={(e) => setForm({ ...form, admin_name: e.target.value })} />
-          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Email admin" value={form.admin_email} onChange={(e) => setForm({ ...form, admin_email: e.target.value })} />
-          <input type="password" className="w-full border rounded px-3 py-2 text-sm" placeholder="Senha admin" value={form.admin_password} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} />
+
+          <fieldset className="space-y-3">
+            <legend className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dados do cliente</legend>
+            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Nome do cliente" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="E-mail do cliente" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <select className="w-full border rounded px-3 py-2 text-sm" value={form.plan_id} onChange={(e) => setForm({ ...form, plan_id: e.target.value })}>
+              <option value="">Selecione o plano</option>
+              {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Vencimento do plano</label>
+              <input type="date" className="w-full border rounded px-3 py-2 text-sm" value={form.plan_expires_at} onChange={(e) => setForm({ ...form, plan_expires_at: e.target.value })} />
+            </div>
+          </fieldset>
+
+          <fieldset className="space-y-3 border-t pt-3">
+            <legend className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Usuário de acesso</legend>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Este usuário poderá entrar na plataforma. Escolha se ele é administrador do cliente (gerencia usuários e câmeras) ou usuário comum (apenas visualiza).
+            </p>
+            <select className="w-full border rounded px-3 py-2 text-sm" value={form.admin_role} onChange={(e) => setForm({ ...form, admin_role: e.target.value })}>
+              <option value="client_admin">Administrador do cliente</option>
+              <option value="client_user">Usuário (somente visualização)</option>
+            </select>
+            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Nome do usuário" value={form.admin_name} onChange={(e) => setForm({ ...form, admin_name: e.target.value })} />
+            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="E-mail do usuário" value={form.admin_email} onChange={(e) => setForm({ ...form, admin_email: e.target.value })} />
+            <input type="password" className="w-full border rounded px-3 py-2 text-sm" placeholder="Senha (mínimo 8 caracteres)" value={form.admin_password} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} />
+          </fieldset>
+
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setModalOpen(false)} className="px-3 py-2 border rounded text-sm">Cancelar</button>
-            <button type="submit" disabled={submitting} className="px-3 py-2 bg-black text-white rounded text-sm">{submitting ? "Salvando..." : "Criar"}</button>
+            <button type="submit" disabled={submitting} className="px-3 py-2 bg-black text-white rounded text-sm disabled:opacity-50">{submitting ? "Salvando..." : "Criar"}</button>
           </div>
         </form>
       </Modal>
