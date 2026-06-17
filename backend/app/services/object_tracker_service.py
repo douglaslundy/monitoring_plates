@@ -116,8 +116,15 @@ def update_tracks(
     min_hits = settings.TRACK_MIN_HITS
     force_hits = settings.TRACK_FORCE_SAVE_HITS
 
-    # 1. Expira tracks de objetos que saíram do frame há mais que max_age.
-    tracks = [t for t in state if now - float(t["last_seen_at"]) <= max_age]
+    # 1. Expira tracks de objetos que saíram do frame. Um track ESTACIONÁRIO
+    #    (objeto parado) sobrevive muito mais tempo, para não ser redescoberto
+    #    como novo quando algo passa após um longo período sem movimento.
+    def _eff_max_age(t: dict) -> float:
+        if t.get("stationary"):
+            return settings.TRACK_STATIONARY_MAX_AGE_SECONDS
+        return max_age
+
+    tracks = [t for t in state if now - float(t["last_seen_at"]) <= _eff_max_age(t)]
 
     # 2. Associação gulosa (mesma categoria), 1-para-1. Candidato aceito por IoU
     #    suficiente OU centro dentro do gate de distância. Ordena por IoU (desc)
@@ -164,7 +171,20 @@ def update_tracks(
     # 3. Atualiza tracks casados.
     for di, ti in matched_det.items():
         tr = tracks[ti]
-        tr["bbox"] = detections[di]["bbox"]
+        new_bbox = detections[di]["bbox"]
+        # Estacionariedade: média móvel (EMA) do deslocamento do centro por frame.
+        # Parado -> deslocamento ~0; em movimento -> grande. Um objeto que parou
+        # após se mover passa a estacionário em poucos frames (a EMA decai).
+        disp = _center_dist(new_bbox, tr["bbox"])
+        ema = tr.get("avg_disp")
+        tr["avg_disp"] = disp if ema is None else (0.6 * float(ema) + 0.4 * disp)
+        mean_size = (new_bbox["bbox_w"] + new_bbox["bbox_h"]) / 2.0
+        tr["stationary"] = (
+            int(tr.get("hits", 1)) + 1 >= settings.TRACK_STATIONARY_MIN_HITS
+            and mean_size > 0
+            and tr["avg_disp"] <= settings.TRACK_STATIONARY_RADIUS_RATIO * mean_size
+        )
+        tr["bbox"] = new_bbox
         tr["label"] = detections[di]["label"]
         tr["last_seen_at"] = now
         tr["hits"] = int(tr.get("hits", 1)) + 1
@@ -185,6 +205,8 @@ def update_tracks(
             "hits": 1,
             "counted": False,
             "saved_label": None,
+            "avg_disp": None,
+            "stationary": False,
         }
         _maybe_register(tr, di)
         tracks.append(tr)

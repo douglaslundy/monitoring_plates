@@ -85,6 +85,17 @@ class Settings(BaseSettings):
     # Fallback: se o objeto for confirmado mas nunca couber inteiro no frame
     # (veículo grande/cortado), salva mesmo assim após este nº de frames vistos.
     TRACK_FORCE_SAVE_HITS: int = 4
+    # Objeto PARADO: um track cujo centro praticamente não se move é considerado
+    # estacionário e ganha uma sobrevida bem maior, para não ser "redescoberto"
+    # como novo (e re-salvo) quando algo passa após um longo período sem
+    # movimento. Um veículo que apenas passou (estava em movimento) expira no
+    # TRACK_MAX_AGE_SECONDS normal — então um novo veículo no mesmo ponto ainda
+    # é contado.
+    TRACK_STATIONARY_MAX_AGE_SECONDS: float = 300.0
+    # Estacionário = deslocamento médio do centro por frame <= este fator × tamanho
+    # médio do bbox, após TRACK_STATIONARY_MIN_HITS frames.
+    TRACK_STATIONARY_RADIUS_RATIO: float = 0.25
+    TRACK_STATIONARY_MIN_HITS: int = 3
 
     # Captura RTSP + motion gating (capture-runner)
     CAPTURE_FPS: float = 6.0

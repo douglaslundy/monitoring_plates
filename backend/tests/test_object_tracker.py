@@ -158,3 +158,54 @@ def test_parado_com_gap_curto_de_movimento_nao_reconta():
     state, newly, _ = update_tracks(state, [box], now=10020.5, frame_w=640, frame_h=480)
     total += _count_new(newly)
     assert total == 1
+
+
+def test_carro_parado_nao_reconta_quando_objeto_passa():
+    """T3: um carro parado não é re-gravado quando uma pessoa passa pela cena."""
+    car = _box(300, 250, w=120, h=90, category="vehicle", label="car")
+    state: list = []
+    car_total = 0
+    person_total = 0
+    now = 11000.0
+    # Carro parado é confirmado/estacionário ao longo de alguns frames.
+    for _ in range(4):
+        state, newly, _ = update_tracks(state, [car], now=now, frame_w=640, frame_h=480)
+        car_total += _count_new(newly)
+        now += 0.5
+    # Uma pessoa atravessa a cena (frames com movimento contêm carro + pessoa).
+    for i in range(5):
+        person = _box(50 + i * 80, 260, w=40, h=90, category="person", label="person")
+        state, newly, _ = update_tracks(state, [car, person], now=now, frame_w=640, frame_h=480)
+        car_total += sum(1 for n in newly if n["category"] == "vehicle" and n.get("reason") == "new")
+        person_total += sum(1 for n in newly if n["category"] == "person" and n.get("reason") == "new")
+        now += 0.5
+    assert car_total == 1  # carro contado/salvo só uma vez
+    assert person_total == 1  # pessoa contada uma vez
+
+
+def test_carro_parado_estacionario_sobrevive_gap_longo():
+    """T3: carro parado vira estacionário e sobrevive a um gap > max_age (30s)."""
+    car = _box(300, 250, w=120, h=90)
+    state: list = []
+    total = 0
+    now = 12000.0
+    for _ in range(4):  # confirma e marca estacionário
+        state, newly, _ = update_tracks(state, [car], now=now, frame_w=640, frame_h=480)
+        total += _count_new(newly)
+        now += 0.5
+    assert any(t.get("stationary") for t in state)
+    # gap de 60s (> 30s max_age normal) e reaparece: NÃO reconta (estacionário).
+    state, newly, _ = update_tracks(state, [car], now=now + 60.0, frame_w=640, frame_h=480)
+    total += _count_new(newly)
+    assert total == 1
+
+
+def test_veiculo_que_passou_e_saiu_nao_e_estacionario():
+    """Um veículo em movimento que sai expira no max_age normal (não estacionário)."""
+    state: list = []
+    now = 13000.0
+    for i in range(4):  # atravessa a cena (centro se desloca muito)
+        det = _box(50 + i * 120, 250, w=120, h=90)
+        state, _, _ = update_tracks(state, [det], now=now, frame_w=640, frame_h=480)
+        now += 0.5
+    assert all(not t.get("stationary") for t in state)
