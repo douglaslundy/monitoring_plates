@@ -20,6 +20,8 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { ViewToggle } from "@/components/ui/ViewToggle";
+import { useViewMode } from "@/hooks/useViewMode";
 
 const API_BASE = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -119,6 +121,7 @@ export default function DetectionHistory({ title, description }: { title: string
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [stats, setStats] = useState<VehicleEventStats | null>(null);
   const [result, setResult] = useState<VehicleEventPage | null>(null);
+  const [viewMode, setViewMode] = useViewMode("deteccoes-view");
   const [category, setCategory] = useState("");
   const [cameraId, setCameraId] = useState("");
   const [vehicleType, setVehicleType] = useState("");
@@ -415,49 +418,98 @@ export default function DetectionHistory({ title, description }: { title: string
             <p className="text-sm text-muted-foreground" aria-live="polite">
               {result.total} detecç{result.total === 1 ? "ão" : "ões"} encontrada{result.total === 1 ? "" : "s"}.
             </p>
-            <p className="text-xs text-muted-foreground">
-              {result.page} de {result.pages} página{result.pages === 1 ? "" : "s"}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-muted-foreground">
+                {result.page} de {result.pages} página{result.pages === 1 ? "" : "s"}
+              </p>
+              {result.items.length > 0 && <ViewToggle mode={viewMode} onChange={setViewMode} />}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {result.items.map((event) => (
-              <button
-                key={event.id}
-                onClick={() => setSelected(event)}
-                className="overflow-hidden rounded-xl border bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                <div className="aspect-video bg-black">
-                  {event.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={event.image_url}
-                      alt={`${labelFor(event.vehicle_type)} em ${event.camera.name}`}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 text-white/60">
-                      <CameraIcon className="h-10 w-10" aria-hidden="true" />
-                      <span className="text-xs">Sem imagem capturada</span>
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                      {displayLabel(event)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{Math.round(event.confidence * 100)}%</span>
+          {viewMode === "blocks" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {result.items.map((event) => (
+                <button
+                  key={event.id}
+                  onClick={() => setSelected(event)}
+                  className="overflow-hidden rounded-xl border bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <div className="aspect-video bg-black">
+                    {event.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={event.image_url}
+                        alt={`${displayLabel(event)} em ${event.camera.name}`}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 text-white/60">
+                        <CameraIcon className="h-10 w-10" aria-hidden="true" />
+                        <span className="text-xs">Sem imagem capturada</span>
+                      </div>
+                    )}
                   </div>
-                  {event.plate && <p className="font-mono text-sm font-semibold tracking-wider">{event.plate}</p>}
-                  <p className="font-medium">{event.camera.name}</p>
-                  <p className="text-sm text-muted-foreground">{event.camera.location || "Sem local"}</p>
-                  <p className="text-xs text-muted-foreground">{formatDateTime(event.detected_at)}</p>
-                </div>
-              </button>
-            ))}
-          </div>
+                  <div className="space-y-2 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                        {displayLabel(event)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{Math.round(event.confidence * 100)}%</span>
+                    </div>
+                    {event.plate && <p className="font-mono text-sm font-semibold tracking-wider">{event.plate}</p>}
+                    <p className="font-medium">{event.camera.name}</p>
+                    <p className="text-sm text-muted-foreground">{event.camera.location || "Sem local"}</p>
+                    <p className="text-xs text-muted-foreground">{formatDateTime(event.detected_at)}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {result.items.map((event) => (
+                <button
+                  key={event.id}
+                  onClick={() => setSelected(event)}
+                  className="flex items-center gap-3 rounded-lg border bg-white p-2 text-left shadow-sm transition hover:border-primary/40 hover:shadow focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <div className="h-14 w-20 flex-shrink-0 overflow-hidden rounded bg-black">
+                    {event.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={event.image_url}
+                        alt={`${displayLabel(event)} em ${event.camera.name}`}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-white/50">
+                        <CameraIcon className="h-6 w-6" aria-hidden="true" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                        {displayLabel(event)}
+                      </span>
+                      {event.plate && (
+                        <span className="font-mono text-sm font-semibold tracking-wider">{event.plate}</span>
+                      )}
+                    </div>
+                    <p className="mt-1 truncate text-sm font-medium">
+                      {event.camera.name}
+                      {event.camera.location ? ` · ${event.camera.location}` : ""}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{formatDateTime(event.detected_at)}</p>
+                  </div>
+                  <span className="hidden flex-shrink-0 text-xs text-muted-foreground sm:block">
+                    {Math.round(event.confidence * 100)}%
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {result.pages > 1 && (
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
