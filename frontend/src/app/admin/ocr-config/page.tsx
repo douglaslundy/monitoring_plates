@@ -223,7 +223,7 @@ export default function OcrConfigPage() {
               <h3 className="font-semibold">Modelo de detecção (YOLO)</h3>
               <p className="text-sm text-muted-foreground">
                 Modelo usado para detectar veículos, pessoas e animais. Modelos maiores
-                (m {">"} s {">"} n) acertam mais a classe, porém são mais lentos na CPU.
+                (x {">"} l {">"} m {">"} s {">"} n) acertam mais a classe, porém são mais lentos na CPU.
               </p>
             </div>
           </div>

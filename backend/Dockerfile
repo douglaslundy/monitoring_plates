@@ -1,9 +1,9 @@
-# ─── Stage 1: export YOLOv8 (n/s/m) → ONNX (ultralytics/torch só no build) ───
+# ─── Stage 1: export YOLOv8 (n/s/m/l/x) → ONNX (ultralytics/torch só no build) ───
 # O runtime NÃO leva PyTorch: só copiamos os .onnx resultantes. O admin escolhe
-# em runtime qual modelo usar (yolov8n/s/m) — todos são embutidos aqui.
+# em runtime qual modelo usar (yolov8n/s/m/l/x) — todos são embutidos aqui.
 FROM python:3.11-slim AS model-export
-# Modelos a exportar. n/s vêm dos .pt no repo (offline); m é baixado no build.
-ARG YOLO_MODELS="yolov8n yolov8s yolov8m"
+# Modelos a exportar. n/s vêm dos .pt no repo (offline); m/l/x são baixados no build.
+ARG YOLO_MODELS="yolov8n yolov8s yolov8m yolov8l yolov8x"
 ENV YOLO_MODELS=${YOLO_MODELS}
 # Torch CPU 2.4.1: usa o exportador ONNX legado (sem onnxscript) e evita ~2GB de
 # wheels CUDA. Instalado antes do ultralytics p/ ele não puxar a versão CUDA.
