@@ -83,6 +83,20 @@ export function OperationalDashboard() {
     <div>
       <SystemResources />
 
+      {canReset && (
+        <div className="mb-6 flex justify-end">
+          <button
+            onClick={() => void resetMetrics()}
+            className="px-3 py-2 rounded border border-red-300 text-red-700 text-sm inline-flex items-center gap-2 disabled:opacity-60 hover:bg-red-50 transition-colors"
+            disabled={resetting}
+            title="Zera as métricas acumuladas (OCR, FPS, latência, qualidade) das câmeras"
+          >
+            <Trash2 className="h-4 w-4" />
+            {resetting ? "Resetando..." : "Resetar métricas"}
+          </button>
+        </div>
+      )}
+
       {metrics && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <MetricCard
@@ -165,20 +179,6 @@ export function OperationalDashboard() {
           <Badge variant={metrics.streaming_cameras > 0 ? "success" : "secondary"}>
             {metrics.streaming_cameras} com stream fluido
           </Badge>
-        </div>
-      )}
-
-      {canReset && (
-        <div className="mb-4">
-          <button
-            onClick={() => void resetMetrics()}
-            className="px-3 py-2 rounded border border-red-300 text-red-700 text-sm inline-flex items-center gap-2 disabled:opacity-60"
-            disabled={resetting}
-            title="Zera as métricas acumuladas (OCR, FPS, latência, qualidade) das câmeras"
-          >
-            <Trash2 className="h-4 w-4" />
-            {resetting ? "Resetando..." : "Resetar métricas"}
-          </button>
         </div>
       )}
 

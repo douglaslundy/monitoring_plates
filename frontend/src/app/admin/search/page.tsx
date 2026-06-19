@@ -120,7 +120,7 @@ export default function AdminSearchPage() {
         setLoading(false);
       }
     },
-    [plate, cameraId, dateFrom, dateTo]
+    [plate, cameraId, dateFrom, dateTo, pageSize]
   );
 
   useEffect(() => {

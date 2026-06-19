@@ -123,7 +123,7 @@ export default function ClientSearchPage() {
         setLoading(false);
       }
     },
-    [plate, cameraId, dateFrom, dateTo]
+    [plate, cameraId, dateFrom, dateTo, pageSize]
   );
 
   function exportCsv() {

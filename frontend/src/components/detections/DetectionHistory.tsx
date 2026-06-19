@@ -191,7 +191,7 @@ export default function DetectionHistory({ title, description }: { title: string
         setLoadingPage(false);
       }
     },
-    [category, cameraId, dateFrom, dateTo, vehicleType]
+    [category, cameraId, dateFrom, dateTo, vehicleType, pageSize]
   );
 
   useEffect(() => {

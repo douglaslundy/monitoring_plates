@@ -234,7 +234,12 @@ export default function OcrConfigPage() {
               onChange={(e) => changeDetectorModel(e.target.value)}
               className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             >
-              {detModel.available.map((m) => (
+              {[...detModel.available]
+                .sort((a, b) => {
+                  const ORDER = ["yolov8n", "yolov8s", "yolov8m", "yolov8l", "yolov8x"];
+                  return ORDER.indexOf(a) - ORDER.indexOf(b);
+                })
+                .map((m) => (
                 <option key={m} value={m}>
                   {m}
                   {m === detModel.default ? " (padrão)" : ""}
