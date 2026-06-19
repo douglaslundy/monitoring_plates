@@ -19,6 +19,7 @@ import {
   Shield,
   ScanLine,
   ScanSearch,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/lib/auth";
@@ -39,6 +40,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/users", label: "Usuarios", icon: Users },
   { href: "/admin/cameras", label: "Cameras", icon: Camera },
   { href: "/admin/live", label: "Live", icon: Radio },
+  { href: "/admin/metricas", label: "Metricas", icon: Activity },
   { href: "/admin/search", label: "Placas", icon: Search },
   { href: "/admin/detections", label: "Deteccoes", icon: ScanSearch },
   { href: "/admin/ocr-config", label: "Motores OCR", icon: ScanLine },
