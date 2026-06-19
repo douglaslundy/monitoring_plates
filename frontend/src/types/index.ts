@@ -192,6 +192,10 @@ export interface SystemMetrics {
   disk_used_gb: number;
   disk_free_gb: number;
   disk_percent: number;
+  root_disk_total_gb: number;
+  root_disk_used_gb: number;
+  root_disk_free_gb: number;
+  root_disk_percent: number;
 }
 
 export interface VehicleCameraMin {

@@ -50,3 +50,7 @@ class SystemMetricsRead(BaseModel):
     disk_used_gb: float
     disk_free_gb: float
     disk_percent: float
+    root_disk_total_gb: float
+    root_disk_used_gb: float
+    root_disk_free_gb: float
+    root_disk_percent: float

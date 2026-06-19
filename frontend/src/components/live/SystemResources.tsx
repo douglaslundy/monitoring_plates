@@ -88,7 +88,7 @@ export function SystemResources() {
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Recursos do servidor
       </h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <ResourceCard
           icon={Cpu}
           title="CPU"
@@ -105,7 +105,14 @@ export function SystemResources() {
         />
         <ResourceCard
           icon={HardDrive}
-          title="Disco"
+          title="Disco (sistema)"
+          percent={data.root_disk_percent}
+          primary={`${data.root_disk_used_gb.toFixed(1)} / ${data.root_disk_total_gb.toFixed(1)} GB`}
+          secondary={`${data.root_disk_free_gb.toFixed(1)} GB livre`}
+        />
+        <ResourceCard
+          icon={HardDrive}
+          title="Armazenamento"
           percent={data.disk_percent}
           primary={`${data.disk_used_gb.toFixed(1)} / ${data.disk_total_gb.toFixed(1)} GB`}
           secondary={`${data.disk_free_gb.toFixed(1)} GB livre`}

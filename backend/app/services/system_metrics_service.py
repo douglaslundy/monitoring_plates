@@ -4,6 +4,10 @@ Leitura barata (microssegundos) para o painel "Recursos do servidor". CPU/RAM
 refletem o HOST (o container compartilha /proc do host para esses valores);
 disco usa o filesystem do volume de storage (= disco do host). Degrada
 graciosamente (available=False) se o psutil não estiver instalado.
+
+root_disk_* mede o filesystem raiz "/" — dentro do container isso reflete o
+dispositivo de bloco do host (/dev/sda ou similar), então inclui imagens
+Docker, build cache e o SO inteiro. disk_* mede o volume de storage.
 """
 from __future__ import annotations
 
@@ -21,16 +25,22 @@ class SystemMetrics:
     mem_used_mb: int
     mem_available_mb: int
     mem_percent: float
+    # volume de armazenamento da aplicação (/app/storage)
     disk_total_gb: float
     disk_used_gb: float
     disk_free_gb: float
     disk_percent: float
+    # disco raiz do sistema ("/") — inclui Docker images, build cache e SO
+    root_disk_total_gb: float
+    root_disk_used_gb: float
+    root_disk_free_gb: float
+    root_disk_percent: float
 
     def as_dict(self) -> dict:
         return asdict(self)
 
 
-_EMPTY = SystemMetrics(False, 0.0, 0, 0.0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0)
+_EMPTY = SystemMetrics(False, 0.0, 0, 0.0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 _MB = 1024 * 1024
 _GB = 1024 * 1024 * 1024
@@ -53,6 +63,10 @@ def get_system_metrics() -> SystemMetrics:
         vm = psutil.virtual_memory()
         du = psutil.disk_usage(_disk_path())
         try:
+            du_root = psutil.disk_usage("/")
+        except Exception:
+            du_root = du
+        try:
             load1 = os.getloadavg()[0]
         except (OSError, AttributeError):
             load1 = 0.0
@@ -70,6 +84,10 @@ def get_system_metrics() -> SystemMetrics:
             disk_used_gb=round(du.used / _GB, 1),
             disk_free_gb=round(du.free / _GB, 1),
             disk_percent=round(du.percent, 1),
+            root_disk_total_gb=round(du_root.total / _GB, 1),
+            root_disk_used_gb=round(du_root.used / _GB, 1),
+            root_disk_free_gb=round(du_root.free / _GB, 1),
+            root_disk_percent=round(du_root.percent, 1),
         )
     except Exception:
         return _EMPTY
