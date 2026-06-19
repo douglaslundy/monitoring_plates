@@ -9,6 +9,7 @@ class MonitoredPlateBase(BaseModel):
     plate: str
     description: Optional[str] = None
     alert_email: Optional[str] = None
+    alert_whatsapp: Optional[str] = None
     is_active: bool = True
 
 
@@ -16,6 +17,7 @@ class MonitoredPlateCreate(BaseModel):
     plate: str
     description: Optional[str] = None
     alert_email: Optional[str] = None
+    alert_whatsapp: Optional[str] = None
     is_active: bool = True
     # client_id NÃO é exigido do corpo: para usuários de cliente vem do próprio
     # usuário logado; só super_admin pode informá-lo explicitamente.
@@ -26,6 +28,7 @@ class MonitoredPlateUpdate(BaseModel):
     plate: Optional[str] = None
     description: Optional[str] = None
     alert_email: Optional[str] = None
+    alert_whatsapp: Optional[str] = None
     is_active: Optional[bool] = None
 
 

@@ -44,6 +44,7 @@ def create_plate(
         plate=payload.plate.upper().strip(),
         description=payload.description,
         alert_email=payload.alert_email,
+        alert_whatsapp=payload.alert_whatsapp,
         is_active=payload.is_active,
     )
     db.add(plate)

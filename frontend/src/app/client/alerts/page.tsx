@@ -6,15 +6,16 @@ import { extractErrorMessage } from "@/lib/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import type { MonitoredPlate } from "@/types";
-import { Bell, Plus, Trash2, Shield, Mail, ToggleLeft, ToggleRight } from "lucide-react";
+import { Bell, Plus, Trash2, Shield, Mail, ToggleLeft, ToggleRight, MessageCircle } from "lucide-react";
 
 interface PlateForm {
   plate: string;
   description: string;
   alert_email: string;
+  alert_whatsapp: string;
 }
 
-const EMPTY_FORM: PlateForm = { plate: "", description: "", alert_email: "" };
+const EMPTY_FORM: PlateForm = { plate: "", description: "", alert_email: "", alert_whatsapp: "" };
 const PLATE_RE = /^[A-Z]{3}\d{4}$|^[A-Z]{3}\d[A-Z]\d{2}$/;
 
 function validate(form: PlateForm): string {
@@ -23,6 +24,12 @@ function validate(form: PlateForm): string {
   }
   if (form.alert_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.alert_email)) {
     return "E-mail para alertas inválido.";
+  }
+  if (form.alert_whatsapp) {
+    const digits = form.alert_whatsapp.replace(/[\s\-()]/g, "");
+    if (!/^\+?\d{10,15}$/.test(digits)) {
+      return "Número WhatsApp inválido. Use o formato +5511999998888.";
+    }
   }
   return "";
 }
@@ -70,6 +77,7 @@ export default function ClientAlertsPage() {
         plate: form.plate.trim(),
         description: form.description.trim() || null,
         alert_email: form.alert_email.trim() || null,
+        alert_whatsapp: form.alert_whatsapp.trim() || null,
       });
       setModalOpen(false);
       setForm(EMPTY_FORM);
@@ -181,6 +189,12 @@ export default function ClientAlertsPage() {
                     <span className="truncate">{p.alert_email}</span>
                   </p>
                 )}
+                {p.alert_whatsapp && (
+                  <p className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                    <MessageCircle className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{p.alert_whatsapp}</span>
+                  </p>
+                )}
               </div>
 
               {/* Actions */}
@@ -258,6 +272,20 @@ export default function ClientAlertsPage() {
             />
             <p className="text-xs text-muted-foreground mt-1">
               Deixe em branco para usar apenas alertas na tela
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">WhatsApp para alertas</label>
+            <input
+              type="tel"
+              value={form.alert_whatsapp}
+              onChange={(e) => handleChange("alert_whatsapp", e.target.value)}
+              placeholder="+5511999998888 (opcional)"
+              className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Requer WhatsApp Business API configurada pelo administrador
             </p>
           </div>
 

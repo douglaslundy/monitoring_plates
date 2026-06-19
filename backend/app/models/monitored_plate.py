@@ -15,6 +15,7 @@ class MonitoredPlate(Base):
     plate = Column(String(20), nullable=False)
     description = Column(String(500), nullable=True)
     alert_email = Column(String(255), nullable=True)
+    alert_whatsapp = Column(String(30), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

@@ -11,6 +11,7 @@ from app.core.database import Base
 class AlertChannel(str, enum.Enum):
     email = "email"
     websocket = "websocket"
+    whatsapp = "whatsapp"
 
 
 class AlertSent(Base):

@@ -45,6 +45,9 @@ def process_alerts(occurrence_id: str, db: Session) -> None:
         if plan.realtime_alerts:
             _publish_ws_alert(occ, camera, image_url)
 
+        if mp.alert_whatsapp:
+            _send_whatsapp_alert(occ, camera, mp, image_url, db)
+
     db.commit()
 
 
@@ -75,6 +78,41 @@ def _send_email_alert(occ, camera, mp, image_url: str, db: Session) -> None:
             occurrence_id=occ.id,
             monitored_plate_id=mp.id,
             channel=AlertChannel.email,
+            status="sent" if success else "failed",
+        )
+    )
+
+
+def _send_whatsapp_alert(occ, camera, mp, image_url: str, db: Session) -> None:
+    from app.services.whatsapp_service import send_whatsapp_alert
+
+    already = (
+        db.query(AlertSent)
+        .filter(
+            AlertSent.occurrence_id == occ.id,
+            AlertSent.monitored_plate_id == mp.id,
+            AlertSent.channel == AlertChannel.whatsapp,
+        )
+        .first()
+    )
+    if already:
+        return
+
+    detected_at_str = occ.detected_at.strftime("%d/%m/%Y %H:%M") if occ.detected_at else ""
+    success = send_whatsapp_alert(
+        to=mp.alert_whatsapp,
+        plate=occ.plate,
+        camera_name=camera.name,
+        location=camera.location or "",
+        detected_at=detected_at_str,
+        image_url=image_url,
+    )
+
+    db.add(
+        AlertSent(
+            occurrence_id=occ.id,
+            monitored_plate_id=mp.id,
+            channel=AlertChannel.whatsapp,
             status="sent" if success else "failed",
         )
     )

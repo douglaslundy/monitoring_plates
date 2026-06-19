@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "alertas@seudominio.com"
 
+    WHATSAPP_TOKEN: str = ""
+    WHATSAPP_PHONE_NUMBER_ID: str = ""
+
     CORS_ORIGINS: str = "http://localhost:3000"
 
     AGENT_FRAME_INTERVAL: int = 1

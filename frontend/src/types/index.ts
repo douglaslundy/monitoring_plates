@@ -238,6 +238,7 @@ export interface MonitoredPlate {
   plate: string;
   description: string | null;
   alert_email: string | null;
+  alert_whatsapp: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -246,7 +247,7 @@ export interface AlertSent {
   id: string;
   occurrence_id: string;
   monitored_plate_id: string;
-  channel: "email" | "websocket";
+  channel: "email" | "websocket" | "whatsapp";
   sent_at: string;
   status: string;
 }
