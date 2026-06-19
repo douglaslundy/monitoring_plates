@@ -10,6 +10,8 @@ import {
   Calendar,
   Camera as CameraIcon,
   Car,
+  ChevronFirst,
+  ChevronLast,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -137,6 +139,8 @@ export default function DetectionHistory({ title, description }: { title: string
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [goTo, setGoTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingPage, setLoadingPage] = useState(false);
   const [error, setError] = useState("");
@@ -175,7 +179,7 @@ export default function DetectionHistory({ title, description }: { title: string
             date_from: localToIso(dateFrom),
             date_to: localToIso(dateTo),
             page: targetPage,
-            limit: 24,
+            limit: pageSize,
           },
         });
         setResult(response.data);
@@ -193,7 +197,7 @@ export default function DetectionHistory({ title, description }: { title: string
   useEffect(() => {
     void loadStats(category);
     void loadEvents(1);
-  }, [category, loadEvents, loadStats]);
+  }, [category, loadEvents, loadStats, pageSize]);
 
   const handleSearch = useCallback(() => {
     void loadEvents(1);
@@ -525,24 +529,76 @@ export default function DetectionHistory({ title, description }: { title: string
           {result.pages > 1 && (
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
               <button
+                onClick={() => void loadEvents(1)}
+                disabled={page <= 1 || loadingPage}
+                className="inline-flex items-center rounded-lg border px-2 py-2 text-sm disabled:opacity-40"
+                title="Primeira página"
+              >
+                <ChevronFirst className="h-4 w-4" />
+              </button>
+              <button
                 onClick={() => void loadEvents(page - 1)}
                 disabled={page <= 1 || loadingPage}
-                className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" />
                 Anterior
               </button>
               <span className="rounded-lg border bg-white px-3 py-2 text-sm text-muted-foreground">
-                Página {page} de {result.pages}
+                {page} / {result.pages}
               </span>
               <button
                 onClick={() => void loadEvents(page + 1)}
                 disabled={page >= result.pages || loadingPage}
-                className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-40"
               >
                 Próxima
                 <ChevronRight className="h-4 w-4" />
               </button>
+              <button
+                onClick={() => void loadEvents(result.pages)}
+                disabled={page >= result.pages || loadingPage}
+                className="inline-flex items-center rounded-lg border px-2 py-2 text-sm disabled:opacity-40"
+                title="Última página"
+              >
+                <ChevronLast className="h-4 w-4" />
+              </button>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={1}
+                  max={result.pages}
+                  value={goTo}
+                  onChange={(e) => setGoTo(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const p = Math.min(result.pages, Math.max(1, Number(goTo)));
+                      if (p) void loadEvents(p);
+                    }
+                  }}
+                  placeholder="Ir…"
+                  className="w-16 rounded-lg border px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <button
+                  onClick={() => {
+                    const p = Math.min(result.pages, Math.max(1, Number(goTo)));
+                    if (p) void loadEvents(p);
+                  }}
+                  disabled={!goTo || loadingPage}
+                  className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
+                >
+                  Ir
+                </button>
+              </div>
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setGoTo(""); }}
+                className="rounded-lg border px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                {[25, 50, 100].map((s) => (
+                  <option key={s} value={s}>{s} / página</option>
+                ))}
+              </select>
             </div>
           )}
         </>

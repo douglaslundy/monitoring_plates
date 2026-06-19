@@ -14,6 +14,8 @@ import {
   Calendar,
   X,
   ZoomIn,
+  ChevronFirst,
+  ChevronLast,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -86,6 +88,8 @@ export default function ClientSearchPage() {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [goTo, setGoTo] = useState("");
   const [selected, setSelected] = useState<OccurrenceWithCamera | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useViewMode("placas-view");
@@ -109,7 +113,7 @@ export default function ClientSearchPage() {
           date_from: localToIso(dateFrom),
           date_to: localToIso(dateTo),
           page: p,
-          limit: 20,
+          limit: pageSize,
         });
         setResult(res.data);
         setPage(p);
@@ -368,10 +372,18 @@ export default function ClientSearchPage() {
               )}
 
               {result.pages > 1 && (
-                <div className="flex justify-center gap-2 mt-6 flex-wrap">
+                <div className="flex flex-wrap justify-center gap-2 mt-6">
+                  <button
+                    onClick={() => search(1)}
+                    disabled={page <= 1 || loading}
+                    className="inline-flex items-center border rounded px-2 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50"
+                    title="Primeira página"
+                  >
+                    <ChevronFirst className="h-4 w-4" />
+                  </button>
                   <button
                     onClick={() => search(page - 1)}
-                    disabled={page <= 1}
+                    disabled={page <= 1 || loading}
                     className="px-3 py-1.5 border rounded text-sm disabled:opacity-40 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                   >
                     Anterior
@@ -394,11 +406,55 @@ export default function ClientSearchPage() {
                     ))}
                   <button
                     onClick={() => search(page + 1)}
-                    disabled={page >= result.pages}
+                    disabled={page >= result.pages || loading}
                     className="px-3 py-1.5 border rounded text-sm disabled:opacity-40 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                   >
                     Próxima
                   </button>
+                  <button
+                    onClick={() => search(result.pages)}
+                    disabled={page >= result.pages || loading}
+                    className="inline-flex items-center border rounded px-2 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50"
+                    title="Última página"
+                  >
+                    <ChevronLast className="h-4 w-4" />
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={1}
+                      max={result.pages}
+                      value={goTo}
+                      onChange={(e) => setGoTo(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          const p = Math.min(result.pages, Math.max(1, Number(goTo)));
+                          if (p) search(p);
+                        }
+                      }}
+                      placeholder="Ir…"
+                      className="w-16 border rounded px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    />
+                    <button
+                      onClick={() => {
+                        const p = Math.min(result.pages, Math.max(1, Number(goTo)));
+                        if (p) search(p);
+                      }}
+                      disabled={!goTo || loading}
+                      className="border rounded px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40"
+                    >
+                      Ir
+                    </button>
+                  </div>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setGoTo(""); search(1); }}
+                    className="border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    {[25, 50, 100].map((s) => (
+                      <option key={s} value={s}>{s} / página</option>
+                    ))}
+                  </select>
                 </div>
               )}
             </>
