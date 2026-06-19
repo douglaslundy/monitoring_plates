@@ -232,45 +232,8 @@ try:
                 track_state, tracker_dets, now_ts, frame_w, frame_h
             )
 
-            # Melhor detecção de VEÍCULO → OCR de placa (roda a cada frame para dar
-            # múltiplas chances de leitura; a placa é amarrada ao TRACK do veículo
-            # — uma única ocorrência por rastreamento).
-            vehicle = None
-            vehicle_index = None
-            for idx, d in enumerate(detections):
-                if d.category == "vehicle":
-                    vehicle = d
-                    vehicle_index = idx
-                    break
-            vehicle_track = (
-                det_to_track.get(vehicle_index) if vehicle_index is not None else None
-            )
-
-            result = None
-            plate = None
-            confidence = 0.0
-            vehicle_type = None
-            if vehicle is not None:
-                ocr_started_at = perf_counter()
-                result = recognizer.recognize(vehicle.crop_bytes, camera_id=camera_id)
-                ocr_seconds = perf_counter() - ocr_started_at
-                record_ocr_pipeline_metrics(
-                    str(camera.id),
-                    ocr_seconds=ocr_seconds,
-                    ocr_success=result is not None,
-                    false_positive=False,
-                )
-                plate = result["plate"] if result is not None else None
-                confidence = result["confidence"] if result is not None else 0.0
-                vehicle_type = result.get("vehicle_type") if result is not None else None
-                if vehicle_type is None:
-                    vehicle_type = vehicle.vehicle_type
-            maybe_publish_ocr_pipeline_alert(camera)
-
-            # Imagem de exibição: salva o FRAME CHEIO (resolução nativa). Salva no
-            # MÁXIMO uma vez por frame e só quando algo é realmente persistido
-            # (registro de track novo/mudança de classe, ou occurrence de placa) —
-            # evita gravar imagens órfãs a cada frame de um objeto que permanece.
+            # Imagem de exibição: salva o FRAME CHEIO (resolução nativa) no máximo
+            # uma vez por frame — compartilhada entre todos os veículos.
             _display_cache: dict[str, str | None] = {}
 
             def _display_image() -> str | None:
@@ -281,22 +244,66 @@ try:
                     _display_cache["path"] = save_bytes(drawn, camera_id)
                 return _display_cache["path"]
 
-            # Occurrence (placa) AMARRADA AO TRACK do veículo: uma única ocorrência
-            # por rastreamento. Enquanto o veículo permanece rastreado a placa não
-            # é recriada; só é ATUALIZADA se vier uma leitura de placa DIFERENTE com
-            # confiança MAIOR (corrige uma leitura inicial ruim).
+            # OCR em TODOS os veículos do frame.
+            # Regras de persistência:
+            #   - Cria ocorrência na 1ª leitura válida do track.
+            #   - Atualiza se placa DIFERENTE + confiança MAIOR que a gravada.
+            #   - Pula OCR se track ≥98% conf + parado há ≥15 min (track maduro).
+            _STATIONARY_SKIP_SECS = 15 * 60   # 15 minutos
+            _STATIONARY_SKIP_CONF = 0.98
+
             occ = None
             persistence_seconds: float | None = None
-            if (
-                result is not None
-                and plate is not None
-                and vehicle_track is not None
-                and vehicle_track.get("counted")
-            ):
-                existing_occ_id = vehicle_track.get("occurrence_id")
+
+            for v_idx, d in enumerate(detections):
+                if d.category != "vehicle":
+                    continue
+
+                v_track = det_to_track.get(v_idx)
+
+                # Mantém stationary_since: quando o track ficou parado pela 1ª vez.
+                if v_track is not None:
+                    if v_track.get("stationary", False):
+                        if v_track.get("stationary_since") is None:
+                            v_track["stationary_since"] = now
+                    else:
+                        v_track["stationary_since"] = None
+
+                # Pula OCR: track de alta confiança parado há muito tempo.
+                if (
+                    v_track is not None
+                    and float(v_track.get("plate_confidence") or 0.0) >= _STATIONARY_SKIP_CONF
+                    and v_track.get("stationary", False)
+                    and v_track.get("stationary_since") is not None
+                    and (now - float(v_track["stationary_since"])) > _STATIONARY_SKIP_SECS
+                ):
+                    continue
+
+                ocr_started_at = perf_counter()
+                result = recognizer.recognize(d.crop_bytes, camera_id=camera_id)
+                ocr_seconds = perf_counter() - ocr_started_at
+                record_ocr_pipeline_metrics(
+                    str(camera.id),
+                    ocr_seconds=ocr_seconds,
+                    ocr_success=result is not None,
+                    false_positive=False,
+                )
+
+                if result is None:
+                    continue
+
+                plate = result["plate"]
+                confidence = result["confidence"]
+                vehicle_type = result.get("vehicle_type") or d.vehicle_type
+
+                # Só persiste se o track estiver confirmado (hits suficientes).
+                if v_track is None or not v_track.get("counted"):
+                    continue
+
+                existing_occ_id = v_track.get("occurrence_id")
+
                 if existing_occ_id is None:
-                    # Primeira placa deste track. Mantém o dedup por placa na janela
-                    # AGENT_DEDUP_SECONDS p/ não duplicar entre tracks sobrepostos.
+                    # Primeira placa deste track — dedup por janela temporal.
                     cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.AGENT_DEDUP_SECONDS)
                     dup = (
                         db.query(Occurrence)
@@ -309,9 +316,9 @@ try:
                     )
                     if dup is not None:
                         logger.debug("Dedup: plate=%s camera=%s ignored", plate, camera_id)
-                        vehicle_track["occurrence_id"] = str(dup.id)
-                        vehicle_track["plate"] = plate
-                        vehicle_track["plate_confidence"] = float(confidence)
+                        v_track["occurrence_id"] = str(dup.id)
+                        v_track["plate"] = plate
+                        v_track["plate_confidence"] = float(confidence)
                     else:
                         client = camera.client
                         plan = client.plan
@@ -320,7 +327,6 @@ try:
                             expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
 
                         persist_started_at = perf_counter()
-
                         occ = Occurrence(
                             camera_id=camera.id,
                             plate=plate,
@@ -335,33 +341,36 @@ try:
                         )
                         db.add(occ)
                         db.flush()
-
                         process_alerts(str(occ.id), db)
                         persistence_seconds = perf_counter() - persist_started_at
-
-                        vehicle_track["occurrence_id"] = str(occ.id)
-                        vehicle_track["plate"] = plate
-                        vehicle_track["plate_confidence"] = float(confidence)
+                        v_track["occurrence_id"] = str(occ.id)
+                        v_track["plate"] = plate
+                        v_track["plate_confidence"] = float(confidence)
                 else:
-                    prev_conf = float(vehicle_track.get("plate_confidence") or 0.0)
-                    if plate != vehicle_track.get("plate") and confidence > prev_conf:
-                        occ = (
+                    # Track já tem placa — atualiza só se placa diferente + conf maior.
+                    prev_conf = float(v_track.get("plate_confidence") or 0.0)
+                    if plate != v_track.get("plate") and confidence > prev_conf:
+                        existing_occ = (
                             db.query(Occurrence)
                             .filter(Occurrence.id == uuid.UUID(existing_occ_id))
                             .first()
                         )
-                        if occ is not None:
-                            occ.plate = plate
-                            occ.confidence = confidence
-                            occ.vehicle_type = vehicle_type
-                            occ.vehicle_color = result.get("vehicle_color")
-                            occ.vehicle_make_model = result.get("vehicle_make_model")
-                            occ.region_code = result.get("region_code")
-                            occ.ocr_engine_used = result.get("engine")
-                            # Placa mudou (leitura melhor) → re-salva o frame.
-                            occ.image_path = _display_image()
-                            vehicle_track["plate"] = plate
-                            vehicle_track["plate_confidence"] = float(confidence)
+                        if existing_occ is not None:
+                            persist_started_at = perf_counter()
+                            existing_occ.plate = plate
+                            existing_occ.confidence = confidence
+                            existing_occ.vehicle_type = vehicle_type
+                            existing_occ.vehicle_color = result.get("vehicle_color")
+                            existing_occ.vehicle_make_model = result.get("vehicle_make_model")
+                            existing_occ.region_code = result.get("region_code")
+                            existing_occ.ocr_engine_used = result.get("engine")
+                            existing_occ.image_path = _display_image()
+                            persistence_seconds = perf_counter() - persist_started_at
+                            v_track["plate"] = plate
+                            v_track["plate_confidence"] = float(confidence)
+                            occ = existing_occ
+
+            maybe_publish_ocr_pipeline_alert(camera)
 
             # Agrupamento piloto+moto (T5): pessoa "em cima" da moto vira UMA
             # detecção (moto principal + pessoa como companion). person_det -> moto_det.
@@ -388,14 +397,16 @@ try:
                     companion_type = rider.vehicle_type
 
                 link_occ = None
-                if (
-                    tr["category"] == "vehicle"
-                    and vehicle_track is not None
-                    and tr["track_id"] == vehicle_track.get("track_id")
-                ):
-                    occ_id_str = vehicle_track.get("occurrence_id")
+                if tr["category"] == "vehicle":
+                    # Busca o track vivo desta detecção para pegar o occurrence_id
+                    # gravado pelo loop OCR multi-veículo.
+                    tr_live = det_to_track.get(di)
+                    occ_id_str = (tr_live or tr).get("occurrence_id")
                     if occ_id_str:
-                        link_occ = uuid.UUID(occ_id_str)
+                        try:
+                            link_occ = uuid.UUID(occ_id_str)
+                        except Exception:
+                            pass
 
                 if tr.get("reason") == "class_change":
                     existing = (
