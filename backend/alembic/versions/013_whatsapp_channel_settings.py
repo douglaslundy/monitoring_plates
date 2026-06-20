@@ -19,7 +19,7 @@ def upgrade() -> None:
     op.create_table(
         "whatsapp_channel_settings",
         sa.Column("id", sa.Uuid(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("evolution_base_url", sa.String(length=255), nullable=False),
         sa.Column("evolution_instance_name", sa.String(length=100), nullable=False),
         sa.Column("evolution_api_key", sa.String(length=255), nullable=True),
