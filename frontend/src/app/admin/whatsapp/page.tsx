@@ -117,6 +117,10 @@ export default function AdminWhatsAppPage() {
         evolution_api_key: "",
         request_timeout_seconds: String(data.request_timeout_seconds),
       });
+      setTestForm((prev) => ({
+        ...prev,
+        recipient: data.test_recipient?.trim() || DEFAULT_TEST_FORM.recipient,
+      }));
     } catch (e: unknown) {
       setError(extractErrorMessage(e, "Erro ao carregar as configurações de WhatsApp."));
     } finally {
@@ -139,6 +143,29 @@ export default function AdminWhatsAppPage() {
   function updateTestForm<K extends keyof WhatsAppTestForm>(field: K, value: WhatsAppTestForm[K]) {
     setTestForm((prev) => ({ ...prev, [field]: value }));
     if (testError) setTestError("");
+  }
+
+  async function persistTestRecipient(recipient: string) {
+    const normalized = recipient.trim();
+    if (!normalized) {
+      return;
+    }
+
+    const validation = validateRecipient(normalized);
+    if (validation) {
+      return;
+    }
+
+    try {
+      const { data } = await api.put<WhatsAppSettings>("/api/whatsapp-settings", {
+        test_recipient: normalized,
+      });
+      setSettings(data);
+    } catch (e: unknown) {
+      const message = extractErrorMessage(e, "Não foi possível salvar o número de teste.");
+      setTestError(message);
+      toast(message, "error");
+    }
   }
 
   async function handleSave() {
@@ -349,6 +376,9 @@ export default function AdminWhatsAppPage() {
               <input
                 value={testForm.recipient}
                 onChange={(e) => updateTestForm("recipient", e.target.value)}
+                onBlur={(e) => {
+                  void persistTestRecipient(e.target.value);
+                }}
                 placeholder="+5511999998888"
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
               />

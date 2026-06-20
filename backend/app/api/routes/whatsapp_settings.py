@@ -24,6 +24,7 @@ def _read_model_view(db: Session) -> WhatsAppChannelSettingsRead:
             evolution_base_url=config.evolution_base_url,
             evolution_instance_name=config.evolution_instance_name,
             request_timeout_seconds=config.request_timeout_seconds,
+            test_recipient=config.test_recipient,
             api_key_configured=bool(config.evolution_api_key.strip()),
         )
     return WhatsAppChannelSettingsRead.model_validate(
@@ -33,6 +34,7 @@ def _read_model_view(db: Session) -> WhatsAppChannelSettingsRead:
             "evolution_base_url": model.evolution_base_url,
             "evolution_instance_name": model.evolution_instance_name,
             "request_timeout_seconds": model.request_timeout_seconds,
+            "test_recipient": model.test_recipient,
             "api_key_configured": bool(model.evolution_api_key and model.evolution_api_key.strip()),
             "created_at": model.created_at,
             "updated_at": model.updated_at,
@@ -65,6 +67,10 @@ def test_send(
     _=Depends(require_super_admin),
 ):
     _model, config = get_effective_whatsapp_delivery_config(db)
+    if payload.recipient.strip():
+        from app.schemas.whatsapp_channel_settings import WhatsAppChannelSettingsUpdate
+
+        upsert_whatsapp_settings(db, WhatsAppChannelSettingsUpdate(test_recipient=payload.recipient.strip()))
     message = payload.message.strip() if payload.message else None
     if not message:
         message = build_whatsapp_message(

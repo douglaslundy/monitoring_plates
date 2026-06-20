@@ -134,8 +134,18 @@ def _send_to_evolution(
             response = client.post(endpoint, json=body, headers=headers)
             response.raise_for_status()
         return True
-    except Exception:
-        logger.warning("Falha ao enviar mensagem via Evolution API", exc_info=True)
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        response_text = getattr(getattr(exc, "response", None), "text", None)
+        if status_code is not None:
+            logger.warning(
+                "Falha ao enviar mensagem via Evolution API (status=%s, response=%s)",
+                status_code,
+                response_text,
+                exc_info=True,
+            )
+        else:
+            logger.warning("Falha ao enviar mensagem via Evolution API", exc_info=True)
         return False
 
 

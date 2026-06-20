@@ -16,6 +16,7 @@ class WhatsAppDeliveryConfig:
     evolution_instance_name: str
     evolution_api_key: str
     request_timeout_seconds: int
+    test_recipient: str | None = None
 
 
 def _to_delivery_config(model: WhatsAppChannelSettings | None) -> WhatsAppDeliveryConfig:
@@ -26,6 +27,7 @@ def _to_delivery_config(model: WhatsAppChannelSettings | None) -> WhatsAppDelive
             evolution_instance_name=settings.WHATSAPP_EVOLUTION_INSTANCE_NAME,
             evolution_api_key=settings.WHATSAPP_EVOLUTION_API_KEY,
             request_timeout_seconds=settings.WHATSAPP_WEBHOOK_TIMEOUT_SECONDS,
+            test_recipient=None,
         )
     return WhatsAppDeliveryConfig(
         is_active=bool(model.is_active),
@@ -33,6 +35,7 @@ def _to_delivery_config(model: WhatsAppChannelSettings | None) -> WhatsAppDelive
         evolution_instance_name=model.evolution_instance_name,
         evolution_api_key=model.evolution_api_key or "",
         request_timeout_seconds=int(model.request_timeout_seconds),
+        test_recipient=model.test_recipient,
     )
 
 
@@ -60,6 +63,7 @@ def upsert_whatsapp_settings(
                 "evolution_instance_name": data.get("evolution_instance_name", settings.WHATSAPP_EVOLUTION_INSTANCE_NAME),
                 "evolution_api_key": data.get("evolution_api_key", settings.WHATSAPP_EVOLUTION_API_KEY or None),
                 "request_timeout_seconds": data.get("request_timeout_seconds", settings.WHATSAPP_WEBHOOK_TIMEOUT_SECONDS),
+                "test_recipient": data.get("test_recipient"),
             }
         )
         model = WhatsAppChannelSettings(
@@ -68,6 +72,7 @@ def upsert_whatsapp_settings(
             evolution_instance_name=create_payload.evolution_instance_name,
             evolution_api_key=create_payload.evolution_api_key,
             request_timeout_seconds=create_payload.request_timeout_seconds,
+            test_recipient=create_payload.test_recipient,
         )
         db.add(model)
     else:
@@ -79,6 +84,9 @@ def upsert_whatsapp_settings(
             model.evolution_instance_name = str(data["evolution_instance_name"]).strip()
         if "request_timeout_seconds" in data and data["request_timeout_seconds"] is not None:
             model.request_timeout_seconds = int(data["request_timeout_seconds"])
+        if "test_recipient" in data:
+            recipient = data["test_recipient"]
+            model.test_recipient = str(recipient).strip() if recipient else None
         if "evolution_api_key" in data and data["evolution_api_key"] is not None:
             api_key = str(data["evolution_api_key"]).strip()
             if api_key:

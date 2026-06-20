@@ -4,6 +4,7 @@ from io import BytesIO
 
 from PIL import Image
 
+from app.core.config import settings
 from app.core.security import create_access_token
 from app.models.user import User
 from app.services.whatsapp_service import send_whatsapp_alert
@@ -28,6 +29,7 @@ def test_whatsapp_settings_get_and_update(client, db, super_admin_user):
         "evolution_instance_name": "whatsapp",
         "evolution_api_key": "secret-key",
         "request_timeout_seconds": 25,
+        "test_recipient": "+5511999998888",
     }
     res = client.put("/api/whatsapp-settings", json=payload, headers=_auth(super_admin_user))
     assert res.status_code == 200
@@ -35,11 +37,48 @@ def test_whatsapp_settings_get_and_update(client, db, super_admin_user):
     assert data["evolution_base_url"] == "http://192.168.0.115:8081"
     assert data["evolution_instance_name"] == "whatsapp"
     assert data["request_timeout_seconds"] == 25
+    assert data["test_recipient"] == "+5511999998888"
     assert data["api_key_configured"] is True
 
     stored = client.get("/api/whatsapp-settings", headers=_auth(super_admin_user)).json()
     assert stored["evolution_base_url"] == "http://192.168.0.115:8081"
     assert stored["api_key_configured"] is True
+    assert stored["test_recipient"] == "+5511999998888"
+
+
+def test_whatsapp_test_send_persists_recipient(client, super_admin_user, monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, timeout: int) -> None:
+            self.timeout = timeout
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, json: dict[str, object], headers: dict[str, str]) -> FakeResponse:
+            return FakeResponse()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+    monkeypatch.setattr(settings, "WHATSAPP_EVOLUTION_API_KEY", "secret-key")
+
+    payload = {
+        "recipient": "+5511987654321",
+        "message": "Mensagem de teste",
+    }
+
+    res = client.post("/api/whatsapp-settings/test", json=payload, headers=_auth(super_admin_user))
+    assert res.status_code == 200
+
+    stored = client.get("/api/whatsapp-settings", headers=_auth(super_admin_user)).json()
+    assert stored["test_recipient"] == "+5511987654321"
 
 
 def test_whatsapp_send_uses_text_endpoint(monkeypatch):

@@ -17,5 +17,6 @@ class WhatsAppChannelSettings(Base):
     evolution_instance_name = Column(String(100), nullable=False, default=settings.WHATSAPP_EVOLUTION_INSTANCE_NAME)
     evolution_api_key = Column(String(255), nullable=True, default=settings.WHATSAPP_EVOLUTION_API_KEY)
     request_timeout_seconds = Column(Integer, nullable=False, default=settings.WHATSAPP_WEBHOOK_TIMEOUT_SECONDS)
+    test_recipient = Column(String(30), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

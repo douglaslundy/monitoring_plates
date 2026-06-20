@@ -12,6 +12,7 @@ class WhatsAppChannelSettingsBase(BaseModel):
     evolution_base_url: str = Field(default_factory=lambda: settings.WHATSAPP_EVOLUTION_BASE_URL)
     evolution_instance_name: str = Field(default_factory=lambda: settings.WHATSAPP_EVOLUTION_INSTANCE_NAME)
     request_timeout_seconds: int = Field(default_factory=lambda: settings.WHATSAPP_WEBHOOK_TIMEOUT_SECONDS)
+    test_recipient: Optional[str] = None
 
     @field_validator("evolution_base_url")
     @classmethod
@@ -34,6 +35,7 @@ class WhatsAppChannelSettingsUpdate(BaseModel):
     evolution_instance_name: Optional[str] = None
     evolution_api_key: Optional[str] = None
     request_timeout_seconds: Optional[int] = None
+    test_recipient: Optional[str] = None
 
     @field_validator("evolution_base_url")
     @classmethod

@@ -258,6 +258,7 @@ export interface WhatsAppSettings {
   evolution_base_url: string;
   evolution_instance_name: string;
   request_timeout_seconds: number;
+  test_recipient: string | null;
   api_key_configured: boolean;
   created_at: string | null;
   updated_at: string | null;
