@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from app.core.security import hash_password
+from app.core.security import create_access_token, hash_password
 from app.models.alert_sent import AlertChannel, AlertSent
 from app.models.camera import Camera, ConnectionType
 from app.models.client import Client
@@ -92,6 +92,8 @@ def test_email_enviado_quando_plano_tem_email_alerts(db):
     assert alert is not None
     assert alert.channel == AlertChannel.email
     assert alert.status == "sent"
+    assert alert.message is not None
+    assert "Placa ABC1234 detectada" in alert.message
 
 
 def test_email_nao_enviado_quando_plano_sem_email_alerts(db):
@@ -174,6 +176,8 @@ def test_whatsapp_enviado_quando_alerta_whatsapp_configurado(db):
     )
     assert alert is not None
     assert alert.status == "sent"
+    assert alert.message is not None
+    assert "Placa ABC1234 detectada" in alert.message
 
 
 def test_whatsapp_nao_enviado_sem_alert_whatsapp(db):
@@ -253,3 +257,29 @@ def test_email_nao_enviado_sem_alert_email_no_monitored_plate(db):
         process_alerts(str(occ.id), db)
 
     assert mock_send.call_count == 0
+
+
+def test_alert_logs_endpoint_filters_and_returns_message(client, db, super_admin_user):
+    _plan, tenant, camera = _make_tenant(db, email_alerts=True, realtime_alerts=False)
+    _monitored(db, tenant, "ABC1234")
+    occ = _occ(db, camera, "ABC1234")
+
+    with (
+        patch("app.services.alert_service.send_plate_alert", return_value=True),
+        patch("app.services.alert_service._publish_ws_alert"),
+        patch("app.services.whatsapp_service.send_whatsapp_alert"),
+    ):
+        from app.services.alert_service import process_alerts
+
+        process_alerts(str(occ.id), db)
+
+    token = create_access_token({"sub": str(super_admin_user.id), "role": super_admin_user.role})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res = client.get("/api/alerts/sent?channel=email&message=ABC1234", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["plate"] == "ABC1234"
+    assert data[0]["camera_name"] == "Camera"
+    assert data[0]["message"] is not None

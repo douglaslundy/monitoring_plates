@@ -1,6 +1,6 @@
-import uuid
 import enum
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum
+import uuid
+from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Text
 from sqlalchemy import Uuid
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -26,6 +26,7 @@ class AlertSent(Base):
     )
     sent_at = Column(DateTime(timezone=True), server_default=func.now())
     status = Column(String(50), nullable=False)
+    message = Column(Text, nullable=True)
 
     occurrence = relationship("Occurrence", back_populates="alerts_sent")
     monitored_plate = relationship("MonitoredPlate", back_populates="alerts_sent")

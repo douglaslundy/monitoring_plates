@@ -252,6 +252,19 @@ export interface AlertSent {
   status: string;
 }
 
+export interface AlertLog {
+  id: string;
+  occurrence_id: string;
+  monitored_plate_id: string;
+  plate: string;
+  camera_name: string;
+  location: string | null;
+  channel: "email" | "websocket" | "whatsapp";
+  sent_at: string;
+  status: string;
+  message: string | null;
+}
+
 export interface WhatsAppSettings {
   id: string | null;
   is_active: boolean;

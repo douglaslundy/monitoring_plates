@@ -10,6 +10,7 @@ from app.models.camera import Camera
 from app.services.email_service import send_plate_alert
 from app.services.storage_service import get_url, read_file_bytes
 from app.services.whatsapp_settings_service import get_effective_whatsapp_delivery_config
+from app.services.whatsapp_service import build_whatsapp_message
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,14 @@ def _send_email_alert(occ, camera, mp, image_url: str, db: Session) -> None:
     if already:
         return
 
+    message = build_whatsapp_message(
+        plate=occ.plate,
+        camera_name=camera.name,
+        location=camera.location or "",
+        detected_at=occ.detected_at,
+        confidence=occ.confidence,
+        image_url=image_url or None,
+    )
     success = send_plate_alert(
         to=mp.alert_email,
         plate=occ.plate,
@@ -81,6 +90,7 @@ def _send_email_alert(occ, camera, mp, image_url: str, db: Session) -> None:
             monitored_plate_id=mp.id,
             channel=AlertChannel.email,
             status="sent" if success else "failed",
+            message=message,
         )
     )
 
@@ -105,6 +115,14 @@ def _send_whatsapp_alert(occ, camera, mp, image_url: str, image_bytes: bytes | N
         return
 
     detected_at_str = occ.detected_at.strftime("%d/%m/%Y %H:%M") if occ.detected_at else ""
+    message = build_whatsapp_message(
+        plate=occ.plate,
+        camera_name=camera.name,
+        location=camera.location or "",
+        detected_at=occ.detected_at,
+        confidence=occ.confidence,
+        image_url=image_url or None,
+    )
     success = send_whatsapp_alert(
         to=mp.alert_whatsapp,
         plate=occ.plate,
@@ -114,6 +132,7 @@ def _send_whatsapp_alert(occ, camera, mp, image_url: str, image_bytes: bytes | N
         image_url=image_url,
         confidence=occ.confidence,
         image_bytes=image_bytes,
+        message=message,
         config=config,
     )
 
@@ -123,6 +142,7 @@ def _send_whatsapp_alert(occ, camera, mp, image_url: str, image_bytes: bytes | N
             monitored_plate_id=mp.id,
             channel=AlertChannel.whatsapp,
             status="sent" if success else "failed",
+            message=message,
         )
     )
 
