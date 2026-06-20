@@ -265,11 +265,22 @@ export default function ClientSearchPage() {
                 ? "Nenhuma ocorrência encontrada"
                 : `${result.total} ocorrência${result.total !== 1 ? "s" : ""} encontrada${result.total !== 1 ? "s" : ""}`}
             </p>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               {result.pages > 1 && (
                 <p className="text-xs text-muted-foreground">
                   Página {result.page} de {result.pages}
                 </p>
+              )}
+              {result.total > 0 && (
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setGoTo(""); }}
+                  className="border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  {[25, 50, 100].map((s) => (
+                    <option key={s} value={s}>{s} / pág.</option>
+                  ))}
+                </select>
               )}
               {result.items.length > 0 && <ViewToggle mode={viewMode} onChange={setViewMode} />}
             </div>
@@ -446,15 +457,6 @@ export default function ClientSearchPage() {
                       Ir
                     </button>
                   </div>
-                  <select
-                    value={pageSize}
-                    onChange={(e) => { setPageSize(Number(e.target.value)); setGoTo(""); search(1); }}
-                    className="border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    {[25, 50, 100].map((s) => (
-                      <option key={s} value={s}>{s} / página</option>
-                    ))}
-                  </select>
                 </div>
               )}
             </>
