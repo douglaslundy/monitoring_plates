@@ -866,6 +866,46 @@ def test_finalize_expired_sets_duration(db_session, face_camera):
 
 ---
 
+## Task 23: Bugfix — cadastro de alertas de placa (admin + mensagens de erro)
+
+> Reportado pelo usuário em 2026-06-20. Independente da feature de faces, mas vai
+> junto neste branch/deploy. Executar logo (alta prioridade do usuário).
+
+**Sintomas:** (a) logado como **super_admin**, criar alerta de placa falha com
+"client_id é obrigatório" — o admin precisa conseguir cadastrar; (b) logado como
+**cliente**, o erro é genérico ("erro ao cadastrar") sem mensagem clara.
+
+**Causa (em `backend/app/api/routes/plates.py:35-40`):** super_admin precisa de
+`payload.client_id`, mas o form do admin não envia (sem seletor de cliente).
+Cliente sem `current_user.client_id` → `MonitoredPlate.client_id = None` →
+violação NOT NULL → 500 genérico. E o front mostra mensagem genérica em vez do
+`detail` do backend.
+
+**Files:**
+- Modify: `backend/app/api/routes/plates.py`
+- Modify: form de criação de alerta de placa (admin + client) no frontend e o
+  tratamento de erro que mostra o `detail` da resposta.
+- Test: `backend/tests/test_plates.py` (criar se não existir; ver padrão em `test_cameras.py`).
+
+- [ ] **Step 1 (backend test):** escrever testes — (a) `client_user` SEM cliente
+  vinculado recebe **400** com mensagem clara (não 500); (b) `super_admin` sem
+  `client_id` recebe 400 com mensagem clara; (c) `super_admin` COM `client_id`
+  cria com sucesso (201). Use `login()`/`auth(token)` (padrão de `test_cameras.py`).
+- [ ] **Step 2:** rodar → FAIL.
+- [ ] **Step 3 (backend):** em `create_plate`, no ramo não-super_admin: se
+  `current_user.client_id is None`, `raise HTTPException(status_code=400,
+  detail="Seu usuário não está vinculado a um cliente. Contate o administrador.")`.
+  Mensagem do super_admin pode permanecer, mas torná-la clara.
+- [ ] **Step 4:** rodar testes → PASS; suíte completa.
+- [ ] **Step 5 (frontend):** no formulário de alerta de placa do **admin/super_admin**,
+  adicionar seletor de cliente (reusar o componente/endpoint de clientes já usado
+  em outras telas admin) e enviar `client_id`. No tratamento de erro do submit
+  (admin **e** client), exibir `error.response?.data?.detail` quando houver, com
+  fallback para a mensagem genérica. `npm run build` ok.
+- [ ] **Step 6: Commit** — `fix: admin cadastra alerta de placa + mensagem de erro clara`
+
+---
+
 ## Self-Review (cobertura do spec)
 
 - Tarefas 1-6 do usuário (detectar pessoa→rosto, gravar 1x/track, cadastro com nome/nascimento/cpf/endereço/telefone, mostrar nome, alertas e-mail/WhatsApp): Tasks 2, 8, 11, 12. ✅
