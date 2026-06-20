@@ -1,0 +1,57 @@
+{
+  "name": "WhatsApp Plate Alerts",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "monitoramento-whatsapp-alert",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "8b4fd9d4-6cc6-4e85-b4ed-8c3fe3d7f0af",
+      "name": "Plate Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\nconst recipient = String(input.recipient ?? '').replace(/\\D/g, '');\nif (!recipient) {\n  throw new Error('recipient is required');\n}\n\nconst apiKey = String(input.evolution_api_key ?? '').trim();\nif (!apiKey) {\n  throw new Error('evolution_api_key is required');\n}\n\nconst baseUrl = String(input.evolution_base_url ?? 'http://192.168.0.115:8081').replace(/\\/$/, '');\nconst instanceName = String(input.evolution_instance_name ?? 'whatsapp').trim();\nconst caption = String(\n  input.caption ?? `Placa ${input.plate ?? 'desconhecida'} detectada`,\n).trim();\nconst hasFrame = Boolean(input.image?.base64);\nconst endpoint = `${baseUrl}/message/${hasFrame ? 'sendMedia' : 'sendText'}/${instanceName}`;\nconst body = hasFrame\n  ? {\n      number: recipient,\n      mediatype: 'image',\n      mimetype: input.image?.mime_type ?? 'image/jpeg',\n      media: input.image.base64,\n      caption,\n      delay: 0,\n      linkPreview: false,\n    }\n  : {\n      number: recipient,\n      text: caption,\n      delay: 0,\n      linkPreview: false,\n    };\n\nconst evolutionResponse = await this.helpers.httpRequest({\n  method: 'POST',\n  url: endpoint,\n  headers: {\n    apikey: apiKey,\n  },\n  body,\n  json: true,\n});\n\nreturn [\n  {\n    json: {\n      ok: true,\n      recipient,\n      sentAs: hasFrame ? 'media' : 'text',\n      endpoint,\n      evolutionResponse,\n    },\n  },\n];"
+      },
+      "id": "1d7a4f77-31db-4d3f-8b0f-7f2d996e4a81",
+      "name": "Send via Evolution",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Plate Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send via Evolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "pinData": {},
+  "nodeGroups": [],
+  "description": "Recebe alertas de placas do backend e encaminha para a Evolution API via n8n."
+}

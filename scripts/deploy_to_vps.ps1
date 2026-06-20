@@ -33,15 +33,16 @@ function Copy-Path($localRelative, $remoteParent) {
   if ($LASTEXITCODE -ne 0) { throw "pscp falhou em $localRelative (exit $LASTEXITCODE)" }
 }
 
-# 1) Sincroniza os fontes (cobre todos os arquivos do lote) + o script remoto.
-Copy-Path "backend/app"             "$RemoteDir/backend/"
-Copy-Path "backend/alembic"         "$RemoteDir/backend/"
-Copy-Path "backend/Dockerfile"      "$RemoteDir/backend/"
-Copy-Path "backend/export_models.py" "$RemoteDir/backend/"
-Copy-Path "backend/yolov8n.pt"      "$RemoteDir/backend/"
-Copy-Path "backend/yolov8s.pt"      "$RemoteDir/backend/"
-Copy-Path "frontend/src"            "$RemoteDir/frontend/"
-Copy-Path "infra/go2rtc.yaml"       "$RemoteDir/infra/"
+Write-Host "[deploy] criando diretorios remotos..."
+& $plink -batch -hostkey $HostKey -pw $Password $target "mkdir -p $RemoteDir/backend $RemoteDir/frontend $RemoteDir/infra"
+if ($LASTEXITCODE -ne 0) { throw "plink mkdir remoto falhou (exit $LASTEXITCODE)" }
+
+# 1) Sincroniza os diretórios/arquivos necessários + o script remoto.
+Copy-Path "backend"                 "$RemoteDir/"
+Copy-Path "frontend"                "$RemoteDir/"
+Copy-Path "infra"                   "$RemoteDir/"
+Copy-Path "docker-compose.prod.yml" "$RemoteDir/"
+Copy-Path "deploy.sh"               "$RemoteDir/"
 Copy-Path "scripts/remote_deploy.sh" "$RemoteDir/"
 
 # 2) Rebuild + restart na VPS rodando o script remoto (backend roda

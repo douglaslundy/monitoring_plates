@@ -67,6 +67,10 @@ test.db
 .DS_Store
 Thumbs.db
 
+# SQLite databases (n8n local, dev)
+*.sqlite
+*.sqlite3
+
 # Docker
 *.pid
 
