@@ -34,9 +34,17 @@ def create_plate(
     # client_id vem do usuário logado; super_admin pode informá-lo no corpo.
     if current_user.role == UserRole.super_admin:
         if payload.client_id is None:
-            raise HTTPException(status_code=400, detail="client_id é obrigatório para super_admin.")
+            raise HTTPException(
+                status_code=400,
+                detail="client_id é obrigatório para super_admin. Selecione um cliente.",
+            )
         client_id = payload.client_id
     else:
+        if current_user.client_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Seu usuário não está vinculado a um cliente. Contate o administrador.",
+            )
         client_id = current_user.client_id
 
     plate = MonitoredPlate(

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import api from "@/lib/api";
+import { getMe } from "@/lib/auth";
 import { extractErrorMessage } from "@/lib/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Modal } from "@/components/ui/Modal";
-import type { MonitoredPlate } from "@/types";
+import type { Client, MonitoredPlate } from "@/types";
 import { Bell, Plus, Trash2, Shield, Mail, ToggleLeft, ToggleRight, MessageCircle, PencilLine } from "lucide-react";
 
 interface PlateForm {
@@ -13,14 +14,24 @@ interface PlateForm {
   description: string;
   alert_email: string;
   alert_whatsapp: string;
+  client_id: string;
 }
 
-const EMPTY_FORM: PlateForm = { plate: "", description: "", alert_email: "", alert_whatsapp: "" };
+const EMPTY_FORM: PlateForm = {
+  plate: "",
+  description: "",
+  alert_email: "",
+  alert_whatsapp: "",
+  client_id: "",
+};
 const PLATE_RE = /^[A-Z]{3}\d{4}$|^[A-Z]{3}\d[A-Z]\d{2}$/;
 
-function validate(form: PlateForm): string {
+function validate(form: PlateForm, isSuperAdmin: boolean): string {
   if (!PLATE_RE.test(form.plate.toUpperCase().trim())) {
     return "Placa inválida. Use o formato AAA1234 ou AAA1A23 (Mercosul).";
+  }
+  if (isSuperAdmin && !form.client_id) {
+    return "Selecione um cliente para associar a placa monitorada.";
   }
   if (form.alert_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.alert_email)) {
     return "E-mail para alertas inválido.";
@@ -37,6 +48,8 @@ function validate(form: PlateForm): string {
 export function MonitoredPlatesManager({ title, description }: { title: string; description: string }) {
   const [plates, setPlates] = useState<MonitoredPlate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [clients, setClients] = useState<Client[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<PlateForm>(EMPTY_FORM);
   const [formError, setFormError] = useState("");
@@ -47,8 +60,17 @@ export function MonitoredPlatesManager({ title, description }: { title: string; 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<MonitoredPlate[]>("/api/monitored-plates");
-      setPlates(res.data);
+      const [platesRes, meRes] = await Promise.all([
+        api.get<MonitoredPlate[]>("/api/monitored-plates"),
+        getMe(),
+      ]);
+      setPlates(platesRes.data);
+      const isAdmin = meRes.role === "super_admin";
+      setIsSuperAdmin(isAdmin);
+      if (isAdmin) {
+        const clientsRes = await api.get<Client[]>("/api/clients");
+        setClients(clientsRes.data);
+      }
     } catch {
       /* ignore */
     } finally {
@@ -79,13 +101,14 @@ export function MonitoredPlatesManager({ title, description }: { title: string; 
       description: p.description ?? "",
       alert_email: p.alert_email ?? "",
       alert_whatsapp: p.alert_whatsapp ?? "",
+      client_id: p.client_id ?? "",
     });
     setFormError("");
     setModalOpen(true);
   }
 
   async function handleCreate() {
-    const err = validate(form);
+    const err = validate(form, isSuperAdmin);
     if (err) {
       setFormError(err);
       return;
@@ -93,12 +116,15 @@ export function MonitoredPlatesManager({ title, description }: { title: string; 
     setSaving(true);
     setFormError("");
     try {
-      const payload = {
+      const payload: Record<string, string | null> = {
         plate: form.plate.trim(),
         description: form.description.trim() || null,
         alert_email: form.alert_email.trim() || null,
         alert_whatsapp: form.alert_whatsapp.trim() || null,
       };
+      if (isSuperAdmin && form.client_id) {
+        payload.client_id = form.client_id;
+      }
       if (editingPlateId) {
         await api.patch(`/api/monitored-plates/${editingPlateId}`, payload);
       } else {
@@ -259,6 +285,26 @@ export function MonitoredPlatesManager({ title, description }: { title: string; 
         description="Receba um alerta sempre que esta placa for detectada."
       >
         <div className="space-y-4">
+          {isSuperAdmin && (
+            <div>
+              <label className="block text-sm font-medium mb-1.5">
+                Cliente <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={form.client_id}
+                onChange={(e) => handleChange("client_id", e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
+              >
+                <option value="">Selecione um cliente…</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium mb-1.5">
               Placa <span className="text-red-500">*</span>
