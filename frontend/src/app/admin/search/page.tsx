@@ -244,16 +244,27 @@ export default function AdminSearchPage() {
               <X className="h-3.5 w-3.5" aria-hidden="true" /> Limpar
             </button>
           )}
-          {result && result.total > 0 && (
-            <button
-              onClick={exportCsv}
-              aria-label="Exportar resultados em CSV"
-              className="ml-auto flex items-center gap-2 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
+          <div className="ml-auto flex items-center gap-2">
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setGoTo(""); }}
+              className="border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              Exportar CSV
-            </button>
-          )}
+              {[25, 50, 100].map((s) => (
+                <option key={s} value={s}>{s} / pág.</option>
+              ))}
+            </select>
+            {result && result.total > 0 && (
+              <button
+                onClick={exportCsv}
+                aria-label="Exportar resultados em CSV"
+                className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Exportar CSV
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -271,17 +282,6 @@ export default function AdminSearchPage() {
                 <p className="text-xs text-muted-foreground">
                   Página {result.page} de {result.pages}
                 </p>
-              )}
-              {result.total > 0 && (
-                <select
-                  value={pageSize}
-                  onChange={(e) => { setPageSize(Number(e.target.value)); setGoTo(""); }}
-                  className="border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  {[25, 50, 100].map((s) => (
-                    <option key={s} value={s}>{s} / pág.</option>
-                  ))}
-                </select>
               )}
               {result.items.length > 0 && <ViewToggle mode={viewMode} onChange={setViewMode} />}
             </div>
