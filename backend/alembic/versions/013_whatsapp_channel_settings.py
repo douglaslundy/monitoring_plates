@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "013_whatsapp_channel_settings"
-down_revision = "012_monitored_plate_whatsapp"
+down_revision = "012"
 branch_labels = None
 depends_on = None
 
