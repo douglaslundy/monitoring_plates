@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Camera as CameraIcon, RefreshCw, Video, AlertTriangle, Radio } from "lucide-react";
 
+
 export default function LiveMonitor({
   title,
   description,
@@ -178,38 +179,6 @@ export default function LiveMonitor({
     }
   }, [activeCameras, restoreStreamPreview]);
 
-  const detectorVariant = (status: Camera["detector_status"]) => {
-    if (status === "healthy") return "success";
-    if (status === "warning") return "warning";
-    if (status === "degraded") return "danger";
-    if (status === "idle") return "secondary";
-    return "secondary";
-  };
-
-  const detectorLabel = (status: Camera["detector_status"]) => {
-    if (status === "healthy") return "saudável";
-    if (status === "warning") return "atenção";
-    if (status === "degraded") return "degradado";
-    if (status === "idle") return "aguardando";
-    return "offline";
-  };
-
-  const ocrVariant = (status: Camera["ocr_pipeline_status"]) => {
-    if (status === "healthy") return "success";
-    if (status === "warning") return "warning";
-    if (status === "degraded") return "danger";
-    if (status === "idle") return "secondary";
-    return "secondary";
-  };
-
-  const ocrLabel = (status: Camera["ocr_pipeline_status"]) => {
-    if (status === "healthy") return "saudavel";
-    if (status === "warning") return "atencao";
-    if (status === "degraded") return "degradado";
-    if (status === "idle") return "aguardando";
-    return "vazio";
-  };
-
   return (
     <div className="p-6">
       <PageHeader title={title} description={description} />
@@ -305,66 +274,16 @@ export default function LiveMonitor({
                   )}
                 </div>
 
-                {/* Informações da câmera, todas inline (T3). */}
-                <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                  <Badge variant={camera.is_online ? "success" : "secondary"}>
-                    {camera.is_online ? "online" : "offline"}
-                  </Badge>
-                  <Badge variant={detectorVariant(camera.detector_status)}>
-                    detector {detectorLabel(camera.detector_status)} ({camera.detector_health_score.toFixed(0)})
-                  </Badge>
-                  <span title="Saúde da leitura de placa (0–100): 100 saudável · 65 atenção · 35 degradado · 20 sem leitura. Degradado = sucesso < 35%, leitura > 2,5s, ou sem leitura há 15 min.">
-                    <Badge variant={ocrVariant(camera.ocr_pipeline_status)}>
-                      OCR {ocrLabel(camera.ocr_pipeline_status)} ({camera.ocr_pipeline_health_score.toFixed(0)})
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant={camera.is_online ? "success" : "secondary"}>
+                      {camera.is_online ? "online" : "offline"}
                     </Badge>
-                  </span>
-                  <Badge variant="secondary">
-                    live {camera.preview_refresh_seconds.toFixed(1)}s
-                  </Badge>
-                  <Badge
-                    variant={
-                      camera.preview_status === "streaming"
-                        ? "success"
-                        : camera.preview_status === "degraded"
-                          ? "warning"
-                          : camera.preview_status === "stale"
-                            ? "secondary"
-                            : "info"
-                    }
-                  >
-                    {camera.preview_status === "streaming"
-                      ? "preview fluido"
-                      : camera.preview_status === "degraded"
-                        ? "preview lento"
-                        : camera.preview_status === "stale"
-                          ? "preview parado"
-                          : camera.preview_status === "idle"
-                            ? "aguardando"
-                            : "offline"}
-                  </Badge>
-                  <Badge
-                    variant={
-                      camera.quality_label === "excellent" || camera.quality_label === "good"
-                        ? "success"
-                        : camera.quality_label === "fair"
-                          ? "warning"
-                          : camera.quality_label === "poor"
-                            ? "danger"
-                            : "secondary"
-                    }
-                  >
-                    Qualidade{" "}
-                    {camera.quality_label === "unknown"
-                      ? "indisponível"
-                      : `${camera.quality_label} (${camera.quality_score.toFixed(0)})`}
-                  </Badge>
-                </div>
-                {camera.detector_status_detail && (
-                  <p className="mb-2 text-[11px] text-muted-foreground">{camera.detector_status_detail}</p>
-                )}
-
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground font-mono">
+                      {camera.connection_type.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => restoreStreamPreview(camera.id)}
                       className="px-2 py-1 text-xs border rounded inline-flex items-center gap-1"
@@ -381,15 +300,12 @@ export default function LiveMonitor({
                         title="Vídeo ao vivo em HD (WebRTC). Requer acesso à rede local da câmera."
                       >
                         <Radio className="h-3 w-3" />
-                        {useWebrtc ? "Ver preview" : "Ao vivo HD"}
+                        {useWebrtc ? "Preview" : "Ao vivo HD"}
                       </button>
                     )}
                   </div>
-                  <span className="text-[11px] text-muted-foreground">
-                    {camera.connection_type.toUpperCase()}
-                  </span>
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+                <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
                   <span>{camera.preview_fps.toFixed(1)} fps</span>
                   <span>{camera.preview_frames_last_minute} quadros/min</span>
                   <span>
@@ -398,9 +314,6 @@ export default function LiveMonitor({
                       : "sem telemetria"}
                   </span>
                 </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Blur {camera.blur_score.toFixed(1)} | Brilho {camera.brightness.toFixed(0)} | Contraste {camera.contrast.toFixed(0)}
-                </p>
               </div>
             );
           })}
