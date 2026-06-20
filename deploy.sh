@@ -3,11 +3,10 @@
 #
 # Idempotente: garante os arquivos de config que ficam FORA do repo (.env.prod e
 # infra/go2rtc.local.yaml), criando-os a partir dos respectivos .example quando
-# faltam — isso evita o go2rtc entrar em crash-loop por causa do bind-mount de um
-# arquivo inexistente. Depois sobe a stack.
+# faltam. Depois sobe a stack.
 #
 # Uso:
-#   ./deploy.sh            # cria configs faltantes (e para, p/ você preencher) ou sobe a stack
+#   ./deploy.sh            # cria configs faltantes ou sobe a stack
 #   ./deploy.sh --build    # força rebuild das imagens
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -58,13 +57,6 @@ if [[ "$missing_config" == "1" ]]; then
 fi
 
 echo "[deploy] subindo a stack ($COMPOSE_FILE)..."
-# Exporta vars do .env.prod para o shell antes de chamar docker compose,
-# evitando que o bloco `environment:` do compose sobrescreva o `env_file`
-# com strings vazias quando as variáveis não estão na shell.
-set -a
-# shellcheck source=.env.prod
-source .env.prod
-set +a
-docker compose -f "$COMPOSE_FILE" up -d $BUILD_FLAG
+docker compose --env-file .env.prod -f "$COMPOSE_FILE" up -d $BUILD_FLAG
 echo "[deploy] status:"
-docker compose -f "$COMPOSE_FILE" ps
+docker compose --env-file .env.prod -f "$COMPOSE_FILE" ps

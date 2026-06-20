@@ -5,6 +5,12 @@
 set -e
 cd /home/lundy/monitoramento
 
+echo "== remove legacy monitoramento-git stack if present =="
+old_ids="$(docker ps -aq --filter name='monitoramento-git-')"
+if [ -n "$old_ids" ]; then
+  docker rm -f $old_ids
+fi
+
 echo "== bootstrap/deploy =="
 bash ./deploy.sh --build
 
