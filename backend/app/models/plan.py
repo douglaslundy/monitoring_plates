@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Numeric, Enum
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Numeric, Enum, text
 from sqlalchemy import Uuid
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -20,6 +20,9 @@ class Plan(Base):
     price_monthly = Column(Numeric(10, 2), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     ocr_engine = Column(String(30), nullable=False, default="system_default")
+    ocr_enabled = Column(Boolean, nullable=False, default=True, server_default=text("1"))
+    face_recognition_enabled = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    face_engine = Column(String(30), nullable=False, default="system_default", server_default="system_default")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     clients = relationship("Client", back_populates="plan")

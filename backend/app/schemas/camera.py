@@ -18,6 +18,8 @@ class CameraBase(BaseModel):
     roi_height: Optional[float] = None
     preview_refresh_seconds: float = 2.5
     is_active: bool = True
+    enable_ocr: bool = True
+    enable_face: bool = False
 
 
 class CameraCreate(CameraBase):
@@ -37,6 +39,8 @@ class CameraUpdate(BaseModel):
     roi_height: Optional[float] = None
     preview_refresh_seconds: Optional[float] = None
     is_active: Optional[bool] = None
+    enable_ocr: Optional[bool] = None
+    enable_face: Optional[bool] = None
 
 
 class CameraRead(CameraBase):

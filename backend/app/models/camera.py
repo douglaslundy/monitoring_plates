@@ -43,6 +43,8 @@ class Camera(Base):
     roi_height = Column(Float, nullable=True)
     preview_refresh_seconds = Column(Float, nullable=False, default=2.5, server_default=text("2.5"))
     is_active = Column(Boolean, nullable=False, default=True)
+    enable_ocr = Column(Boolean, nullable=False, default=True, server_default=text("1"))
+    enable_face = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

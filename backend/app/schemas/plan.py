@@ -14,6 +14,9 @@ class PlanBase(BaseModel):
     price_monthly: Decimal
     is_active: bool = True
     ocr_engine: str = "system_default"
+    ocr_enabled: bool = True
+    face_recognition_enabled: bool = False
+    face_engine: str = "system_default"
 
 
 class PlanCreate(PlanBase):
@@ -29,6 +32,9 @@ class PlanUpdate(BaseModel):
     price_monthly: Optional[Decimal] = None
     is_active: Optional[bool] = None
     ocr_engine: Optional[str] = None
+    ocr_enabled: Optional[bool] = None
+    face_recognition_enabled: Optional[bool] = None
+    face_engine: Optional[str] = None
 
 
 class PlanRead(PlanBase):
