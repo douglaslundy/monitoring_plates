@@ -66,3 +66,8 @@ class WhatsAppTestSendResponse(BaseModel):
     success: bool
     message: str
     recipient: str
+
+
+class WhatsAppInstanceStatus(BaseModel):
+    state: str  # "open" | "close" | "connecting" | "unknown"
+    qr_code: Optional[str] = None  # base64 data URL when state == "connecting"

@@ -7,8 +7,8 @@ import { extractErrorMessage } from "@/lib/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
-import type { WhatsAppSettings, WhatsAppTestSendResult } from "@/types";
-import { CheckCircle2, MessageCircle, Radio, Send, Shield, TriangleAlert } from "lucide-react";
+import type { WhatsAppSettings, WhatsAppTestSendResult, WhatsAppInstanceStatus } from "@/types";
+import { CheckCircle2, MessageCircle, Power, Radio, RefreshCw, Send, Shield, TriangleAlert, Wifi, WifiOff } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 interface WhatsAppSettingsForm {
@@ -104,6 +104,10 @@ export default function AdminWhatsAppPage() {
   const [testError, setTestError] = useState("");
   const [lastTestResult, setLastTestResult] = useState<WhatsAppTestSendResult | null>(null);
 
+  const [instanceStatus, setInstanceStatus] = useState<WhatsAppInstanceStatus | null>(null);
+  const [instanceLoading, setInstanceLoading] = useState(false);
+  const [instanceAction, setInstanceAction] = useState<"connect" | "disconnect" | "restart" | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -131,6 +135,44 @@ export default function AdminWhatsAppPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const fetchInstanceStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get<WhatsAppInstanceStatus>("/api/whatsapp-settings/instance/status");
+      setInstanceStatus(data);
+    } catch {
+      setInstanceStatus({ state: "unknown", qr_code: null });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchInstanceStatus();
+  }, [fetchInstanceStatus]);
+
+  // Poll every 3s while connecting (waiting for QR scan)
+  useEffect(() => {
+    if (instanceStatus?.state !== "connecting") return;
+    const id = setInterval(fetchInstanceStatus, 3000);
+    return () => clearInterval(id);
+  }, [instanceStatus?.state, fetchInstanceStatus]);
+
+  async function handleInstanceAction(action: "connect" | "disconnect" | "restart") {
+    setInstanceAction(action);
+    setInstanceLoading(true);
+    try {
+      const { data } = await api.post<WhatsAppInstanceStatus>(`/api/whatsapp-settings/instance/${action}`);
+      setInstanceStatus(data);
+      if (action === "restart") {
+        toast("Instância reiniciada");
+        setTimeout(fetchInstanceStatus, 3000);
+      }
+    } catch {
+      toast(`Falha ao ${action === "connect" ? "conectar" : action === "disconnect" ? "desconectar" : "reiniciar"} instância`, "error");
+    } finally {
+      setInstanceLoading(false);
+      setInstanceAction(null);
+    }
+  }
 
   const settingsError = useMemo(() => validateSettings(form, settings?.api_key_configured ?? false), [form, settings?.api_key_configured]);
   const recipientError = useMemo(() => validateRecipient(testForm.recipient), [testForm.recipient]);
@@ -425,6 +467,102 @@ export default function AdminWhatsAppPage() {
           </div>
         </SectionCard>
       </div>
+
+      {/* ── Conexão da instância ── */}
+      <SectionCard
+        title="Conexão da instância"
+        description="Gerencie a conexão do WhatsApp na Evolution API."
+        icon={Wifi}
+      >
+        {/* Status badge */}
+        <div className="flex items-center gap-3">
+          {instanceStatus === null ? (
+            <span className="text-sm text-muted-foreground">Carregando…</span>
+          ) : (
+            <>
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${
+                  instanceStatus.state === "open"
+                    ? "bg-green-100 text-green-700"
+                    : instanceStatus.state === "connecting"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    instanceStatus.state === "open"
+                      ? "bg-green-500"
+                      : instanceStatus.state === "connecting"
+                        ? "bg-yellow-400 animate-pulse"
+                        : "bg-gray-400"
+                  }`}
+                />
+                {instanceStatus.state === "open"
+                  ? "Conectado"
+                  : instanceStatus.state === "connecting"
+                    ? "Aguardando QR Code"
+                    : instanceStatus.state === "close"
+                      ? "Desconectado"
+                      : "Desconhecido"}
+              </span>
+              <button
+                onClick={fetchInstanceStatus}
+                disabled={instanceLoading}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                title="Atualizar status"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${instanceLoading ? "animate-spin" : ""}`} />
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* QR Code */}
+        {instanceStatus?.state === "connecting" && instanceStatus.qr_code && (
+          <div className="flex flex-col items-center gap-2 py-2">
+            <p className="text-sm text-muted-foreground">Escaneie o QR Code com o WhatsApp</p>
+            <img
+              src={instanceStatus.qr_code}
+              alt="QR Code WhatsApp"
+              className="w-56 h-56 rounded-lg border shadow-sm"
+            />
+            <p className="text-xs text-muted-foreground animate-pulse">Aguardando leitura…</p>
+          </div>
+        )}
+
+        {/* Ações */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {instanceStatus?.state !== "open" && (
+            <button
+              onClick={() => handleInstanceAction("connect")}
+              disabled={instanceLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              <Wifi className="h-4 w-4" />
+              {instanceAction === "connect" ? "Conectando…" : "Conectar"}
+            </button>
+          )}
+          {instanceStatus?.state === "open" && (
+            <button
+              onClick={() => handleInstanceAction("disconnect")}
+              disabled={instanceLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-50 transition-colors"
+            >
+              <WifiOff className="h-4 w-4" />
+              {instanceAction === "disconnect" ? "Desconectando…" : "Desconectar"}
+            </button>
+          )}
+          <button
+            onClick={() => handleInstanceAction("restart")}
+            disabled={instanceLoading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <Power className="h-4 w-4" />
+            {instanceAction === "restart" ? "Reiniciando…" : "Reiniciar"}
+          </button>
+        </div>
+      </SectionCard>
 
       <section className="bg-white rounded-xl border shadow-sm p-6">
         <div className="flex items-center gap-2 mb-3">

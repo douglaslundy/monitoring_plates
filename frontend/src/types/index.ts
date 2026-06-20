@@ -283,6 +283,11 @@ export interface WhatsAppTestSendResult {
   recipient: string;
 }
 
+export interface WhatsAppInstanceStatus {
+  state: "open" | "close" | "connecting" | "unknown";
+  qr_code: string | null;
+}
+
 export interface PlateAlert {
   type: "plate_alert";
   occurrence_id: string;
