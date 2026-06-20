@@ -41,6 +41,7 @@ if ($LASTEXITCODE -ne 0) { throw "plink mkdir remoto falhou (exit $LASTEXITCODE)
 Copy-Path "backend"                 "$RemoteDir/"
 Copy-Path "frontend"                "$RemoteDir/"
 Copy-Path "infra"                   "$RemoteDir/"
+Copy-Path ".env.prod.example"       "$RemoteDir/"
 Copy-Path "docker-compose.prod.yml" "$RemoteDir/"
 Copy-Path "deploy.sh"               "$RemoteDir/"
 Copy-Path "scripts/remote_deploy.sh" "$RemoteDir/"

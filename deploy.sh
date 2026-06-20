@@ -36,18 +36,25 @@ ensure_from_example ".env.prod" ".env.prod.example"
 ensure_from_example "infra/go2rtc.local.yaml" "infra/go2rtc.local.yaml.example"
 
 if [[ "$missing_config" == "1" ]]; then
-  cat <<'MSG'
+  secret_key="$(python3 -c "import secrets; print(secrets.token_hex(32))")"
 
-[deploy] Configs criados a partir dos exemplos. Edite ANTES de seguir:
-  - .env.prod               -> segredos (DB, JWT, R2, Resend), NEXT_PUBLIC_API_URL,
-                               GO2RTC_PUBLIC_URL (IP desta VPS)
-  - infra/go2rtc.yaml       -> webrtc candidates: IP desta VPS:8555
-  - infra/go2rtc.local.yaml -> stream recortado por câmera dual-lens
-                               (preencha depois de cadastrar a câmera na UI)
+  set_env_value() {
+    local key="$1" value="$2"
+    if grep -qE "^${key}=" ".env.prod"; then
+      sed -i "s|^${key}=.*|${key}=${value}|" ".env.prod"
+    else
+      printf '%s=%s\n' "$key" "$value" >> ".env.prod"
+    fi
+  }
 
-Depois rode ./deploy.sh de novo.
-MSG
-  exit 0
+  set_env_value "SECRET_KEY" "$secret_key"
+  set_env_value "STORAGE_TYPE" "local"
+  set_env_value "STORAGE_PATH" "./storage"
+  set_env_value "NEXT_PUBLIC_API_URL" "http://192.168.0.115"
+  set_env_value "CORS_ORIGINS" "http://192.168.0.115"
+  set_env_value "GO2RTC_PUBLIC_URL" "http://192.168.0.115:1984"
+
+  echo "[deploy] .env.prod criado com defaults locais para esta VPS. Revise os segredos quando quiser."
 fi
 
 echo "[deploy] subindo a stack ($COMPOSE_FILE)..."

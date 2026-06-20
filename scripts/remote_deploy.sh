@@ -5,8 +5,8 @@
 set -e
 cd /home/lundy/monitoramento
 
-echo "== build/up backend+workers+frontend =="
-docker compose -f docker-compose.prod.yml up -d --build backend worker retention-worker capture-runner frontend
+echo "== bootstrap/deploy =="
+bash ./deploy.sh --build
 
 echo "== restart go2rtc (carrega templates lens_lower/lens_upper do go2rtc.yaml) =="
 docker compose -f docker-compose.prod.yml restart go2rtc

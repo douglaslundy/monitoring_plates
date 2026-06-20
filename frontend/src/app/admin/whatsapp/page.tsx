@@ -245,7 +245,7 @@ export default function AdminWhatsAppPage() {
     <div className="p-6 max-w-4xl space-y-6">
       <PageHeader
         title="WhatsApp"
-        description="Configure o envio direto pela Evolution API sem depender do n8n."
+        description="Configure o envio de alertas via Evolution API."
       />
 
       {error && (
