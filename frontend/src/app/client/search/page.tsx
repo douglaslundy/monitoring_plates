@@ -243,27 +243,16 @@ export default function ClientSearchPage() {
               <X className="h-3.5 w-3.5" aria-hidden="true" /> Limpar
             </button>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            <select
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setGoTo(""); }}
-              className="border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
+          {result && result.total > 0 && (
+            <button
+              onClick={exportCsv}
+              aria-label="Exportar resultados em CSV"
+              className="ml-auto flex items-center gap-2 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
             >
-              {[25, 50, 100].map((s) => (
-                <option key={s} value={s}>{s} / pág.</option>
-              ))}
-            </select>
-            {result && result.total > 0 && (
-              <button
-                onClick={exportCsv}
-                aria-label="Exportar resultados em CSV"
-                className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-                Exportar CSV
-              </button>
-            )}
-          </div>
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Exportar CSV
+            </button>
+          )}
         </div>
       </div>
 
@@ -382,83 +371,94 @@ export default function ClientSearchPage() {
                 </div>
               )}
 
-              {result.pages > 1 && (
-                <div className="flex flex-wrap justify-center gap-2 mt-6">
-                  <button
-                    onClick={() => search(1)}
-                    disabled={page <= 1 || loading}
-                    className="inline-flex items-center border rounded px-2 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50"
-                    title="Primeira página"
-                  >
-                    <ChevronFirst className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => search(page - 1)}
-                    disabled={page <= 1 || loading}
-                    className="px-3 py-1.5 border rounded text-sm disabled:opacity-40 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    Anterior
-                  </button>
-                  {Array.from({ length: result.pages }, (_, i) => i + 1)
-                    .filter((p) => Math.abs(p - page) <= 2)
-                    .map((p) => (
+              <div className="flex flex-wrap justify-center items-center gap-2 mt-6">
+                {result.pages > 1 && (
+                  <>
+                    <button
+                      onClick={() => search(1)}
+                      disabled={page <= 1 || loading}
+                      className="inline-flex items-center border rounded px-2 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50"
+                      title="Primeira página"
+                    >
+                      <ChevronFirst className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => search(page - 1)}
+                      disabled={page <= 1 || loading}
+                      className="px-3 py-1.5 border rounded text-sm disabled:opacity-40 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                      Anterior
+                    </button>
+                    {Array.from({ length: result.pages }, (_, i) => i + 1)
+                      .filter((p) => Math.abs(p - page) <= 2)
+                      .map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => search(p)}
+                          aria-current={p === page ? "page" : undefined}
+                          className={`px-3 py-1.5 border rounded text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                            p === page
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "hover:bg-gray-50"
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    <button
+                      onClick={() => search(page + 1)}
+                      disabled={page >= result.pages || loading}
+                      className="px-3 py-1.5 border rounded text-sm disabled:opacity-40 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                      Próxima
+                    </button>
+                    <button
+                      onClick={() => search(result.pages)}
+                      disabled={page >= result.pages || loading}
+                      className="inline-flex items-center border rounded px-2 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50"
+                      title="Última página"
+                    >
+                      <ChevronLast className="h-4 w-4" />
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={1}
+                        max={result.pages}
+                        value={goTo}
+                        onChange={(e) => setGoTo(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const p = Math.min(result.pages, Math.max(1, Number(goTo)));
+                            if (p) search(p);
+                          }
+                        }}
+                        placeholder="Ir…"
+                        className="w-16 border rounded px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
                       <button
-                        key={p}
-                        onClick={() => search(p)}
-                        aria-current={p === page ? "page" : undefined}
-                        className={`px-3 py-1.5 border rounded text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${
-                          p === page
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "hover:bg-gray-50"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  <button
-                    onClick={() => search(page + 1)}
-                    disabled={page >= result.pages || loading}
-                    className="px-3 py-1.5 border rounded text-sm disabled:opacity-40 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    Próxima
-                  </button>
-                  <button
-                    onClick={() => search(result.pages)}
-                    disabled={page >= result.pages || loading}
-                    className="inline-flex items-center border rounded px-2 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50"
-                    title="Última página"
-                  >
-                    <ChevronLast className="h-4 w-4" />
-                  </button>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={1}
-                      max={result.pages}
-                      value={goTo}
-                      onChange={(e) => setGoTo(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
+                        onClick={() => {
                           const p = Math.min(result.pages, Math.max(1, Number(goTo)));
                           if (p) search(p);
-                        }
-                      }}
-                      placeholder="Ir…"
-                      className="w-16 border rounded px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    />
-                    <button
-                      onClick={() => {
-                        const p = Math.min(result.pages, Math.max(1, Number(goTo)));
-                        if (p) search(p);
-                      }}
-                      disabled={!goTo || loading}
-                      className="border rounded px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40"
-                    >
-                      Ir
-                    </button>
-                  </div>
-                </div>
-              )}
+                        }}
+                        disabled={!goTo || loading}
+                        className="border rounded px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40"
+                      >
+                        Ir
+                      </button>
+                    </div>
+                  </>
+                )}
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setGoTo(""); }}
+                  className="border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  {[25, 50, 100].map((s) => (
+                    <option key={s} value={s}>{s} / página</option>
+                  ))}
+                </select>
+              </div>
             </>
           )}
         </>
