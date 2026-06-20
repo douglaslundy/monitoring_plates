@@ -6,7 +6,7 @@ import api from "@/lib/api";
 import { Client } from "@/types";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { SystemResources } from "@/components/live/SystemResources";
-import { Building2, Users, CreditCard, AlertTriangle } from "lucide-react";
+import { Building2, Users, CreditCard, AlertTriangle, MessageCircle } from "lucide-react";
 
 export default function AdminDashboard() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -34,6 +34,7 @@ export default function AdminDashboard() {
     { label: "Gerenciar Clientes", href: "/admin/clients", icon: Building2, description: "Criar e administrar clientes" },
     { label: "Ver Planos", href: "/admin/plans", icon: CreditCard, description: "Planos e assinaturas" },
     { label: "Usuários", href: "/admin/users", icon: Users, description: "Gerenciar usuários do sistema" },
+    { label: "WhatsApp", href: "/admin/whatsapp", icon: MessageCircle, description: "Configurar Evolution API" },
   ];
 
   if (loading) {

@@ -252,6 +252,23 @@ export interface AlertSent {
   status: string;
 }
 
+export interface WhatsAppSettings {
+  id: string | null;
+  is_active: boolean;
+  evolution_base_url: string;
+  evolution_instance_name: string;
+  request_timeout_seconds: number;
+  api_key_configured: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface WhatsAppTestSendResult {
+  success: boolean;
+  message: string;
+  recipient: string;
+}
+
 export interface PlateAlert {
   type: "plate_alert";
   occurrence_id: string;

@@ -7,6 +7,7 @@ from app.models.occurrence import Occurrence
 from app.models.alert_sent import AlertSent
 from app.models.ocr_engine_config import OcrEngineConfig
 from app.models.vehicle_event import VehicleEvent
+from app.models.whatsapp_channel_settings import WhatsAppChannelSettings
 
 __all__ = [
     "Plan",
@@ -18,4 +19,5 @@ __all__ = [
     "AlertSent",
     "OcrEngineConfig",
     "VehicleEvent",
+    "WhatsAppChannelSettings",
 ]

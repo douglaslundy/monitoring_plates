@@ -12,6 +12,7 @@ import {
   Radio,
   Search,
   Bell,
+  MessageCircle,
   Settings,
   LogOut,
   Menu,
@@ -44,6 +45,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/search", label: "Placas", icon: Search },
   { href: "/admin/detections", label: "Deteccoes", icon: ScanSearch },
   { href: "/admin/ocr-config", label: "Motores OCR", icon: ScanLine },
+  { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle },
 ];
 
 export const CLIENT_NAV: NavItem[] = [

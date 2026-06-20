@@ -1,21 +1,142 @@
-"""Envio de alertas via WhatsApp Business Cloud API (Meta).
-
-Requer WHATSAPP_TOKEN e WHATSAPP_PHONE_NUMBER_ID no .env.
-Número do destinatário no formato E.164 sem '+' (ex: 5511999998888).
-Falha silenciosa: loga warning e retorna False sem estourar exceção.
-"""
+"""Envio direto de alertas WhatsApp pela Evolution API."""
 from __future__ import annotations
 
+import base64
+import io
 import logging
+import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from PIL import Image
+
+from app.core.config import settings
+from app.services.whatsapp_settings_service import WhatsAppDeliveryConfig
 
 logger = logging.getLogger(__name__)
 
-_API_VERSION = "v20.0"
-_BASE_URL = "https://graph.facebook.com"
+_DEFAULT_MIME_TYPE = "image/jpeg"
+_SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+_RECIPIENT_RE = re.compile(r"^\d{10,15}$")
 
 
-def _to_digits(number: str) -> str:
-    return "".join(c for c in number if c.isdigit())
+def _normalize_digits(number: str) -> str:
+    return "".join(char for char in number if char.isdigit())
+
+
+def _format_confidence(confidence: float | None) -> str:
+    if confidence is None:
+        return "desconhecida"
+    return f"{confidence * 100:.1f}%"
+
+
+def _format_detected_at(value: datetime | str | None) -> str:
+    if value is None:
+        return "não informado"
+    if isinstance(value, str):
+        return value.strip() or "não informado"
+    dt = value if value.tzinfo else value.replace(tzinfo=_SAO_PAULO)
+    return dt.astimezone(_SAO_PAULO).strftime("%d/%m/%Y %H:%M:%S")
+
+
+def build_whatsapp_message(
+    *,
+    plate: str,
+    camera_name: str,
+    location: str,
+    detected_at: datetime | str | None,
+    confidence: float | None,
+    image_url: str | None = None,
+) -> str:
+    lines = [
+        f"Placa {plate} detectada",
+        f"Câmera: {camera_name}",
+        f"Local: {location or 'não informado'}",
+        f"Horário: {_format_detected_at(detected_at)}",
+        f"Confiança: {_format_confidence(confidence)}",
+    ]
+    if image_url:
+        lines.append(f"Imagem: {image_url}")
+    return "\n".join(lines)
+
+
+def _resize_frame(image_bytes: bytes) -> tuple[bytes, str]:
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image = image.convert("RGB")
+            image.thumbnail((settings.WHATSAPP_FRAME_MAX_SIDE, settings.WHATSAPP_FRAME_MAX_SIDE))
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=settings.WHATSAPP_FRAME_JPEG_QUALITY, optimize=True)
+            return buffer.getvalue(), _DEFAULT_MIME_TYPE
+    except Exception:
+        logger.debug("Falha ao redimensionar frame do WhatsApp; enviando bytes originais", exc_info=True)
+        return image_bytes, _DEFAULT_MIME_TYPE
+
+
+def _build_send_text_url(base_url: str, instance_name: str) -> str:
+    return f"{base_url.rstrip('/')}/message/sendText/{instance_name.strip()}"
+
+
+def _build_send_media_url(base_url: str, instance_name: str) -> str:
+    return f"{base_url.rstrip('/')}/message/sendMedia/{instance_name.strip()}"
+
+
+def _send_to_evolution(
+    *,
+    config: WhatsAppDeliveryConfig,
+    recipient: str,
+    message: str,
+    image_bytes: bytes | None,
+) -> bool:
+    if not config.is_active:
+        logger.info("Canal WhatsApp desativado; envio ignorado")
+        return False
+
+    api_key = config.evolution_api_key.strip()
+    if not api_key:
+        logger.warning("Evolution API key não configurada para WhatsApp")
+        return False
+
+    normalized_recipient = _normalize_digits(recipient)
+    if not _RECIPIENT_RE.match(normalized_recipient):
+        logger.warning("Número de WhatsApp inválido: %s", recipient)
+        return False
+
+    headers = {"apikey": api_key, "Content-Type": "application/json"}
+    timeout = max(int(config.request_timeout_seconds), 1)
+    endpoint = _build_send_text_url(config.evolution_base_url, config.evolution_instance_name)
+    body: dict[str, object]
+
+    if image_bytes:
+        resized_bytes, mime_type = _resize_frame(image_bytes)
+        endpoint = _build_send_media_url(config.evolution_base_url, config.evolution_instance_name)
+        body = {
+            "number": normalized_recipient,
+            "mediatype": "image",
+            "mimetype": mime_type,
+            "media": base64.b64encode(resized_bytes).decode("ascii"),
+            "caption": message,
+            "delay": 0,
+            "linkPreview": False,
+        }
+    else:
+        body = {
+            "number": normalized_recipient,
+            "text": message,
+            "delay": 0,
+            "linkPreview": False,
+        }
+
+    try:
+        import httpx
+
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(endpoint, json=body, headers=headers)
+            response.raise_for_status()
+        return True
+    except Exception:
+        logger.warning("Falha ao enviar mensagem via Evolution API", exc_info=True)
+        return False
 
 
 def send_whatsapp_alert(
@@ -24,43 +145,32 @@ def send_whatsapp_alert(
     plate: str,
     camera_name: str,
     location: str,
-    detected_at: str,
+    detected_at: datetime | str | None,
     image_url: str,
+    confidence: float | None = None,
+    image_bytes: bytes | None = None,
+    message: str | None = None,
+    config: WhatsAppDeliveryConfig | None = None,
 ) -> bool:
-    from app.core.config import settings
+    delivery_config = config or WhatsAppDeliveryConfig(
+        is_active=True,
+        evolution_base_url=settings.WHATSAPP_EVOLUTION_BASE_URL,
+        evolution_instance_name=settings.WHATSAPP_EVOLUTION_INSTANCE_NAME,
+        evolution_api_key=settings.WHATSAPP_EVOLUTION_API_KEY,
+        request_timeout_seconds=settings.WHATSAPP_WEBHOOK_TIMEOUT_SECONDS,
+    )
 
-    if not settings.WHATSAPP_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
-        logger.warning("WhatsApp nao configurado (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID ausentes)")
-        return False
-
-    try:
-        import httpx
-
-        recipient = _to_digits(to)
-        body = (
-            f"🚗 Placa {plate} detectada\n"
-            f"📷 Câmera: {camera_name}\n"
-            f"📍 Local: {location or 'nao informado'}\n"
-            f"🕐 Horário: {detected_at}"
-        )
-        if image_url:
-            body += f"\n🔗 Imagem: {image_url}"
-
-        url = f"{_BASE_URL}/{_API_VERSION}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
-        headers = {
-            "Authorization": f"Bearer {settings.WHATSAPP_TOKEN}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": recipient,
-            "type": "text",
-            "text": {"body": body},
-        }
-        with httpx.Client(timeout=10) as client:
-            resp = client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-        return True
-    except Exception:
-        logger.warning("Falha ao enviar alerta WhatsApp", exc_info=True)
-        return False
+    text = message or build_whatsapp_message(
+        plate=plate,
+        camera_name=camera_name,
+        location=location,
+        detected_at=detected_at,
+        confidence=confidence,
+        image_url=image_url or None,
+    )
+    return _send_to_evolution(
+        config=delivery_config,
+        recipient=to,
+        message=text,
+        image_bytes=image_bytes,
+    )

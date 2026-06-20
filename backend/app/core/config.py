@@ -21,8 +21,12 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "alertas@seudominio.com"
 
-    WHATSAPP_TOKEN: str = ""
-    WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_EVOLUTION_API_KEY: str = ""
+    WHATSAPP_EVOLUTION_BASE_URL: str = "http://192.168.0.115:8081"
+    WHATSAPP_EVOLUTION_INSTANCE_NAME: str = "whatsapp"
+    WHATSAPP_FRAME_MAX_SIDE: int = 1280
+    WHATSAPP_FRAME_JPEG_QUALITY: int = 82
+    WHATSAPP_WEBHOOK_TIMEOUT_SECONDS: int = 20
 
     CORS_ORIGINS: str = "http://localhost:3000"
 

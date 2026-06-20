@@ -410,14 +410,23 @@ class VehicleDetector:
         longest = max(h, w)
         if longest <= 0 or longest >= min_side:
             return crop
+        import numpy as np
         try:
             import cv2
         except Exception:  # pragma: no cover
-            return crop
+            cv2 = None
         scale = min_side / float(longest)
         new_w = max(1, int(round(w * scale)))
         new_h = max(1, int(round(h * scale)))
-        return cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+        if cv2 is not None:
+            return cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+        try:  # pragma: no cover - fallback sem OpenCV
+            from PIL import Image
+
+            pil = Image.fromarray(crop[:, :, ::-1]).resize((new_w, new_h), resample=Image.Resampling.BICUBIC)
+            return np.array(pil)[:, :, ::-1]
+        except Exception:
+            return crop
 
     def _encode_jpeg(self, image) -> bytes | None:
         try:

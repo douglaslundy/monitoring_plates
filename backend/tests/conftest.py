@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+import uuid
 from pathlib import Path
 
 # Override settings before any app imports
@@ -8,7 +9,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 os.environ["IS_TESTING"] = "true"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
-_temp_root = Path(__file__).resolve().parent.parent / ".tmp"
+_temp_root = Path(tempfile.gettempdir()) / "monitoramento-tests"
 _temp_root.mkdir(parents=True, exist_ok=True)
 os.environ["TMP"] = str(_temp_root)
 os.environ["TEMP"] = str(_temp_root)
@@ -28,6 +29,7 @@ from app.models.user import User, UserRole  # noqa: E402
 from app.models.plan import Plan  # noqa: E402
 from app.models.client import Client  # noqa: E402
 from app.models.camera import Camera, ConnectionType  # noqa: E402
+from app.models.whatsapp_channel_settings import WhatsAppChannelSettings  # noqa: E402
 
 engine = create_engine(
     "sqlite:///./test.db",
@@ -38,7 +40,8 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 @pytest.fixture
 def tmp_path():
-    path = Path(tempfile.mkdtemp(dir=_temp_root))
+    path = _temp_root / f"pytest-{uuid.uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=False)
     try:
         yield path
     finally:

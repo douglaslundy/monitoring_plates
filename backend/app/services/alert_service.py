@@ -8,6 +8,8 @@ from app.models.monitored_plate import MonitoredPlate
 from app.models.alert_sent import AlertSent, AlertChannel
 from app.models.camera import Camera
 from app.services.email_service import send_plate_alert
+from app.services.storage_service import get_url, read_file_bytes
+from app.services.whatsapp_settings_service import get_effective_whatsapp_delivery_config
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +37,8 @@ def process_alerts(occurrence_id: str, db: Session) -> None:
         .all()
     )
 
-    from app.services.storage_service import get_url
     image_url = get_url(occ.image_path) if occ.image_path else ""
+    image_bytes = read_file_bytes(occ.image_path) if occ.image_path else None
 
     for mp in matches:
         if plan.email_alerts and mp.alert_email:
@@ -46,7 +48,7 @@ def process_alerts(occurrence_id: str, db: Session) -> None:
             _publish_ws_alert(occ, camera, image_url)
 
         if mp.alert_whatsapp:
-            _send_whatsapp_alert(occ, camera, mp, image_url, db)
+            _send_whatsapp_alert(occ, camera, mp, image_url, image_bytes, db)
 
     db.commit()
 
@@ -83,8 +85,12 @@ def _send_email_alert(occ, camera, mp, image_url: str, db: Session) -> None:
     )
 
 
-def _send_whatsapp_alert(occ, camera, mp, image_url: str, db: Session) -> None:
+def _send_whatsapp_alert(occ, camera, mp, image_url: str, image_bytes: bytes | None, db: Session) -> None:
     from app.services.whatsapp_service import send_whatsapp_alert
+
+    model, config = get_effective_whatsapp_delivery_config(db)
+    if model is not None and not config.is_active:
+        return
 
     already = (
         db.query(AlertSent)
@@ -106,6 +112,9 @@ def _send_whatsapp_alert(occ, camera, mp, image_url: str, db: Session) -> None:
         location=camera.location or "",
         detected_at=detected_at_str,
         image_url=image_url,
+        confidence=occ.confidence,
+        image_bytes=image_bytes,
+        config=config,
     )
 
     db.add(
