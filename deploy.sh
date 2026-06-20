@@ -58,6 +58,13 @@ if [[ "$missing_config" == "1" ]]; then
 fi
 
 echo "[deploy] subindo a stack ($COMPOSE_FILE)..."
+# Exporta vars do .env.prod para o shell antes de chamar docker compose,
+# evitando que o bloco `environment:` do compose sobrescreva o `env_file`
+# com strings vazias quando as variáveis não estão na shell.
+set -a
+# shellcheck source=.env.prod
+source .env.prod
+set +a
 docker compose -f "$COMPOSE_FILE" up -d $BUILD_FLAG
 echo "[deploy] status:"
 docker compose -f "$COMPOSE_FILE" ps
