@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import api from "@/lib/api";
 import { Camera, Client } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { useToast } from "@/components/ui/Toast";
@@ -17,6 +16,8 @@ import {
   Check,
   Trash2,
   Pencil,
+  Eye,
+  RefreshCw,
 } from "lucide-react";
 
 type WizardStep = 1 | 2;
@@ -134,6 +135,10 @@ export default function AdminCamerasPage() {
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState("");
+  const [previewCamera, setPreviewCamera] = useState<Camera | null>(null);
+  const [previewImg, setPreviewImg] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [reconnectingId, setReconnectingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -340,36 +345,37 @@ export default function AdminCamerasPage() {
     );
   }
 
-  function formatLastSeen(dateStr: string | null) {
-    if (!dateStr) return "Nunca";
-    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (diff < 1) return "Agora mesmo";
-    if (diff < 60) return `${diff}m atrás`;
-    const h = Math.floor(diff / 60);
-    if (h < 24) return `${h}h atrás`;
-    return new Date(dateStr).toLocaleDateString("pt-BR");
-  }
-
   const inputCls = (err?: string) =>
     `w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 ${
       err ? "border-red-400" : "border-gray-300"
     }`;
 
-  const detectorVariant = (status: Camera["detector_status"]) => {
-    if (status === "healthy") return "success";
-    if (status === "warning") return "warning";
-    if (status === "degraded") return "danger";
-    if (status === "idle") return "secondary";
-    return "secondary";
-  };
+  async function openPreview(cam: Camera) {
+    setPreviewCamera(cam);
+    setPreviewImg(null);
+    setPreviewLoading(true);
+    try {
+      const res = await api.get<{ image_url: string | null }>(`/api/cameras/${cam.id}/last-frame`);
+      setPreviewImg(res.data.image_url);
+    } catch {
+      setPreviewImg(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
-  const detectorLabel = (status: Camera["detector_status"]) => {
-    if (status === "healthy") return "Saudável";
-    if (status === "warning") return "Atenção";
-    if (status === "degraded") return "Degradado";
-    if (status === "idle") return "Aguardando";
-    return "Offline";
-  };
+  async function handleReconnect(cam: Camera) {
+    setReconnectingId(cam.id);
+    try {
+      await api.post(`/api/cameras/${cam.id}/test`);
+      toast(`Câmera "${cam.name}" reconectada`);
+      await fetchData();
+    } catch {
+      toast(`Não foi possível reconectar "${cam.name}"`, "error");
+    } finally {
+      setReconnectingId(null);
+    }
+  }
 
   const online = cameras.filter((c) => c.is_online).length;
 
@@ -425,13 +431,9 @@ export default function AdminCamerasPage() {
               key={cam.id}
               className="border rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
             >
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold truncate">{cam.name}</p>
-                  {cam.location && (
-                    <p className="text-xs text-muted-foreground truncate">{cam.location}</p>
-                  )}
-                </div>
+              {/* Header: nome + status online */}
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold truncate flex-1 min-w-0">{cam.name}</p>
                 <div className="ml-2 shrink-0">
                   {cam.is_online ? (
                     <span className="flex items-center gap-1 text-xs text-green-600">
@@ -450,55 +452,34 @@ export default function AdminCamerasPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 mb-3">
-                <Badge variant={cam.connection_type === "rtsp" ? "default" : "secondary"}>
-                  <span className="flex items-center gap-1">
-                    {cam.connection_type === "rtsp" ? (
-                      <><Video className="h-3 w-3" aria-hidden="true" /> RTSP</>
-                    ) : (
-                      <><Cpu className="h-3 w-3" aria-hidden="true" /> Agente</>
-                    )}
-                  </span>
-                </Badge>
-                <Badge variant={cam.is_active ? "success" : "danger"}>
-                  {cam.is_active ? "Ativa" : "Inativa"}
-                </Badge>
-                <Badge
-                  variant={
-                    cam.quality_label === "excellent" || cam.quality_label === "good"
-                      ? "success"
-                      : cam.quality_label === "fair"
-                        ? "warning"
-                        : cam.quality_label === "poor"
-                          ? "danger"
-                          : "secondary"
-                  }
-                >
-                  Qualidade {cam.quality_label === "unknown" ? "indisponível" : `${cam.quality_label} (${cam.quality_score.toFixed(0)})`}
-                </Badge>
-                <Badge variant={detectorVariant(cam.detector_status)}>
-                  Detector {detectorLabel(cam.detector_status)} ({cam.detector_health_score.toFixed(0)})
-                </Badge>
-                <Badge variant="secondary">
-                  <span className="flex items-center gap-1">
-                    <Video className="h-3 w-3" aria-hidden="true" />
-                    Live {cam.preview_refresh_seconds.toFixed(1)}s
-                  </span>
-                </Badge>
-              </div>
-              {cam.detector_status_detail && (
-                <p className="mb-3 text-xs text-muted-foreground">{cam.detector_status_detail}</p>
+              {/* RTSP URL */}
+              {cam.rtsp_url && (
+                <p className="text-xs text-muted-foreground font-mono truncate mb-4" title={cam.rtsp_url}>
+                  {cam.rtsp_url}
+                </p>
               )}
 
-              <p className="text-xs text-muted-foreground mb-3">
-                Última atividade: {formatLastSeen(cam.last_seen_at)}
-              </p>
-
-              <div className="flex gap-3">
+              {/* Botões */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => openPreview(cam)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-50 transition-colors"
+                >
+                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                  Preview
+                </button>
+                <button
+                  onClick={() => handleReconnect(cam)}
+                  disabled={reconnectingId === cam.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${reconnectingId === cam.id ? "animate-spin" : ""}`} aria-hidden="true" />
+                  Reconectar
+                </button>
                 <button
                   onClick={() => openEdit(cam)}
                   aria-label={`Editar câmera ${cam.name}`}
-                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors focus:outline-none focus:underline"
+                  className="ml-auto flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
                 >
                   <Pencil className="h-3 w-3" aria-hidden="true" />
                   Editar
@@ -506,26 +487,32 @@ export default function AdminCamerasPage() {
                 <button
                   onClick={() => setDeleteTarget(cam)}
                   aria-label={`Remover câmera ${cam.name}`}
-                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 transition-colors focus:outline-none focus:underline"
+                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 transition-colors"
                 >
                   <Trash2 className="h-3 w-3" aria-hidden="true" />
-                  Remover
                 </button>
-                {cam.connection_type === "agent" && cam.agent_token && (
-                  <button
-                    onClick={() => setAgentCamera(cam)}
-                    aria-label={`Ver token da câmera ${cam.name}`}
-                    className="flex items-center gap-1 text-xs text-primary hover:underline focus:outline-none focus:underline"
-                  >
-                    <Cpu className="h-3 w-3" aria-hidden="true" />
-                    Ver token
-                  </button>
-                )}
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* ── Preview modal ── */}
+      <Modal
+        open={!!previewCamera}
+        onOpenChange={(o) => { if (!o) { setPreviewCamera(null); setPreviewImg(null); } }}
+        title={previewCamera ? `Preview — ${previewCamera.name}` : "Preview"}
+      >
+        <div className="flex items-center justify-center min-h-[200px]">
+          {previewLoading ? (
+            <p className="text-sm text-muted-foreground">Carregando…</p>
+          ) : previewImg ? (
+            <img src={previewImg} alt="Último frame capturado" className="rounded-md max-w-full max-h-[60vh] object-contain" />
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhum frame disponível ainda.</p>
+          )}
+        </div>
+      </Modal>
 
       {/* ── Delete confirm ── */}
       <Modal
