@@ -19,7 +19,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column("plans", sa.Column("ocr_enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")))
     op.add_column("plans", sa.Column("face_recognition_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")))
-    op.add_column("plans", sa.Column("face_engine", sa.String(length=30), nullable=False, server_default="system_default"))
+    op.add_column("plans", sa.Column("face_engine", sa.String(length=30), nullable=False, server_default=sa.text("'system_default'")))
     op.add_column("cameras", sa.Column("enable_ocr", sa.Boolean(), nullable=False, server_default=sa.text("true")))
     op.add_column("cameras", sa.Column("enable_face", sa.Boolean(), nullable=False, server_default=sa.text("false")))
 
