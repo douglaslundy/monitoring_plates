@@ -63,6 +63,7 @@ export const CLIENT_NAV: NavItem[] = [
   { href: "/client/persons", label: "Pessoas", icon: UserRound },
   { href: "/client/face-detections", label: "Faces", icon: ScanFace },
   { href: "/client/alerts", label: "Alertas", icon: Bell },
+  { href: "/client/alertas-disparados", label: "Alertas disparados", icon: BellRing },
   { href: "/client/cameras", label: "Cameras", icon: Camera },
   { href: "/client/live", label: "Live", icon: Radio },
   { href: "/client/settings", label: "Configuracoes", icon: Settings },
@@ -106,7 +107,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <nav role="navigation" aria-label="Menu principal" className="flex-1 min-h-0 p-3 space-y-0.5">
+      <nav role="navigation" aria-label="Menu principal" className="flex-1 min-h-0 overflow-y-auto p-3 space-y-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href, item.exact);
