@@ -25,3 +25,4 @@ class Client(Base):
     users = relationship("User", back_populates="client")
     cameras = relationship("Camera", back_populates="client")
     monitored_plates = relationship("MonitoredPlate", back_populates="client")
+    persons = relationship("Person", back_populates="client")
