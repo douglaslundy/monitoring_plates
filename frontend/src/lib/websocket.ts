@@ -113,6 +113,7 @@ export class PlateAlertWebSocket {
           const data = JSON.parse(event.data as string);
           if (
             data.type === "plate_alert" ||
+            data.type === "face_alert" ||
             data.type === "camera_health_alert" ||
             data.type === "worker_delay_alert" ||
             data.type === "ocr_pipeline_alert"

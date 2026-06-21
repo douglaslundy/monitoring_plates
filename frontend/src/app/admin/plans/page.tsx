@@ -28,6 +28,9 @@ interface PlanForm {
   realtime_alerts: boolean;
   price_monthly: string;
   ocr_engine: "system_default" | "easyocr" | "plate_recognizer";
+  ocr_enabled: boolean;
+  face_recognition_enabled: boolean;
+  face_engine: "system_default" | "opencv" | "rekognition" | "luxand" | "facepp";
   is_active: boolean;
 }
 
@@ -39,6 +42,9 @@ const emptyForm: PlanForm = {
   realtime_alerts: true,
   price_monthly: "",
   ocr_engine: "system_default",
+  ocr_enabled: true,
+  face_recognition_enabled: false,
+  face_engine: "system_default",
   is_active: true,
 };
 
@@ -51,6 +57,9 @@ function planToForm(p: Plan): PlanForm {
     realtime_alerts: p.realtime_alerts,
     price_monthly: String(p.price_monthly),
     ocr_engine: p.ocr_engine,
+    ocr_enabled: p.ocr_enabled,
+    face_recognition_enabled: p.face_recognition_enabled,
+    face_engine: p.face_engine,
     is_active: p.is_active,
   };
 }
@@ -115,6 +124,9 @@ export default function PlansPage() {
       realtime_alerts: form.realtime_alerts,
       price_monthly: Number(form.price_monthly),
       ocr_engine: form.ocr_engine,
+      ocr_enabled: form.ocr_enabled,
+      face_recognition_enabled: form.face_recognition_enabled,
+      face_engine: form.face_engine,
       is_active: form.is_active,
     };
     try {
@@ -354,7 +366,41 @@ export default function PlansPage() {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium mb-1">Motor de reconhecimento facial</label>
+            <select
+              className="w-full border rounded px-3 py-2 text-sm"
+              value={form.face_engine}
+              onChange={(e) =>
+                setForm({ ...form, face_engine: e.target.value as PlanForm["face_engine"] })
+              }
+              disabled={!form.face_recognition_enabled}
+            >
+              <option value="system_default">Padrão do sistema</option>
+              <option value="opencv">OpenCV (local)</option>
+              <option value="rekognition">AWS Rekognition</option>
+              <option value="luxand">Luxand</option>
+              <option value="facepp">Face++</option>
+            </select>
+          </div>
+
           <div className="flex flex-col gap-2 pt-1">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.ocr_enabled}
+                onChange={(e) => setForm({ ...form, ocr_enabled: e.target.checked })}
+              />
+              Reconhecimento de placas (OCR)
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.face_recognition_enabled}
+                onChange={(e) => setForm({ ...form, face_recognition_enabled: e.target.checked })}
+              />
+              Reconhecimento facial
+            </label>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

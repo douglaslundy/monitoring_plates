@@ -31,6 +31,8 @@ interface CreateForm {
   preview_refresh_seconds: string;
   dual_lens: boolean;
   lens_side: "upper" | "lower";
+  enable_ocr: boolean;
+  enable_face: boolean;
   roi_x: string;
   roi_y: string;
   roi_width: string;
@@ -52,6 +54,8 @@ interface EditForm {
   preview_refresh_seconds: string;
   dual_lens: boolean;
   lens_side: "upper" | "lower";
+  enable_ocr: boolean;
+  enable_face: boolean;
   roi_x: string;
   roi_y: string;
   roi_width: string;
@@ -68,6 +72,8 @@ const emptyForm: CreateForm = {
   preview_refresh_seconds: "2.5",
   dual_lens: false,
   lens_side: "upper",
+  enable_ocr: true,
+  enable_face: false,
   roi_x: "",
   roi_y: "",
   roi_width: "",
@@ -219,6 +225,8 @@ export default function AdminCamerasPage() {
         preview_refresh_seconds: parsePreviewRefreshSeconds(form.preview_refresh_seconds),
         dual_lens: form.dual_lens,
         lens_side: form.dual_lens ? form.lens_side : null,
+        enable_ocr: form.enable_ocr,
+        enable_face: form.enable_face,
         roi_x: parseOptionalFloat(form.roi_x),
         roi_y: parseOptionalFloat(form.roi_y),
         roi_width: parseOptionalFloat(form.roi_width),
@@ -263,6 +271,8 @@ export default function AdminCamerasPage() {
       preview_refresh_seconds: camera.preview_refresh_seconds?.toString() ?? "2.5",
       dual_lens: camera.dual_lens ?? false,
       lens_side: camera.lens_side ?? "upper",
+      enable_ocr: camera.enable_ocr ?? true,
+      enable_face: camera.enable_face ?? false,
       roi_x: camera.roi_x?.toString() ?? "",
       roi_y: camera.roi_y?.toString() ?? "",
       roi_width: camera.roi_width?.toString() ?? "",
@@ -300,6 +310,8 @@ export default function AdminCamerasPage() {
         preview_refresh_seconds: parsePreviewRefreshSeconds(editForm.preview_refresh_seconds),
         dual_lens: editForm.dual_lens,
         lens_side: editForm.dual_lens ? editForm.lens_side : null,
+        enable_ocr: editForm.enable_ocr,
+        enable_face: editForm.enable_face,
         roi_x: parseOptionalFloat(editForm.roi_x),
         roi_y: parseOptionalFloat(editForm.roi_y),
         roi_width: parseOptionalFloat(editForm.roi_width),
@@ -598,6 +610,17 @@ export default function AdminCamerasPage() {
                 </select>
               )}
             </div>
+            <div className="rounded border p-3 bg-gray-50 space-y-2">
+              <p className="text-sm font-medium">Processamento</p>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={editForm.enable_ocr} onChange={(e) => setEditForm((p) => (p ? { ...p, enable_ocr: e.target.checked } : p))} />
+                Ativar OCR (placas)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={editForm.enable_face} onChange={(e) => setEditForm((p) => (p ? { ...p, enable_face: e.target.checked } : p))} />
+                Ativar reconhecimento facial
+              </label>
+            </div>
             <div className="rounded border p-3 bg-gray-50 space-y-3">
               <div>
                 <p className="text-sm font-medium">ROI para detecção</p>
@@ -795,6 +818,26 @@ export default function AdminCamerasPage() {
                   <option value="lower">Lente 2 (inferior)</option>
                 </select>
               )}
+            </div>
+
+            <div className="rounded border p-3 bg-gray-50 space-y-2">
+              <p className="text-sm font-medium">Processamento</p>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.enable_ocr}
+                  onChange={(e) => setField("enable_ocr", e.target.checked)}
+                />
+                Ativar OCR (placas)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.enable_face}
+                  onChange={(e) => setField("enable_face", e.target.checked)}
+                />
+                Ativar reconhecimento facial
+              </label>
             </div>
 
             <div className="rounded border p-3 bg-gray-50 space-y-3">
