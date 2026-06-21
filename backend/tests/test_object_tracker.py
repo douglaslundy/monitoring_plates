@@ -82,15 +82,87 @@ def test_objeto_em_movimento_sem_iou_segue_mesmo_track():
 
 
 def test_det_to_track_referencia_mutavel():
+    # Veículo conta na 1ª; pessoa só após o voto mínimo (2 frames) — então
+    # usamos 2 frames para que ambos contem e validamos a referência mutável.
     a = _box(50, 50, label="car")
     b = _box(600, 400, category="person", label="person")
     state, newly, det_to_track, _ = update_tracks([], [a, b], now=6000.0)
-    assert _count_new(newly) == 2
+    state, newly, det_to_track, _ = update_tracks(state, [a, b], now=6000.5)
     assert set(det_to_track.keys()) == {0, 1}
     det_to_track[0]["occurrence_id"] = "abc"
     assert any(t.get("occurrence_id") == "abc" for t in state)
     for t in newly:
         assert "det_index" in t and 0 <= t["det_index"] < 2
+
+
+# ── T3: estado de OCR e melhor frame ─────────────────────────────────────────
+
+
+def test_novo_track_inicia_pending_e_best_quality_zero():
+    state, _, _, _ = update_tracks([], [_box(100, 100)], now=16000.0)
+    tr = state[0]
+    assert tr["ocr_state"] == "pending"
+    assert tr["best_quality"] == 0.0
+    assert tr["occurrence_id"] is None
+
+
+# ── T4: voto de classe obrigatório p/ registrar pessoa/animal ────────────────
+
+
+def test_pessoa_so_registra_apos_voto_minimo():
+    # Pessoa precisa de TRACK_MIN_REGISTER_VOTES (2) votos da classe antes de
+    # contar — uma classificação errada de 1 frame não vira registro.
+    person = _box(300, 200, category="person", label="person")
+    state: list = []
+    state, newly, _, _ = update_tracks(state, [person], now=17000.0)
+    assert _count_new(newly) == 0  # 1 voto -> ainda não
+    state, newly, _, _ = update_tracks(state, [person], now=17000.5)
+    assert _count_new(newly) == 1  # 2 votos -> conta
+
+
+def test_erro_pontual_de_classe_nao_registra():
+    # Cão visto 3x como dog + 1x como person (cross-category): registra UMA vez,
+    # como dog (maioria), e NÃO cria um registro de pessoa do frame errado.
+    dog = _box(200, 150, w=80, h=80, category="animal", label="dog")
+    person = _box(200, 150, w=80, h=80, category="person", label="person")
+    state: list = []
+    total_dog = total_person = 0
+    seq = [dog, person, dog, dog]
+    for i, det in enumerate(seq):
+        state, newly, _, _ = update_tracks(state, [det], now=18000.0 + i * 0.5, frame_w=640, frame_h=480)
+        total_dog += sum(1 for n in newly if n["category"] == "animal" and n.get("reason") == "new")
+        total_person += sum(1 for n in newly if n["category"] == "person" and n.get("reason") == "new")
+    assert total_person == 0
+    assert total_dog == 1
+    assert len(state) == 1
+
+
+# ── T5: pessoa/animal conta mesmo cortado na borda (objeto que cruza rápido) ──
+
+
+def test_animal_na_borda_conta_apos_votos():
+    # Animal SEMPRE na borda (nunca inteiro no frame): com YOLO exigindo inteiro,
+    # nunca contava. Agora pessoa/animal não exige caber inteiro — conta após o
+    # voto mínimo. Corrige "animais detectados raramente".
+    state: list = []
+    total = 0
+    for i in range(2):
+        det = _box(0, 100, category="animal", label="dog")
+        state, newly, _, _ = update_tracks(state, [det], now=19000.0 + i * 0.5, frame_w=640, frame_h=480)
+        total += _count_new(newly)
+    assert total == 1
+
+
+def test_veiculo_na_borda_ainda_exige_inteiro_no_frame():
+    # Veículo na borda NÃO conta de imediato (precisa do plate/frame bom) — regra
+    # preservada (só pessoa/animal foi relaxada).
+    state: list = []
+    total = 0
+    for i in range(2):
+        det = _box(0, 100, category="vehicle", label="car")
+        state, newly, _, _ = update_tracks(state, [det], now=19500.0 + i * 0.5, frame_w=640, frame_h=480)
+        total += _count_new(newly)
+    assert total == 0
 
 
 # ── Gating "objeto inteiro no frame" ─────────────────────────────────────────

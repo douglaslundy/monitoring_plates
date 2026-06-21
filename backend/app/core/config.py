@@ -52,12 +52,14 @@ class Settings(BaseSettings):
     # Categorias extras de detecção (mesmo modelo YOLOv8s/COCO).
     DETECT_PERSONS: bool = True
     DETECT_ANIMALS: bool = True
-    # Confiança mínima por categoria. Elevadas (T4) para reduzir classificações
-    # erradas de baixa confiança (homem como urso, cão como pessoa). O voto de
-    # classe ao longo do track (object_tracker_service) corrige o resto: um erro
-    # pontual de 1 frame é vencido pela maioria.
-    PERSON_CONF_THRESHOLD: float = 0.55
-    ANIMAL_CONF_THRESHOLD: float = 0.55
+    # Confiança mínima por categoria = limiar de RASTREIO (não de registro).
+    # Baixo de propósito: captura objeto pequeno/distante (animal cruzando ao
+    # fundo, antes perdido com 0.55). A classificação errada de baixa confiança
+    # NÃO vira registro porque o registro exige voto de classe estável
+    # (TRACK_MIN_REGISTER_VOTES) ao longo do track — a maioria vence o erro
+    # pontual. Animal mais baixo que pessoa: estava sendo muito sub-detectado.
+    PERSON_CONF_THRESHOLD: float = 0.40
+    ANIMAL_CONF_THRESHOLD: float = 0.30
 
     # Qualidade das imagens (reduz perda por recompressão JPEG na cadeia
     # captura -> análise -> recorte salvo).
@@ -124,6 +126,26 @@ class Settings(BaseSettings):
     # médio do bbox, após TRACK_STATIONARY_MIN_HITS frames.
     TRACK_STATIONARY_RADIUS_RATIO: float = 0.25
     TRACK_STATIONARY_MIN_HITS: int = 3
+    # Votos mínimos da classe vencedora para REGISTRAR uma pessoa/animal. Separa o
+    # limiar de RASTREAR (baixo, no detector — captura objeto pequeno/distante) do
+    # de REGISTRAR (estável): um erro de classe de 1 frame (cão<->pessoa) não vira
+    # registro; só a maioria ao longo do track conta. Veículos não usam isto (a
+    # placa é o sinal). Diferente do gating "inteiro no frame", pessoa/animal NÃO
+    # precisa caber inteiro p/ contar — corrige animais que cruzam rápido na borda.
+    TRACK_MIN_REGISTER_VOTES: int = 2
+
+    # ── Política de OCR híbrida (frame_processor) ──────────────────────────────
+    # Qualidade mínima do recorte (0..1, frame_quality_service) para disparar o
+    # OCR de um track ainda não lido. Evita rodar OCR em frame borrado/minúsculo.
+    OCR_MIN_QUALITY: float = 0.30
+    # Margem de qualidade para RE-OCR (refino): só reprocessa um track já lido se
+    # surgir um frame com qualidade pelo menos esta fração melhor que a do melhor
+    # frame já usado. Evita reprocessar a cada pequena variação.
+    OCR_REFINE_MARGIN: float = 0.15
+    # Tentativas de OCR antes de "dormir" um track PARADO ainda sem placa lida
+    # (ex.: caminhão estacionado com placa ilegível). Evita rodar OCR para sempre
+    # num objeto parado que nunca lê. Ele volta a tentar só se voltar a se mover.
+    OCR_STATIONARY_MAX_ATTEMPTS: int = 6
     # Agrupamento piloto+moto (T5): uma pessoa é considerada PILOTO de uma moto
     # quando seu bbox sobrepõe a moto em >= esta fração da área da pessoa e seu
     # centro horizontal cai dentro da moto. Vira UMA detecção (moto principal +
@@ -134,6 +156,13 @@ class Settings(BaseSettings):
     CAPTURE_FPS: float = 6.0
     MOTION_MIN_AREA_RATIO: float = 0.0035
     MOTION_COOLDOWN_SECONDS: float = 0.0
+    # Heartbeat de cobertura: garante AO MENOS um frame ao ANPR a cada N segundos
+    # quando NÃO há movimento (rede de segurança caso o motion gating perca algo
+    # lento/estático). Qualquer envio (movimento ou heartbeat) reinicia o timer.
+    # Era 8s fixo (enviava cena parada ao pipeline o tempo todo, custo de CPU à
+    # toa); subiu para reduzir a carga em cenas estáticas — o objeto parado já não
+    # é re-OCR'd (o track "dorme"), então o heartbeat só precisa cobrir o raro.
+    CAPTURE_FORCE_SEND_SECONDS: float = 45.0
 
     # Live WebRTC (go2rtc). GO2RTC_URL = endpoint interno p/ a API (sync de
     # streams); GO2RTC_PUBLIC_URL = base acessada pelo navegador do operador.

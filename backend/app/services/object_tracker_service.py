@@ -219,6 +219,14 @@ def update_tracks(
 
         A classe usada é a VOTADA (maioria ao longo do track), não a do frame —
         um erro pontual de classificação não vira registro nem dispara re-save.
+
+        Regras de contagem por categoria:
+        - **veículo**: conta quando confirmado E aparece inteiro no frame (ou após
+          `TRACK_FORCE_SAVE_HITS`). Precisa do frame bom p/ a imagem/placa.
+        - **pessoa/animal**: conta quando confirmado E a classe vencedora tem
+          `TRACK_MIN_REGISTER_VOTES` votos. NÃO exige caber inteiro — um animal
+          que cruza rápido pela borda ainda é contado; o voto evita registrar uma
+          classificação errada de 1 frame (cão<->pessoa).
         """
         bbox = detections[di]["bbox"]
         confirmed = tr["hits"] >= min_hits
@@ -226,7 +234,11 @@ def update_tracks(
         if not tr.get("counted"):
             if not confirmed:
                 return
-            if _fully_in_frame(bbox, frame_w, frame_h) or tr["hits"] >= force_hits:
+            if tr["category"] == "vehicle":
+                ready = _fully_in_frame(bbox, frame_w, frame_h) or tr["hits"] >= force_hits
+            else:
+                ready = tr.get("votes", {}).get(current_class, 0) >= settings.TRACK_MIN_REGISTER_VOTES
+            if ready:
                 tr["counted"] = True
                 tr["saved_class"] = current_class
                 newly.append({**tr, "det_index": di, "reason": "new"})
@@ -301,6 +313,15 @@ def update_tracks(
             "stationary": False,
             "vx": None,
             "vy": None,
+            # Máquina de OCR (gerida pelo frame_processor): pending -> read ->
+            # dormant. best_quality = qualidade (0..1) do melhor frame já usado no
+            # OCR deste track, p/ decidir refino. Persistem no Redis (JSON-safe).
+            "ocr_state": "pending",
+            "best_quality": 0.0,
+            "occurrence_id": None,
+            "plate": None,
+            "plate_confidence": 0.0,
+            "stationary_since": None,
         }
         _maybe_register(tr, di)
         tracks.append(tr)

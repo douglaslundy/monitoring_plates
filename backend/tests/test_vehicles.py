@@ -627,12 +627,15 @@ def test_process_frame_usa_recorte_do_veiculo(db, camera_agent_a):
     mock_save = patch("app.services.storage_service.save_bytes", return_value="cameras/test/crop.jpg")
     mock_alerts = patch("app.services.alert_service.process_alerts")
     mock_redis = patch("redis.from_url")
+    # Crop mockado (b"vehicle-crop") não decodifica -> a qualidade real ficaria
+    # abaixo do gate de OCR. Este teste foca no uso do recorte, não na qualidade.
+    mock_quality = patch("app.services.frame_quality_service.crop_quality", return_value=0.9)
 
     fake_redis = MagicMock()
     fake_redis.set.return_value = True
     worker_db = SessionLocal()
     try:
-        with patch("app.core.database.SessionLocal", return_value=worker_db), mock_query, mock_recognizer as recognizer_mock, mock_save, mock_alerts, mock_redis as redis_from_url:
+        with patch("app.core.database.SessionLocal", return_value=worker_db), mock_query, mock_recognizer as recognizer_mock, mock_save, mock_alerts, mock_quality, mock_redis as redis_from_url:
             redis_from_url.return_value = fake_redis
             frame_processor.process_frame.run(str(camera_agent_a.id), __import__("base64").b64encode(frame_bytes).decode())
 
@@ -694,6 +697,7 @@ def test_process_frame_ignora_frame_repetido(db, camera_agent_a):
             patch("app.services.ocr_pipeline_alert_service.maybe_publish_ocr_pipeline_alert"),
             patch("app.services.camera_health_alert_service.maybe_publish_camera_health_alert"),
             patch("app.services.worker_delay_alert_service.maybe_publish_worker_delay_alert"),
+            patch("app.services.frame_quality_service.crop_quality", return_value=0.9),
             patch("redis.from_url", return_value=FakeRedis()),
         ):
             frame_processor.process_frame.run(str(camera_agent_a.id), frame_b64)
