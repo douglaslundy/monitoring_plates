@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     # imagem salva ficar maior e mais legível a olho. 0 desliga.
     DETECTION_MIN_CROP_SIDE: int = 320
 
+    # Reconhecimento facial (motor local OpenCV: YuNet detecção + SFace embedding).
+    # Os .onnx são embutidos na imagem Docker; FACE_MODEL_DIR cai p/ MODELS_DIR.
+    FACE_MODEL_DIR: str = ""  # vazio -> usa MODELS_DIR no serviço
+    FACE_DETECTOR_MODEL: str = "face_detection_yunet_2023mar.onnx"
+    FACE_RECOGNIZER_MODEL: str = "face_recognition_sface_2021dec.onnx"
+    FACE_MIN_DETECT_SCORE: float = 0.7
+    FACE_MATCH_THRESHOLD: float = 0.36  # similaridade de cosseno SFace
+    FACE_MIN_CROP_SIDE: int = 80
+
     # Rastreador multi-objeto (object_tracker_service)
     TRACK_IOU_MIN: float = 0.20
     # Tempo de vida do track sem ser visto. Generoso de propósito: com motion
