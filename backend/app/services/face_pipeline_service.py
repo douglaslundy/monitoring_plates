@@ -1,0 +1,107 @@
+"""Bloco facial do pipeline (lógica testável, fora da task Celery).
+
+`process_faces`: para cada detecção `person` cujo track está confirmado
+(`counted`) e ainda sem `face_saved`, detecta o rosto no recorte da pessoa
+(motor local só p/ achar/encaixotar), identifica via motor do plano, grava UM
+`FaceDetection` por track e dispara alertas quando há pessoa casada.
+
+`finalize_expired_faces`: quando o track expira, fecha a duração de rastreio
+(`tracked_seconds`) do `FaceDetection` correspondente.
+"""
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Callable, Optional
+
+from sqlalchemy.orm import Session
+
+from app.models.face_detection import FaceDetection
+from app.services.face_service import face_recognizer
+
+logger = logging.getLogger(__name__)
+
+
+def _detect_face_crop(person_crop_bytes: bytes) -> Optional[bytes]:
+    """Acha o maior rosto dentro do recorte da pessoa e devolve o recorte JPEG do
+    rosto (ou None se não houver rosto válido). Usa o motor LOCAL apenas para
+    localizar/encaixotar — a identificação usa o motor do plano."""
+    from app.services.face_detection_service import face_engine
+
+    boxes = face_engine.detect(person_crop_bytes)
+    if not boxes:
+        return None
+    return boxes[0].crop_bytes
+
+
+def process_faces(
+    db: Session,
+    camera,
+    detections: list,
+    det_to_track: dict,
+    display_image_fn: Callable[[], Optional[str]],
+    now_ts: float,
+) -> None:
+    client_id = str(camera.client_id)
+    plan = camera.client.plan if camera.client else None
+    engine_type = face_recognizer.resolve_engine_type(client_id)
+
+    expires_at = None
+    if plan and plan.retention_days:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
+
+    for idx, d in enumerate(detections):
+        if getattr(d, "category", None) != "person":
+            continue
+        tr = det_to_track.get(idx)
+        if tr is None or not tr.get("counted") or tr.get("face_saved"):
+            continue
+
+        crop = _detect_face_crop(d.crop_bytes)
+        if crop is None:
+            continue
+
+        match = face_recognizer.identify(client_id, crop)
+        fd = FaceDetection(
+            camera_id=camera.id,
+            person_id=uuid.UUID(match.person_id) if match else None,
+            confidence=match.confidence if match else None,
+            image_path=display_image_fn(),
+            bbox_x=int(d.bbox_x),
+            bbox_y=int(d.bbox_y),
+            bbox_w=int(d.bbox_w),
+            bbox_h=int(d.bbox_h),
+            track_id=tr.get("track_id"),
+            expires_at=expires_at,
+            face_engine_used=engine_type,
+        )
+        db.add(fd)
+        db.flush()
+        tr["face_saved"] = True
+        tr["face_detection_id"] = str(fd.id)
+
+        if match:
+            try:
+                from app.services.face_alert_service import process_face_alerts
+
+                process_face_alerts(str(fd.id), db)
+            except Exception:
+                logger.warning("Falha ao processar alerta de face", exc_info=True)
+
+
+def finalize_expired_faces(db: Session, expired: list[dict]) -> None:
+    for e in expired:
+        fdid = e.get("face_detection_id")
+        if not fdid:
+            continue
+        fd = db.query(FaceDetection).filter(FaceDetection.id == uuid.UUID(str(fdid))).first()
+        if fd is None:
+            continue
+        try:
+            duration = float(e["last_seen_at"]) - float(e["first_seen_at"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if duration > 0:
+            fd.tracked_seconds = duration
+            db.flush()

@@ -452,6 +452,26 @@ try:
                     )
                 )
 
+            # Bloco facial: detecta/identifica rostos das pessoas rastreadas e
+            # grava 1 FaceDetection por track; fecha a duração dos tracks expirados.
+            # Só roda quando a câmera e o plano do cliente habilitam faces.
+            if (
+                getattr(camera, "enable_face", False)
+                and camera.client
+                and camera.client.plan
+                and camera.client.plan.face_recognition_enabled
+            ):
+                try:
+                    from app.services.face_pipeline_service import (
+                        process_faces,
+                        finalize_expired_faces,
+                    )
+
+                    process_faces(db, camera, detections, det_to_track, _display_image, now_ts)
+                    finalize_expired_faces(db, expired)
+                except Exception:
+                    logger.warning("Bloco facial falhou camera=%s", camera.id, exc_info=True)
+
             db.commit()
             # Persiste o estado dos tracks (hits/counted/placa/occurrence_id) para
             # o próximo frame não recontar nem recriar a placa do mesmo objeto.
