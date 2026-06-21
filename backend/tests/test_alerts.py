@@ -331,6 +331,40 @@ def test_email_nao_enviado_sem_alert_email_no_monitored_plate(db):
     assert mock_send.call_count == 0
 
 
+def test_placa_global_admin_dispara_mesmo_sem_plano(db):
+    """Placa global do admin (client_id=None) dispara e-mail SEMPRE (independe do
+    plano da câmera) e grava o AlertSent(websocket), mas NÃO publica no canal do
+    cliente (não vaza a placa do admin)."""
+    _plan, _tenant, camera = _make_tenant(db, email_alerts=False, realtime_alerts=False)
+    mp = MonitoredPlate(
+        client_id=None,  # global
+        plate="GLB1234",
+        alert_email="admin@test.com",
+        is_active=True,
+    )
+    db.add(mp)
+    db.flush()
+    occ = _occ(db, camera, "GLB1234")
+
+    with (
+        patch("app.services.alert_service.send_plate_alert", return_value=True) as mock_send,
+        patch("app.services.alert_service._publish_ws_alert") as mock_ws,
+        patch("app.services.whatsapp_service.send_whatsapp_alert"),
+    ):
+        from app.services.alert_service import process_alerts
+
+        process_alerts(str(occ.id), db)
+
+    assert mock_send.call_count == 1  # e-mail disparou mesmo com plano sem email_alerts
+    assert mock_ws.call_count == 0  # não publica no canal do cliente
+    ws = (
+        db.query(AlertSent)
+        .filter(AlertSent.occurrence_id == occ.id, AlertSent.channel == AlertChannel.websocket)
+        .first()
+    )
+    assert ws is not None  # aparece em "Alertas disparados" do admin
+
+
 def test_alert_logs_endpoint_filters_and_returns_message(client, db, super_admin_user):
     _plan, tenant, camera = _make_tenant(db, email_alerts=True, realtime_alerts=False)
     _monitored(db, tenant, "ABC1234")

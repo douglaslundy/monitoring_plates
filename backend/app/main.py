@@ -114,16 +114,33 @@ def serve_image(
     if len(parts) < 2 or parts[0] != "cameras":
         raise HTTPException(status_code=404, detail="Imagem não encontrada")
 
-    try:
-        camera_id = UUID(parts[1])
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    # Fotos de pessoa são salvas como cameras/persons/{person_id}/...; a
+    # autorização usa o client_id da pessoa (NULL = pessoa global do admin).
+    if parts[1] == "persons":
+        from app.models.person import Person
 
-    camera = db.query(Camera).filter(Camera.id == camera_id).first()
-    if not camera:
-        raise HTTPException(status_code=404, detail="Imagem não encontrada")
-    if current_user.role != UserRole.super_admin and camera.client_id != current_user.client_id:
-        raise HTTPException(status_code=403, detail="Acesso negado")
+        if len(parts) < 3:
+            raise HTTPException(status_code=404, detail="Imagem não encontrada")
+        try:
+            person_id = UUID(parts[2])
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Imagem não encontrada")
+        person = db.query(Person).filter(Person.id == person_id).first()
+        if not person:
+            raise HTTPException(status_code=404, detail="Imagem não encontrada")
+        if current_user.role != UserRole.super_admin and person.client_id != current_user.client_id:
+            raise HTTPException(status_code=403, detail="Acesso negado")
+    else:
+        try:
+            camera_id = UUID(parts[1])
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Imagem não encontrada")
+
+        camera = db.query(Camera).filter(Camera.id == camera_id).first()
+        if not camera:
+            raise HTTPException(status_code=404, detail="Imagem não encontrada")
+        if current_user.role != UserRole.super_admin and camera.client_id != current_user.client_id:
+            raise HTTPException(status_code=403, detail="Acesso negado")
 
     full_path = Path(settings.STORAGE_PATH) / path
     if not full_path.exists():

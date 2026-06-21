@@ -12,6 +12,7 @@ from app.models.occurrence import Occurrence
 from app.models.monitored_plate import MonitoredPlate
 from app.models.user import User, UserRole
 from app.schemas.alert import AlertSentLogRead, AlertSentRead
+from app.services.storage_service import get_url
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -80,6 +81,7 @@ def list_sent_alert_logs(
             sent_at=alert.sent_at,
             status=alert.status,
             message=alert.message,
+            image_url=get_url(occ.image_path) if occ.image_path else None,
         )
         for alert, occ, camera, _mp in rows
     ]

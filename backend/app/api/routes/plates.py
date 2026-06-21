@@ -31,14 +31,11 @@ def create_plate(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # client_id vem do usuário logado; super_admin pode informá-lo no corpo.
+    # client_id vem do usuário logado; super_admin pode informá-lo no corpo OU
+    # deixá-lo vazio para uma placa GLOBAL (sem cliente): casa contra todas as
+    # câmeras e só ele a vê.
     if current_user.role == UserRole.super_admin:
-        if payload.client_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="client_id é obrigatório para super_admin. Selecione um cliente.",
-            )
-        client_id = payload.client_id
+        client_id = payload.client_id  # pode ser None (placa global do admin)
     else:
         if current_user.client_id is None:
             raise HTTPException(

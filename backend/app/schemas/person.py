@@ -39,7 +39,7 @@ class PersonRead(PersonBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    client_id: UUID
+    client_id: Optional[UUID] = None  # None = pessoa global do super_admin
     photo_url: Optional[str] = None
     faces_count: int = 0
     created_at: Optional[datetime] = None

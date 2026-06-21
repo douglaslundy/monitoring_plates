@@ -239,7 +239,7 @@ export interface VehicleEventPage {
 
 export interface MonitoredPlate {
   id: string;
-  client_id: string;
+  client_id: string | null;
   plate: string;
   description: string | null;
   alert_email: string | null;
@@ -270,11 +270,12 @@ export interface AlertLog {
   sent_at: string;
   status: string;
   message: string | null;
+  image_url: string | null;
 }
 
 export interface Person {
   id: string;
-  client_id: string;
+  client_id: string | null;
   name: string;
   birth_date: string | null;
   cpf: string | null;
