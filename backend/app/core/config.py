@@ -140,6 +140,10 @@ class Settings(BaseSettings):
     # surgir um frame com qualidade pelo menos esta fração melhor que a do melhor
     # frame já usado. Evita reprocessar a cada pequena variação.
     OCR_REFINE_MARGIN: float = 0.15
+    # Tentativas de OCR antes de "dormir" um track PARADO ainda sem placa lida
+    # (ex.: caminhão estacionado com placa ilegível). Evita rodar OCR para sempre
+    # num objeto parado que nunca lê. Ele volta a tentar só se voltar a se mover.
+    OCR_STATIONARY_MAX_ATTEMPTS: int = 6
     # Agrupamento piloto+moto (T5): uma pessoa é considerada PILOTO de uma moto
     # quando seu bbox sobrepõe a moto em >= esta fração da área da pessoa e seu
     # centro horizontal cai dentro da moto. Vira UMA detecção (moto principal +

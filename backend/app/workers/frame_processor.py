@@ -244,13 +244,17 @@ try:
                     _display_cache["path"] = save_bytes(drawn, camera_id)
                 return _display_cache["path"]
 
-            # OCR em TODOS os veículos do frame.
-            # Regras de persistência:
-            #   - Cria ocorrência na 1ª leitura válida do track.
-            #   - Atualiza se placa DIFERENTE + confiança MAIOR que a gravada.
-            #   - Pula OCR se track ≥98% conf + parado há ≥15 min (track maduro).
-            _STATIONARY_SKIP_SECS = 15 * 60   # 15 minutos
-            _STATIONARY_SKIP_CONF = 0.98
+            # OCR centrado no TRACK com seleção de melhor frame (política híbrida):
+            #   - pending: roda OCR no 1º frame com qualidade >= OCR_MIN_QUALITY
+            #     (alerta cedo). Ao ler a placa -> cria ocorrência + alerta -> read.
+            #   - read: só RE-OCR (refino) se surgir um frame bem melhor (margem
+            #     OCR_REFINE_MARGIN). Atualiza a imagem p/ o frame melhor; troca a
+            #     placa só se diferente + confiança maior (sem novo alerta).
+            #   - parado + lido (ou esgotou tentativas) -> dormant: NUNCA mais OCR
+            #     enquanto permanecer. Mata o reprocessamento do objeto estacionado.
+            from app.services.frame_quality_service import crop_quality
+            from app.services.object_tracker_service import _fully_in_frame
+            from app.services.ocr_policy_service import decide_ocr_action
 
             occ = None
             persistence_seconds: float | None = None
@@ -260,25 +264,55 @@ try:
                     continue
 
                 v_track = det_to_track.get(v_idx)
-
-                # Mantém stationary_since: quando o track ficou parado pela 1ª vez.
-                if v_track is not None:
-                    if v_track.get("stationary", False):
-                        if v_track.get("stationary_since") is None:
-                            v_track["stationary_since"] = now
-                    else:
-                        v_track["stationary_since"] = None
-
-                # Pula OCR: track de alta confiança parado há muito tempo.
-                if (
-                    v_track is not None
-                    and float(v_track.get("plate_confidence") or 0.0) >= _STATIONARY_SKIP_CONF
-                    and v_track.get("stationary", False)
-                    and v_track.get("stationary_since") is not None
-                    and (now - float(v_track["stationary_since"])) > _STATIONARY_SKIP_SECS
-                ):
+                # Só processa track confirmado (objeto estável no frame).
+                if v_track is None or not v_track.get("counted"):
                     continue
 
+                ocr_state = v_track.get("ocr_state", "pending")
+
+                # Estacionariedade (corrige bug now->now_ts): marca quando parou.
+                if v_track.get("stationary", False):
+                    if v_track.get("stationary_since") is None:
+                        v_track["stationary_since"] = now_ts
+                else:
+                    v_track["stationary_since"] = None
+
+                # Qualidade do recorte atual — base da seleção do melhor frame.
+                bbox = {
+                    "bbox_x": int(d.bbox_x),
+                    "bbox_y": int(d.bbox_y),
+                    "bbox_w": int(d.bbox_w),
+                    "bbox_h": int(d.bbox_h),
+                }
+                quality = crop_quality(
+                    d.crop_bytes,
+                    confidence=float(d.confidence),
+                    bbox_w=int(d.bbox_w),
+                    bbox_h=int(d.bbox_h),
+                    frame_w=frame_w,
+                    frame_h=frame_h,
+                    fully_in_frame=_fully_in_frame(bbox, frame_w, frame_h),
+                    bbox_x=int(d.bbox_x),
+                    bbox_y=int(d.bbox_y),
+                )
+
+                action = decide_ocr_action(
+                    ocr_state=ocr_state,
+                    stationary=bool(v_track.get("stationary", False)),
+                    ocr_attempts=int(v_track.get("ocr_attempts", 0)),
+                    quality=quality,
+                    best_quality=float(v_track.get("best_quality") or 0.0),
+                    min_quality=settings.OCR_MIN_QUALITY,
+                    refine_margin=settings.OCR_REFINE_MARGIN,
+                    stationary_max_attempts=settings.OCR_STATIONARY_MAX_ATTEMPTS,
+                )
+                if action == "dormant":
+                    v_track["ocr_state"] = "dormant"
+                    continue
+                if action == "skip":
+                    continue
+
+                v_track["ocr_attempts"] = int(v_track.get("ocr_attempts", 0)) + 1
                 ocr_started_at = perf_counter()
                 result = recognizer.recognize(d.crop_bytes, camera_id=camera_id)
                 ocr_seconds = perf_counter() - ocr_started_at
@@ -296,14 +330,8 @@ try:
                 confidence = result["confidence"]
                 vehicle_type = result.get("vehicle_type") or d.vehicle_type
 
-                # Só persiste se o track estiver confirmado (hits suficientes).
-                if v_track is None or not v_track.get("counted"):
-                    continue
-
-                existing_occ_id = v_track.get("occurrence_id")
-
-                if existing_occ_id is None:
-                    # Primeira placa deste track — dedup por janela temporal.
+                if ocr_state != "read":
+                    # 1ª leitura deste track — dedup por janela temporal.
                     cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.AGENT_DEDUP_SECONDS)
                     dup = (
                         db.query(Occurrence)
@@ -317,8 +345,6 @@ try:
                     if dup is not None:
                         logger.debug("Dedup: plate=%s camera=%s ignored", plate, camera_id)
                         v_track["occurrence_id"] = str(dup.id)
-                        v_track["plate"] = plate
-                        v_track["plate_confidence"] = float(confidence)
                     else:
                         client = camera.client
                         plan = client.plan
@@ -344,19 +370,26 @@ try:
                         process_alerts(str(occ.id), db)
                         persistence_seconds = perf_counter() - persist_started_at
                         v_track["occurrence_id"] = str(occ.id)
-                        v_track["plate"] = plate
-                        v_track["plate_confidence"] = float(confidence)
+                    v_track["plate"] = plate
+                    v_track["plate_confidence"] = float(confidence)
+                    v_track["best_quality"] = quality
+                    v_track["ocr_state"] = "read"
                 else:
-                    # Track já tem placa — atualiza só se placa diferente + conf maior.
-                    prev_conf = float(v_track.get("plate_confidence") or 0.0)
-                    if plate != v_track.get("plate") and confidence > prev_conf:
+                    # Refino: frame melhor. Atualiza a imagem sempre; placa só se
+                    # diferente + confiança maior (sem novo alerta).
+                    existing_occ_id = v_track.get("occurrence_id")
+                    existing_occ = None
+                    if existing_occ_id:
                         existing_occ = (
                             db.query(Occurrence)
                             .filter(Occurrence.id == uuid.UUID(existing_occ_id))
                             .first()
                         )
-                        if existing_occ is not None:
-                            persist_started_at = perf_counter()
+                    if existing_occ is not None:
+                        persist_started_at = perf_counter()
+                        existing_occ.image_path = _display_image()
+                        prev_conf = float(v_track.get("plate_confidence") or 0.0)
+                        if plate != v_track.get("plate") and confidence > prev_conf:
                             existing_occ.plate = plate
                             existing_occ.confidence = confidence
                             existing_occ.vehicle_type = vehicle_type
@@ -364,11 +397,11 @@ try:
                             existing_occ.vehicle_make_model = result.get("vehicle_make_model")
                             existing_occ.region_code = result.get("region_code")
                             existing_occ.ocr_engine_used = result.get("engine")
-                            existing_occ.image_path = _display_image()
-                            persistence_seconds = perf_counter() - persist_started_at
                             v_track["plate"] = plate
                             v_track["plate_confidence"] = float(confidence)
-                            occ = existing_occ
+                        persistence_seconds = perf_counter() - persist_started_at
+                        occ = existing_occ
+                    v_track["best_quality"] = quality
 
             maybe_publish_ocr_pipeline_alert(camera)
 
