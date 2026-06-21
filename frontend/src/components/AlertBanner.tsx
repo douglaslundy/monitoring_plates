@@ -22,11 +22,13 @@ export function AlertBanner({ lastAlert }: AlertBannerProps) {
     const alertKey =
       lastAlert.type === "plate_alert"
         ? `${lastAlert.occurrence_id}-${Date.now()}`
-        : lastAlert.type === "camera_health_alert"
-          ? `${lastAlert.camera_id}-${Date.now()}`
-          : lastAlert.type === "ocr_pipeline_alert"
-            ? `ocr-pipeline-${lastAlert.camera_id}-${lastAlert.updated_at}-${Date.now()}`
-            : `worker-delay-${lastAlert.updated_at}-${Date.now()}`;
+        : lastAlert.type === "face_alert"
+          ? `face-${lastAlert.face_detection_id}-${Date.now()}`
+          : lastAlert.type === "camera_health_alert"
+            ? `${lastAlert.camera_id}-${Date.now()}`
+            : lastAlert.type === "ocr_pipeline_alert"
+              ? `ocr-pipeline-${lastAlert.camera_id}-${lastAlert.updated_at}-${Date.now()}`
+              : `worker-delay-${lastAlert.updated_at}-${Date.now()}`;
     const active: ActiveAlert = { ...lastAlert, alertKey };
 
     setAlerts((prev) => [active, ...prev]);
@@ -50,6 +52,19 @@ export function AlertBanner({ lastAlert }: AlertBannerProps) {
               <>
                 <p className="font-bold text-red-800 text-sm">
                   Placa {a.plate} detectada
+                </p>
+                <p className="text-xs text-red-600 mt-0.5 truncate">
+                  {a.camera_name}
+                  {a.location ? ` - ${a.location}` : ""}
+                </p>
+                <p className="text-xs text-red-500 mt-0.5">
+                  {new Date(a.detected_at).toLocaleTimeString("pt-BR")}
+                </p>
+              </>
+            ) : a.type === "face_alert" ? (
+              <>
+                <p className="font-bold text-red-800 text-sm">
+                  {a.person_name} reconhecido(a)
                 </p>
                 <p className="text-xs text-red-600 mt-0.5 truncate">
                   {a.camera_name}

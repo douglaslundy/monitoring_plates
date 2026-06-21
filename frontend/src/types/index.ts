@@ -8,6 +8,9 @@ export interface Plan {
   price_monthly: number | string;
   is_active: boolean;
   ocr_engine: "system_default" | "easyocr" | "plate_recognizer";
+  ocr_enabled: boolean;
+  face_recognition_enabled: boolean;
+  face_engine: "system_default" | "opencv" | "rekognition" | "luxand" | "facepp";
   created_at: string;
   client_count?: number;
 }
@@ -77,6 +80,8 @@ export interface Camera {
   roi_width: number | null;
   roi_height: number | null;
   preview_refresh_seconds: number;
+  enable_ocr: boolean;
+  enable_face: boolean;
   is_active: boolean;
   last_seen_at: string | null;
   created_at: string;
@@ -245,8 +250,10 @@ export interface MonitoredPlate {
 
 export interface AlertSent {
   id: string;
-  occurrence_id: string;
-  monitored_plate_id: string;
+  occurrence_id: string | null;
+  monitored_plate_id: string | null;
+  person_id?: string | null;
+  face_detection_id?: string | null;
   channel: "email" | "websocket" | "whatsapp";
   sent_at: string;
   status: string;
@@ -254,8 +261,8 @@ export interface AlertSent {
 
 export interface AlertLog {
   id: string;
-  occurrence_id: string;
-  monitored_plate_id: string;
+  occurrence_id: string | null;
+  monitored_plate_id: string | null;
   plate: string;
   camera_name: string;
   location: string | null;
@@ -263,6 +270,62 @@ export interface AlertLog {
   sent_at: string;
   status: string;
   message: string | null;
+}
+
+export interface Person {
+  id: string;
+  client_id: string;
+  name: string;
+  birth_date: string | null;
+  cpf: string | null;
+  address: string | null;
+  phone: string | null;
+  notes: string | null;
+  alert_active: boolean;
+  alert_email: string | null;
+  alert_whatsapp: string | null;
+  is_active: boolean;
+  photo_url: string | null;
+  faces_count: number;
+  created_at: string | null;
+}
+
+export interface FaceDetection {
+  id: string;
+  camera_id: string;
+  camera_name: string | null;
+  person_id: string | null;
+  person_name: string | null;
+  confidence: number | null;
+  image_url: string | null;
+  bbox_x: number | null;
+  bbox_y: number | null;
+  bbox_w: number | null;
+  bbox_h: number | null;
+  track_id: string | null;
+  detected_at: string | null;
+  tracked_seconds: number | null;
+  face_engine_used: string | null;
+}
+
+export interface FaceEngineConfig {
+  id: string;
+  engine_type: "opencv" | "rekognition" | "luxand" | "facepp";
+  mode: string;
+  is_active: boolean;
+  api_token: string | null;
+  api_secret: string | null;
+  api_url: string | null;
+  region: string | null;
+  threshold: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FaceEngineTestResult {
+  success: boolean;
+  engine_type: "opencv" | "rekognition" | "luxand" | "facepp";
+  message: string;
 }
 
 export interface WhatsAppSettings {
@@ -339,7 +402,18 @@ export interface OcrPipelineAlert {
   detail: string;
 }
 
-export type RealtimeAlert = PlateAlert | CameraHealthAlert | WorkerDelayAlert | OcrPipelineAlert;
+export interface FaceAlert {
+  type: "face_alert";
+  face_detection_id: string;
+  person_name: string;
+  camera_name: string;
+  location: string;
+  detected_at: string;
+  image_url: string;
+  confidence: number | null;
+}
+
+export type RealtimeAlert = PlateAlert | FaceAlert | CameraHealthAlert | WorkerDelayAlert | OcrPipelineAlert;
 
 export interface OperationalMetrics {
   total_cameras: number;
