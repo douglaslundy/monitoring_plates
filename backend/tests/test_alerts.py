@@ -132,6 +132,78 @@ def test_ws_publicado_quando_plano_tem_realtime_alerts(db):
     assert mock_ws.call_count == 1
 
 
+def test_ws_grava_alert_sent_quando_realtime(db):
+    """Match de placa monitorada em plano realtime (sem e-mail/WhatsApp) DEVE
+    gravar um AlertSent(channel=websocket) para aparecer em 'Alertas disparados'."""
+    _plan, tenant, camera = _make_tenant(db, email_alerts=False, realtime_alerts=True)
+    _monitored(db, tenant, "ABC1234", email=None, whatsapp=None)
+    occ = _occ(db, camera, "ABC1234")
+
+    with (
+        patch("app.services.alert_service.send_plate_alert"),
+        patch("app.services.alert_service._publish_ws_alert"),
+        patch("app.services.whatsapp_service.send_whatsapp_alert"),
+    ):
+        from app.services.alert_service import process_alerts
+
+        process_alerts(str(occ.id), db)
+
+    alert = (
+        db.query(AlertSent)
+        .filter(AlertSent.occurrence_id == occ.id, AlertSent.channel == AlertChannel.websocket)
+        .first()
+    )
+    assert alert is not None
+    assert alert.status == "sent"
+    assert alert.message is not None
+    assert "Placa ABC1234 detectada" in alert.message
+
+
+def test_ws_alert_sent_nao_duplicado(db):
+    _plan, tenant, camera = _make_tenant(db, email_alerts=False, realtime_alerts=True)
+    _monitored(db, tenant, "ABC1234", email=None, whatsapp=None)
+    occ = _occ(db, camera, "ABC1234")
+
+    with (
+        patch("app.services.alert_service.send_plate_alert"),
+        patch("app.services.alert_service._publish_ws_alert"),
+        patch("app.services.whatsapp_service.send_whatsapp_alert"),
+    ):
+        from app.services.alert_service import process_alerts
+
+        process_alerts(str(occ.id), db)
+        process_alerts(str(occ.id), db)
+
+    count = (
+        db.query(AlertSent)
+        .filter(AlertSent.occurrence_id == occ.id, AlertSent.channel == AlertChannel.websocket)
+        .count()
+    )
+    assert count == 1
+
+
+def test_ws_nao_grava_alert_sent_sem_realtime(db):
+    _plan, tenant, camera = _make_tenant(db, email_alerts=False, realtime_alerts=False)
+    _monitored(db, tenant, "ABC1234", email=None, whatsapp=None)
+    occ = _occ(db, camera, "ABC1234")
+
+    with (
+        patch("app.services.alert_service.send_plate_alert"),
+        patch("app.services.alert_service._publish_ws_alert"),
+        patch("app.services.whatsapp_service.send_whatsapp_alert"),
+    ):
+        from app.services.alert_service import process_alerts
+
+        process_alerts(str(occ.id), db)
+
+    count = (
+        db.query(AlertSent)
+        .filter(AlertSent.occurrence_id == occ.id, AlertSent.channel == AlertChannel.websocket)
+        .count()
+    )
+    assert count == 0
+
+
 def test_ws_nao_publicado_quando_plano_sem_realtime_alerts(db):
     _plan, tenant, camera = _make_tenant(db, email_alerts=False, realtime_alerts=False)
     _monitored(db, tenant, "XYZ9W87")

@@ -47,6 +47,7 @@ def process_alerts(occurrence_id: str, db: Session) -> None:
 
         if plan.realtime_alerts:
             _publish_ws_alert(occ, camera, image_url)
+            _record_ws_alert(occ, camera, mp, db)
 
         if mp.alert_whatsapp:
             _send_whatsapp_alert(occ, camera, mp, image_url, image_bytes, db)
@@ -142,6 +143,40 @@ def _send_whatsapp_alert(occ, camera, mp, image_url: str, image_bytes: bytes | N
             monitored_plate_id=mp.id,
             channel=AlertChannel.whatsapp,
             status="sent" if success else "failed",
+            message=message,
+        )
+    )
+
+
+def _record_ws_alert(occ, camera, mp, db: Session) -> None:
+    """Grava um AlertSent(channel=websocket) para que o match da placa monitorada
+    apareça em 'Alertas disparados', independente de e-mail/WhatsApp configurados."""
+    already = (
+        db.query(AlertSent)
+        .filter(
+            AlertSent.occurrence_id == occ.id,
+            AlertSent.monitored_plate_id == mp.id,
+            AlertSent.channel == AlertChannel.websocket,
+        )
+        .first()
+    )
+    if already:
+        return
+
+    message = build_whatsapp_message(
+        plate=occ.plate,
+        camera_name=camera.name,
+        location=camera.location or "",
+        detected_at=occ.detected_at,
+        confidence=occ.confidence,
+        image_url=get_url(occ.image_path) if occ.image_path else None,
+    )
+    db.add(
+        AlertSent(
+            occurrence_id=occ.id,
+            monitored_plate_id=mp.id,
+            channel=AlertChannel.websocket,
+            status="sent",
             message=message,
         )
     )

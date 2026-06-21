@@ -266,14 +266,19 @@ def test_alerta_gerado_placa_monitorada(db, setup_tenant):
         from app.services.alert_service import process_alerts
         process_alerts(str(occ.id), db)
 
-    alert = db.query(AlertSent).filter(AlertSent.occurrence_id == occ.id).first()
+    alert = (
+        db.query(AlertSent)
+        .filter(AlertSent.occurrence_id == occ.id, AlertSent.channel == AlertChannel.email)
+        .first()
+    )
     assert alert is not None
     assert alert.channel == AlertChannel.email
     assert alert.status == "sent"
 
 
 def test_alerta_nao_duplicado(db, setup_tenant):
-    """Two calls to process_alerts create exactly one AlertSent (no duplicates)."""
+    """Two calls to process_alerts não duplicam AlertSent por canal (e-mail e
+    websocket, pois o plano tem email_alerts e realtime_alerts ativos)."""
     plan, tenant, camera, admin, _ = setup_tenant
 
     mp = MonitoredPlate(
@@ -295,8 +300,20 @@ def test_alerta_nao_duplicado(db, setup_tenant):
         process_alerts(str(occ.id), db)
         process_alerts(str(occ.id), db)
 
-    count = db.query(AlertSent).filter(AlertSent.occurrence_id == occ.id).count()
-    assert count == 1
+    from app.models.alert_sent import AlertChannel
+
+    email_count = (
+        db.query(AlertSent)
+        .filter(AlertSent.occurrence_id == occ.id, AlertSent.channel == AlertChannel.email)
+        .count()
+    )
+    ws_count = (
+        db.query(AlertSent)
+        .filter(AlertSent.occurrence_id == occ.id, AlertSent.channel == AlertChannel.websocket)
+        .count()
+    )
+    assert email_count == 1
+    assert ws_count == 1
 
 
 def test_alerta_placa_inativa_nao_dispara(db, setup_tenant):

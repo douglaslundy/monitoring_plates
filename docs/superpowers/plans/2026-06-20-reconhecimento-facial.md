@@ -906,6 +906,37 @@ violação NOT NULL → 500 genérico. E o front mostra mensagem genérica em ve
 
 ---
 
+## Task 24: Bugfix — match de placa monitorada não gera registro de alerta
+
+> Reportado pelo usuário em 2026-06-20. Independente da feature de faces, vai
+> junto neste branch/deploy.
+
+**Sintoma:** placa monitorada cadastrada é detectada, mas nenhum alerta dispara
+e nada aparece em "Alertas disparados".
+
+**Causa (root cause, em `backend/app/services/alert_service.py`):** `process_alerts`
+só grava `AlertSent` nos canais e-mail e WhatsApp. O canal realtime/`websocket`
+apenas publica no Redis (`_publish_ws_alert`) e **nunca persiste `AlertSent`**.
+No plano **Básico** (`email_alerts=False`, `realtime_alerts=True`) com placa sem
+WhatsApp, o match cai só no ramo realtime → publica no WS mas não grava nada →
+página "Alertas disparados" (que lê `AlertSent`) fica vazia.
+
+**Files:**
+- Modify: `backend/app/services/alert_service.py` (novo `_record_ws_alert`).
+- Test: `backend/tests/test_alerts.py`.
+
+- [x] **Step 1:** testes falhando — match realtime sem e-mail/WhatsApp grava
+  `AlertSent(channel=websocket, status="sent")` com mensagem; dedup (1 por
+  occurrence+placa); sem realtime não grava.
+- [x] **Step 2:** rodar → FAIL.
+- [x] **Step 3:** `_record_ws_alert(occ, camera, mp, db)` chamado no ramo realtime,
+  espelhando o dedup de e-mail/WhatsApp; canal `websocket` (já no enum) e
+  mensagem via `build_whatsapp_message`. Frontend já tem filtro "WebSocket".
+- [x] **Step 4:** rodar testes → PASS; suíte completa.
+- [ ] **Step 5: Commit** — `fix: registra alerta de placa monitorada no canal websocket`
+
+---
+
 ## Self-Review (cobertura do spec)
 
 - Tarefas 1-6 do usuário (detectar pessoa→rosto, gravar 1x/track, cadastro com nome/nascimento/cpf/endereço/telefone, mostrar nome, alertas e-mail/WhatsApp): Tasks 2, 8, 11, 12. ✅
