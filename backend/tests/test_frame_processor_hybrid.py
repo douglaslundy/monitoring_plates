@@ -2,14 +2,17 @@
 
 Prova o comportamento central pedido: um veículo que permanece na cena (parado)
 é submetido ao OCR UMA vez — não a cada frame — graças ao estado do track
-persistido (read/dormant). Usa um Redis falso em memória para o track sobreviver
-entre chamadas de process_frame.
+persistido (read/dormant).
+
+A telemetria/alertas são mockados (como em test_vehicles) p/ o process_frame não
+tocar o Redis real: sem isso, o lru_cache dos serviços de telemetria (populado
+por testes anteriores com um cliente Redis real inalcançável) faz cada chamada
+travar ~dezenas de segundos em timeout — e o track expira entre os frames.
 """
 import base64
+import copy
 import importlib
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class FakeRedis:
@@ -35,6 +38,14 @@ class FakeRedis:
 
     def llen(self, key: str):
         return 0
+
+
+class _Telemetry:
+    preview_frames_last_minute = 0
+    preview_status = "streaming"
+    preview_fps = 2.0
+    preview_last_frame_at = 1.0
+    preview_latency_seconds = 1.0
 
 
 def _vehicle_detection():
@@ -82,8 +93,14 @@ def test_veiculo_parado_vai_ao_ocr_uma_vez(db):
     worker_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     fake = FakeRedis()
 
-    from app.services import object_tracker_service
-    object_tracker_service._redis_client.cache_clear()
+    # Persistência do track em memória (independe de redis e de estado global).
+    track_store: dict[str, list] = {"state": []}
+
+    def fake_load(_camera_id):
+        return copy.deepcopy(track_store["state"])
+
+    def fake_save(_camera_id, state):
+        track_store["state"] = copy.deepcopy(state)
 
     with patch("app.core.database.SessionLocal", worker_session), \
          patch("app.services.ocr_service.recognizer", mock_recognizer), \
@@ -92,6 +109,15 @@ def test_veiculo_parado_vai_ao_ocr_uma_vez(db):
          patch("app.services.storage_service.save_bytes", return_value="cameras/test/h.jpg"), \
          patch("app.services.detection_overlay_service.draw_detections", return_value=b"drawn"), \
          patch("app.services.alert_service.process_alerts"), \
+         patch("app.services.object_tracker_service.load_tracks", fake_load), \
+         patch("app.services.object_tracker_service.save_tracks", fake_save), \
+         patch("app.services.preview_telemetry_service.record_preview_frame"), \
+         patch("app.services.preview_telemetry_service.get_preview_telemetry", return_value=_Telemetry()), \
+         patch("app.services.image_quality_service.record_image_quality"), \
+         patch("app.services.ocr_pipeline_metrics_service.record_ocr_pipeline_metrics"), \
+         patch("app.services.ocr_pipeline_alert_service.maybe_publish_ocr_pipeline_alert"), \
+         patch("app.services.camera_health_alert_service.maybe_publish_camera_health_alert"), \
+         patch("app.services.worker_delay_alert_service.maybe_publish_worker_delay_alert"), \
          patch("redis.from_url", return_value=fake):
         from app.workers import frame_processor
         importlib.reload(frame_processor)
@@ -99,8 +125,6 @@ def test_veiculo_parado_vai_ao_ocr_uma_vez(db):
         for i in range(3):
             frame = base64.b64encode(f"frame-{i}".encode()).decode()
             frame_processor.process_frame(str(cam.id), frame)
-
-    object_tracker_service._redis_client.cache_clear()
 
     assert mock_recognizer.recognize.call_count == 1
     assert db.query(Occurrence).filter(Occurrence.plate == "HBR2A18").count() == 1
