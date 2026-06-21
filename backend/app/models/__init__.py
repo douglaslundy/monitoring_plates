@@ -10,6 +10,7 @@ from app.models.vehicle_event import VehicleEvent
 from app.models.whatsapp_channel_settings import WhatsAppChannelSettings
 from app.models.person import Person
 from app.models.person_face import PersonFace
+from app.models.face_detection import FaceDetection
 
 __all__ = [
     "Plan",
@@ -24,4 +25,5 @@ __all__ = [
     "WhatsAppChannelSettings",
     "Person",
     "PersonFace",
+    "FaceDetection",
 ]

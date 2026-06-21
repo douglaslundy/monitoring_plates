@@ -27,5 +27,4 @@ class Person(Base):
 
     client = relationship("Client", back_populates="persons")
     faces = relationship("PersonFace", back_populates="person", cascade="all, delete-orphan")
-    # NOTE: detections = relationship("FaceDetection", ...) intentionally omitted here;
-    # FaceDetection model does not exist yet — will be added in Task 3.
+    detections = relationship("FaceDetection", back_populates="person")

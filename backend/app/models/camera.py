@@ -51,6 +51,7 @@ class Camera(Base):
     client = relationship("Client", back_populates="cameras")
     occurrences = relationship("Occurrence", back_populates="camera")
     vehicle_events = relationship("VehicleEvent", back_populates="camera")
+    face_detections = relationship("FaceDetection", back_populates="camera")
 
     @property
     def is_online(self) -> bool:
