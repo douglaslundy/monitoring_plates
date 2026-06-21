@@ -27,11 +27,9 @@ const EMPTY_FORM: PlateForm = {
 const PLATE_RE = /^[A-Z]{3}\d{4}$|^[A-Z]{3}\d[A-Z]\d{2}$/;
 
 function validate(form: PlateForm, isSuperAdmin: boolean): string {
+  void isSuperAdmin; // cliente é opcional: vazio = placa global (somente o admin)
   if (!PLATE_RE.test(form.plate.toUpperCase().trim())) {
     return "Placa inválida. Use o formato AAA1234 ou AAA1A23 (Mercosul).";
-  }
-  if (isSuperAdmin && !form.client_id) {
-    return "Selecione um cliente para associar a placa monitorada.";
   }
   if (form.alert_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.alert_email)) {
     return "E-mail para alertas inválido.";
@@ -287,21 +285,22 @@ export function MonitoredPlatesManager({ title, description }: { title: string; 
         <div className="space-y-4">
           {isSuperAdmin && (
             <div>
-              <label className="block text-sm font-medium mb-1.5">
-                Cliente <span className="text-red-500">*</span>
-              </label>
+              <label className="block text-sm font-medium mb-1.5">Cliente</label>
               <select
                 value={form.client_id}
                 onChange={(e) => handleChange("client_id", e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
               >
-                <option value="">Selecione um cliente…</option>
+                <option value="">Somente eu (sem cliente)</option>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Sem cliente: a placa é monitorada em todas as câmeras e só você a vê.
+              </p>
             </div>
           )}
 

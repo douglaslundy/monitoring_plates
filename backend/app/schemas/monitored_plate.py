@@ -5,7 +5,7 @@ from uuid import UUID
 
 
 class MonitoredPlateBase(BaseModel):
-    client_id: UUID
+    client_id: Optional[UUID] = None  # None = placa global do super_admin
     plate: str
     description: Optional[str] = None
     alert_email: Optional[str] = None

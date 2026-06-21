@@ -11,7 +11,9 @@ class Person(Base):
     __tablename__ = "persons"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    client_id = Column(Uuid(as_uuid=True), ForeignKey("clients.id"), nullable=False)
+    # NULL = pessoa "global" do super_admin (sem cliente): reconhecida em todas as
+    # câmeras e só o super_admin a vê. Ver face_alert_service / face_service.
+    client_id = Column(Uuid(as_uuid=True), ForeignKey("clients.id"), nullable=True)
     name = Column(String(255), nullable=False)
     birth_date = Column(Date, nullable=True)
     cpf = Column(String(14), nullable=True)

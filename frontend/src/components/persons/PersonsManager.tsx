@@ -50,8 +50,8 @@ function onlyDigits(value: string): string {
 }
 
 function validate(form: PersonForm, isSuperAdmin: boolean): string {
+  void isSuperAdmin; // cliente é opcional: vazio = pessoa global (somente o admin)
   if (!form.name.trim()) return "Nome é obrigatório.";
-  if (isSuperAdmin && !form.client_id) return "Selecione um cliente para associar a pessoa.";
   if (form.cpf && onlyDigits(form.cpf).length !== 11) return "CPF deve ter 11 dígitos.";
   if (form.alert_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.alert_email)) return "E-mail inválido.";
   if (form.alert_whatsapp) {
@@ -331,21 +331,22 @@ export function PersonsManager({ title, description }: { title: string; descript
         <div className="space-y-4">
           {isSuperAdmin && (
             <div>
-              <label className="block text-sm font-medium mb-1.5">
-                Cliente <span className="text-red-500">*</span>
-              </label>
+              <label className="block text-sm font-medium mb-1.5">Cliente</label>
               <select
                 value={form.client_id}
                 onChange={(e) => handleChange("client_id", e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
               >
-                <option value="">Selecione um cliente…</option>
+                <option value="">Somente eu (sem cliente)</option>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Sem cliente: a pessoa é reconhecida em todas as câmeras e só você a vê.
+              </p>
             </div>
           )}
 

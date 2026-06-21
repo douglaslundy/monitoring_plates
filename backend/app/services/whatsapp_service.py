@@ -48,6 +48,8 @@ def build_whatsapp_message(
     confidence: float | None,
     image_url: str | None = None,
 ) -> str:
+    # A imagem é enviada como mídia (caption), então NÃO incluímos o caminho/URL
+    # da imagem no texto — antes saía "Imagem: <path>" poluindo a mensagem.
     lines = [
         f"Placa {plate} detectada",
         f"Câmera: {camera_name}",
@@ -55,8 +57,6 @@ def build_whatsapp_message(
         f"Horário: {_format_detected_at(detected_at)}",
         f"Confiança: {_format_confidence(confidence)}",
     ]
-    if image_url:
-        lines.append(f"Imagem: {image_url}")
     return "\n".join(lines)
 
 

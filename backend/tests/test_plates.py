@@ -46,18 +46,18 @@ def test_create_plate_client_user_sem_cliente_retorna_400(client, db, basic_plan
     assert "não está vinculado" in data["detail"]
 
 
-def test_create_plate_super_admin_sem_client_id_retorna_400(client, db, super_admin_user):
-    """super_admin without client_id in payload must get 400 with clear message."""
+def test_create_plate_super_admin_sem_client_id_cria_global(client, db, super_admin_user):
+    """super_admin sem client_id cria uma placa GLOBAL (client_id null)."""
     token = login(client, "sa@sistema.com")
     res = client.post(
         "/api/monitored-plates",
         json={"plate": "ABC1234"},
         headers=auth(token),
     )
-    assert res.status_code == 400, res.text
+    assert res.status_code == 201, res.text
     data = res.json()
-    assert "detail" in data
-    assert "client_id" in data["detail"].lower()
+    assert data["plate"] == "ABC1234"
+    assert data["client_id"] is None
 
 
 def test_create_plate_super_admin_com_client_id_cria_com_sucesso(

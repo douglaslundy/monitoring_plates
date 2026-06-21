@@ -131,6 +131,8 @@ class FaceRouter:
     def enroll(self, client_id: str, person_id: str, image_bytes: bytes) -> EnrollResult:
         engine_type = self.resolve_engine_type(client_id)
         self.invalidate(client_id)  # novo rosto -> invalida cache de embeddings
+        if client_id in (None, "None"):  # pessoa global do admin
+            self.invalidate("__global__")
         try:
             if engine_type == "rekognition":
                 ref = self._rekognition_enroll(client_id, person_id, image_bytes)
@@ -175,7 +177,9 @@ class FaceRouter:
         embedding = _local_engine.embed(image_bytes)
         if not embedding:
             return None
-        candidates = self._load_client_embeddings(client_id)
+        # Candidatos do cliente da câmera + pessoas GLOBAIS do super_admin
+        # (client_id NULL), que devem ser reconhecidas em qualquer câmera.
+        candidates = self._load_client_embeddings(client_id) + self._load_global_embeddings()
         best_pid: Optional[str] = None
         best_sim = 0.0
         for pid, emb in candidates:
@@ -222,6 +226,44 @@ class FaceRouter:
             logger.warning("Não foi possível carregar embeddings do cliente %s: %s", client_id, exc)
         with self._lock:
             self._emb_cache[client_id] = (result, now + _ENGINE_CACHE_TTL)
+        return result
+
+    def _load_global_embeddings(self) -> list[tuple[str, list[float]]]:
+        """Embeddings de pessoas GLOBAIS do admin (client_id NULL), cacheados."""
+        cache_key = "__global__"
+        now = time.time()
+        with self._lock:
+            cached = self._emb_cache.get(cache_key)
+            if cached and cached[1] > now:
+                return cached[0]
+        result: list[tuple[str, list[float]]] = []
+        try:
+            from app.core.database import SessionLocal
+            from app.models.person import Person
+            from app.models.person_face import PersonFace
+
+            db = SessionLocal()
+            try:
+                rows = (
+                    db.query(PersonFace.embedding, Person.id)
+                    .join(Person, PersonFace.person_id == Person.id)
+                    .filter(
+                        Person.client_id.is_(None),
+                        Person.is_active == True,  # noqa: E712
+                        PersonFace.engine_type == "opencv",
+                        PersonFace.embedding.isnot(None),
+                    )
+                    .all()
+                )
+                for embedding, pid in rows:
+                    if embedding:
+                        result.append((str(pid), list(embedding)))
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning("Não foi possível carregar embeddings globais: %s", exc)
+        with self._lock:
+            self._emb_cache[cache_key] = (result, now + _ENGINE_CACHE_TTL)
         return result
 
     # ── AWS Rekognition ──────────────────────────────────────────────────────

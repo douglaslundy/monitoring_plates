@@ -11,7 +11,9 @@ class MonitoredPlate(Base):
     __tablename__ = "monitored_plates"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    client_id = Column(Uuid(as_uuid=True), ForeignKey("clients.id"), nullable=False)
+    # NULL = placa "global" do super_admin (sem cliente): casa contra todas as
+    # câmeras e só o super_admin a vê. Ver alert_service.process_alerts.
+    client_id = Column(Uuid(as_uuid=True), ForeignKey("clients.id"), nullable=True)
     plate = Column(String(20), nullable=False)
     description = Column(String(500), nullable=True)
     alert_email = Column(String(255), nullable=True)

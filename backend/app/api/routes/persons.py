@@ -54,13 +54,10 @@ def create_person(
     current_user: User = Depends(get_current_user),
 ):
     _require_write(current_user)
+    # super_admin pode informar o cliente OU deixar vazio para uma pessoa GLOBAL
+    # (sem cliente): reconhecida em todas as câmeras e só ele a vê.
     if current_user.role == UserRole.super_admin:
-        if payload.client_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="client_id é obrigatório para super_admin. Selecione um cliente.",
-            )
-        client_id = payload.client_id
+        client_id = payload.client_id  # pode ser None (pessoa global do admin)
     else:
         if current_user.client_id is None:
             raise HTTPException(

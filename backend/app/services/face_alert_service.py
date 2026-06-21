@@ -57,10 +57,17 @@ def process_face_alerts(face_detection_id: str, db: Session) -> None:
     image_bytes = read_file_bytes(fd.image_path) if fd.image_path else None
     message = _build_message(person, camera, fd)
 
-    if plan and plan.email_alerts and person.alert_email:
+    # Pessoa global do admin (client_id NULL): dispara sempre, independente do
+    # plano do cliente dono da câmera. Pessoa de cliente: respeita o plano.
+    is_global = person.client_id is None
+
+    if person.alert_email and (is_global or (plan and plan.email_alerts)):
         _send_email_alert(fd, person, camera, image_url, message, db)
 
-    if plan and plan.realtime_alerts:
+    if is_global:
+        # Só registra (não publica no canal do cliente) p/ aparecer em "Alertas disparados".
+        _record_ws_alert(fd, person, message, db)
+    elif plan and plan.realtime_alerts:
         _publish_ws_alert(fd, person, camera, image_url)
         _record_ws_alert(fd, person, message, db)
 

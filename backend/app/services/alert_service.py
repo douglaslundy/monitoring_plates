@@ -26,13 +26,20 @@ def process_alerts(occurrence_id: str, db: Session) -> None:
         return
 
     client = camera.client
-    plan = client.plan
+    plan = client.plan if client else None
 
+    from sqlalchemy import or_
+
+    # Casa a placa do cliente da câmera E as placas GLOBAIS do super_admin
+    # (client_id NULL): estas valem para todas as câmeras. Só o super_admin as vê.
     matches = (
         db.query(MonitoredPlate)
         .filter(
             MonitoredPlate.plate == occ.plate,
-            MonitoredPlate.client_id == camera.client_id,
+            or_(
+                MonitoredPlate.client_id == camera.client_id,
+                MonitoredPlate.client_id.is_(None),
+            ),
             MonitoredPlate.is_active == True,  # noqa: E712
         )
         .all()
@@ -42,10 +49,18 @@ def process_alerts(occurrence_id: str, db: Session) -> None:
     image_bytes = read_file_bytes(occ.image_path) if occ.image_path else None
 
     for mp in matches:
-        if plan.email_alerts and mp.alert_email:
+        # Placa global do admin: dispara sempre (independe do plano do cliente da
+        # câmera). Placa de cliente: respeita o plano.
+        is_global = mp.client_id is None
+
+        if mp.alert_email and (is_global or (plan and plan.email_alerts)):
             _send_email_alert(occ, camera, mp, image_url, db)
 
-        if plan.realtime_alerts:
+        if is_global:
+            # Não publica no canal do cliente (evita vazar a placa do admin para
+            # o cliente); só registra para aparecer em "Alertas disparados".
+            _record_ws_alert(occ, camera, mp, db)
+        elif plan and plan.realtime_alerts:
             _publish_ws_alert(occ, camera, image_url)
             _record_ws_alert(occ, camera, mp, db)
 
