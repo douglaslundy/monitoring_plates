@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.api.deps import get_db, get_current_user
-from app.api.routes import auth, users, clients, cameras, occurrences, plates, alerts, plans, agent, ocr_config, vehicles, ops, detector, whatsapp_settings, persons, face_config
+from app.api.routes import auth, users, clients, cameras, occurrences, plates, alerts, plans, agent, ocr_config, vehicles, ops, detector, whatsapp_settings, persons, face_config, face_detections
 from app.api.routes.ws import router as ws_router
 from app.models.camera import Camera
 from app.models.user import User, UserRole
@@ -147,4 +147,5 @@ app.include_router(detector.router, prefix="/api")
 app.include_router(whatsapp_settings.router, prefix="/api")
 app.include_router(persons.router, prefix="/api")
 app.include_router(face_config.router, prefix="/api")
+app.include_router(face_detections.router, prefix="/api")
 app.include_router(ws_router, prefix="/api")
