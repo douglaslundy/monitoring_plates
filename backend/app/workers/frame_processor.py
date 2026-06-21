@@ -62,6 +62,26 @@ def _queue_depth(cache=None) -> int:
     return 0
 
 
+def _has_active_tracks(camera_id: str) -> bool:
+    """True se a câmera tem um track em curso (visto há poucos segundos e ainda
+    não 'dormant'). Usado p/ NÃO descartar frames no meio de um objeto em cena —
+    senão a amostragem de alto volume pode perder um animal/objeto que cruza."""
+    try:
+        import time as _time
+
+        from app.services.object_tracker_service import load_tracks
+
+        now = _time.time()
+        for t in load_tracks(camera_id):
+            if t.get("ocr_state") == "dormant":
+                continue
+            if now - float(t.get("last_seen_at", 0.0)) <= 3.0:
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _should_sample_high_volume_frame(camera_id: str, preview_frames_last_minute: int, cache=None) -> bool:
     if _is_pilot_camera(camera_id):
         return True
@@ -75,7 +95,11 @@ def _should_sample_high_volume_frame(camera_id: str, preview_frames_last_minute:
         counter_key = f"camera-frame:{camera_id}:sample-seq"
         counter = int(cache.incr(counter_key))
         cache.expire(counter_key, 300)
-        return counter % sample_every == 0
+        if counter % sample_every == 0:
+            return True
+        # Frame que seria descartado: mantém se há um objeto em curso na cena,
+        # p/ não perder um animal/veículo que aparece em poucos frames.
+        return _has_active_tracks(camera_id)
     except Exception:
         return True
 

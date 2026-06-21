@@ -386,6 +386,7 @@ def test_process_frame_cria_ocorrencia(db):
     with patch("app.core.database.SessionLocal", worker_session), \
          patch("app.services.ocr_service.recognizer", mock_recognizer), \
          patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector), \
+         patch("app.services.frame_quality_service.crop_quality", return_value=0.9), \
          patch("app.services.storage_service.save_bytes", return_value="cameras/test/img.jpg"), \
          patch("app.services.alert_service.process_alerts"):
         from app.workers import frame_processor
@@ -448,6 +449,7 @@ def test_process_frame_usa_roi_da_camera(db):
          patch("app.services.camera_service.crop_roi_frame", return_value=b"roi_frame") as mock_crop, \
          patch("app.services.ocr_service.recognizer", mock_recognizer), \
          patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector), \
+         patch("app.services.frame_quality_service.crop_quality", return_value=0.9), \
          patch("app.services.storage_service.save_bytes", return_value="cameras/test/roi.jpg") as mock_save, \
          patch("app.services.alert_service.process_alerts"):
         from app.workers import frame_processor
@@ -497,12 +499,16 @@ def test_process_frame_ocr_none_nao_cria(db):
 
     with patch("app.core.database.SessionLocal", return_value=db), \
          patch("app.services.ocr_service.recognizer", mock_recognizer), \
-         patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector):
+         patch("app.services.vehicle_detection_service.vehicle_detector", mock_vehicle_detector), \
+         patch("app.services.frame_quality_service.crop_quality", return_value=0.9):
         from app.workers import frame_processor
         import importlib
         importlib.reload(frame_processor)
         frame_processor.process_frame(str(cam.id), base64.b64encode(b"x").decode())
 
+    # Qualidade alta (patch) garante que o OCR foi tentado; como retorna None,
+    # nenhuma ocorrência é criada (testa o caminho OCR-None, não o de qualidade).
+    assert mock_recognizer.recognize.called
     assert db.query(Occurrence).count() == 0
 
 

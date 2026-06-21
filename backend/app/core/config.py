@@ -52,12 +52,14 @@ class Settings(BaseSettings):
     # Categorias extras de detecção (mesmo modelo YOLOv8s/COCO).
     DETECT_PERSONS: bool = True
     DETECT_ANIMALS: bool = True
-    # Confiança mínima por categoria. Elevadas (T4) para reduzir classificações
-    # erradas de baixa confiança (homem como urso, cão como pessoa). O voto de
-    # classe ao longo do track (object_tracker_service) corrige o resto: um erro
-    # pontual de 1 frame é vencido pela maioria.
-    PERSON_CONF_THRESHOLD: float = 0.55
-    ANIMAL_CONF_THRESHOLD: float = 0.55
+    # Confiança mínima por categoria = limiar de RASTREIO (não de registro).
+    # Baixo de propósito: captura objeto pequeno/distante (animal cruzando ao
+    # fundo, antes perdido com 0.55). A classificação errada de baixa confiança
+    # NÃO vira registro porque o registro exige voto de classe estável
+    # (TRACK_MIN_REGISTER_VOTES) ao longo do track — a maioria vence o erro
+    # pontual. Animal mais baixo que pessoa: estava sendo muito sub-detectado.
+    PERSON_CONF_THRESHOLD: float = 0.40
+    ANIMAL_CONF_THRESHOLD: float = 0.30
 
     # Qualidade das imagens (reduz perda por recompressão JPEG na cadeia
     # captura -> análise -> recorte salvo).
