@@ -11,6 +11,7 @@ from app.models.whatsapp_channel_settings import WhatsAppChannelSettings
 from app.models.person import Person
 from app.models.person_face import PersonFace
 from app.models.face_detection import FaceDetection
+from app.models.face_engine_config import FaceEngineConfig
 
 __all__ = [
     "Plan",
@@ -26,4 +27,5 @@ __all__ = [
     "Person",
     "PersonFace",
     "FaceDetection",
+    "FaceEngineConfig",
 ]
