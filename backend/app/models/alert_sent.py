@@ -18,8 +18,10 @@ class AlertSent(Base):
     __tablename__ = "alerts_sent"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    occurrence_id = Column(Uuid(as_uuid=True), ForeignKey("occurrences.id"), nullable=False)
-    monitored_plate_id = Column(Uuid(as_uuid=True), ForeignKey("monitored_plates.id"), nullable=False)
+    occurrence_id = Column(Uuid(as_uuid=True), ForeignKey("occurrences.id"), nullable=True)
+    monitored_plate_id = Column(Uuid(as_uuid=True), ForeignKey("monitored_plates.id"), nullable=True)
+    person_id = Column(Uuid(as_uuid=True), ForeignKey("persons.id"), nullable=True)
+    face_detection_id = Column(Uuid(as_uuid=True), ForeignKey("face_detections.id"), nullable=True)
     channel = Column(
         Enum(AlertChannel, native_enum=False, length=15),
         nullable=False,
