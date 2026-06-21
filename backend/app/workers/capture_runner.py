@@ -36,9 +36,6 @@ _CAMERA_SYNC_SECONDS = 15.0
 _PREVIEW_SAVE_SECONDS = 1.0
 # Espera entre tentativas de reconexão de uma câmera com falha.
 _RECONNECT_SECONDS = 5.0
-# Força envio ao OCR mesmo sem movimento a cada N segundos.
-# Garante cobertura mesmo quando câmera tem RTSP session timeout curto.
-_FORCE_SEND_SECONDS = 8.0
 
 
 class CameraCapture(threading.Thread):
@@ -129,14 +126,17 @@ class CameraCapture(threading.Thread):
             self._last_preview_save = now
             self._touch_last_seen(now)
 
-        # Força envio periódico mesmo sem movimento — compensação para câmeras
-        # com session timeout RTSP curto (comuns em firmwares Hikvision/Dahua).
-        if now - self._last_force_send >= _FORCE_SEND_SECONDS:
-            self._force_send = True
-
-        if not (moved or self._force_send):
+        # Envia ao ANPR quando: há movimento (principal), é o 1º frame após
+        # conectar (bootstrap), OU passou o heartbeat sem nenhum envio (rede de
+        # segurança p/ algo lento/estático que o motion gating perdeu). Em cena
+        # parada isso vira ~1 envio a cada CAPTURE_FORCE_SEND_SECONDS — antes era
+        # a cada 8s, floodando o pipeline com o objeto estacionado.
+        heartbeat_due = (now - self._last_force_send) >= settings.CAPTURE_FORCE_SEND_SECONDS
+        if not (moved or self._force_send or heartbeat_due):
             return
         self._force_send = False
+        # Qualquer envio (movimento/bootstrap/heartbeat) reinicia o heartbeat:
+        # ele só dispara após um período inteiro SEM nenhum frame enviado.
         self._last_force_send = now
         self._enqueue(cv2, frame)
 

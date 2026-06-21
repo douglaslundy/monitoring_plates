@@ -154,6 +154,13 @@ class Settings(BaseSettings):
     CAPTURE_FPS: float = 6.0
     MOTION_MIN_AREA_RATIO: float = 0.0035
     MOTION_COOLDOWN_SECONDS: float = 0.0
+    # Heartbeat de cobertura: garante AO MENOS um frame ao ANPR a cada N segundos
+    # quando NÃO há movimento (rede de segurança caso o motion gating perca algo
+    # lento/estático). Qualquer envio (movimento ou heartbeat) reinicia o timer.
+    # Era 8s fixo (enviava cena parada ao pipeline o tempo todo, custo de CPU à
+    # toa); subiu para reduzir a carga em cenas estáticas — o objeto parado já não
+    # é re-OCR'd (o track "dorme"), então o heartbeat só precisa cobrir o raro.
+    CAPTURE_FORCE_SEND_SECONDS: float = 45.0
 
     # Live WebRTC (go2rtc). GO2RTC_URL = endpoint interno p/ a API (sync de
     # streams); GO2RTC_PUBLIC_URL = base acessada pelo navegador do operador.
