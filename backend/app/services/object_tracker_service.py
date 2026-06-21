@@ -120,7 +120,7 @@ def update_tracks(
     now: float,
     frame_w: int | None = None,
     frame_h: int | None = None,
-) -> tuple[list[dict], list[dict], dict[int, dict]]:
+) -> tuple[list[dict], list[dict], dict[int, dict], list[dict]]:
     """Atualiza os tracks com as detecções do frame.
 
     Associação por IoU **e** por proximidade do centro: um objeto em movimento
@@ -139,11 +139,14 @@ def update_tracks(
         frame_w, frame_h: dimensões do frame (para o gating "inteiro no frame").
 
     Returns:
-        (novo_estado, newly, det_to_track).
+        (novo_estado, newly, det_to_track, expired).
         - `newly`: registros deste frame. Cada item tem `det_index` e `reason`
           ("new" = 1ª vez/contagem; "class_change" = re-save por mudança de classe).
         - `det_to_track`: índice_da_detecção → track (referência mutável dentro de
           `novo_estado`), p/ o pipeline amarrar a placa ao track.
+        - `expired`: tracks removidos por idade NESTE frame (cada um mantém seus
+          campos, incl. `track_id`, `first_seen_at`, `last_seen_at`, `category` e
+          eventuais `face_detection_id` gravados pelo pipeline facial).
     """
     iou_min = settings.TRACK_IOU_MIN
     max_age = settings.TRACK_MAX_AGE_SECONDS
@@ -158,6 +161,7 @@ def update_tracks(
             return settings.TRACK_STATIONARY_MAX_AGE_SECONDS
         return max_age
 
+    expired = [t for t in state if now - float(t["last_seen_at"]) > _eff_max_age(t)]
     tracks = [t for t in state if now - float(t["last_seen_at"]) <= _eff_max_age(t)]
 
     # 2. Associação gulosa (mesma categoria), 1-para-1. Candidato aceito por IoU
@@ -302,7 +306,7 @@ def update_tracks(
         tracks.append(tr)
         det_to_track[di] = tr
 
-    return tracks, newly, det_to_track
+    return tracks, newly, det_to_track, expired
 
 
 # ─── Persistência por câmera (Redis) ──────────────────────────────────────────
@@ -353,6 +357,6 @@ def track_camera(camera_id: str, detections: list[dict], now: float) -> list[dic
     pipeline com placa, use load_tracks/update_tracks/save_tracks explicitamente.
     """
     state = load_tracks(camera_id)
-    state, newly, _det_to_track = update_tracks(state, detections, now)
+    state, newly, _det_to_track, _expired = update_tracks(state, detections, now)
     save_tracks(camera_id, state)
     return newly
