@@ -21,6 +21,8 @@ import {
   Shield,
   ScanLine,
   ScanSearch,
+  ScanFace,
+  UserRound,
   Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -47,7 +49,10 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/alerts", label: "Alertas cadastrados", icon: Bell },
   { href: "/admin/alertas-disparados", label: "Alertas disparados", icon: BellRing },
   { href: "/admin/detections", label: "Deteccoes", icon: ScanSearch },
+  { href: "/admin/persons", label: "Pessoas", icon: UserRound },
+  { href: "/admin/face-detections", label: "Faces", icon: ScanFace },
   { href: "/admin/ocr-config", label: "Motores OCR", icon: ScanLine },
+  { href: "/admin/face-config", label: "Motores de Face", icon: ScanFace },
   { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle },
 ];
 
@@ -55,6 +60,8 @@ export const CLIENT_NAV: NavItem[] = [
   { href: "/client", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/client/search", label: "Placas", icon: Search },
   { href: "/client/detections", label: "Deteccoes", icon: ScanSearch },
+  { href: "/client/persons", label: "Pessoas", icon: UserRound },
+  { href: "/client/face-detections", label: "Faces", icon: ScanFace },
   { href: "/client/alerts", label: "Alertas", icon: Bell },
   { href: "/client/cameras", label: "Cameras", icon: Camera },
   { href: "/client/live", label: "Live", icon: Radio },
