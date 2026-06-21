@@ -124,6 +124,22 @@ class Settings(BaseSettings):
     # médio do bbox, após TRACK_STATIONARY_MIN_HITS frames.
     TRACK_STATIONARY_RADIUS_RATIO: float = 0.25
     TRACK_STATIONARY_MIN_HITS: int = 3
+    # Votos mínimos da classe vencedora para REGISTRAR uma pessoa/animal. Separa o
+    # limiar de RASTREAR (baixo, no detector — captura objeto pequeno/distante) do
+    # de REGISTRAR (estável): um erro de classe de 1 frame (cão<->pessoa) não vira
+    # registro; só a maioria ao longo do track conta. Veículos não usam isto (a
+    # placa é o sinal). Diferente do gating "inteiro no frame", pessoa/animal NÃO
+    # precisa caber inteiro p/ contar — corrige animais que cruzam rápido na borda.
+    TRACK_MIN_REGISTER_VOTES: int = 2
+
+    # ── Política de OCR híbrida (frame_processor) ──────────────────────────────
+    # Qualidade mínima do recorte (0..1, frame_quality_service) para disparar o
+    # OCR de um track ainda não lido. Evita rodar OCR em frame borrado/minúsculo.
+    OCR_MIN_QUALITY: float = 0.30
+    # Margem de qualidade para RE-OCR (refino): só reprocessa um track já lido se
+    # surgir um frame com qualidade pelo menos esta fração melhor que a do melhor
+    # frame já usado. Evita reprocessar a cada pequena variação.
+    OCR_REFINE_MARGIN: float = 0.15
     # Agrupamento piloto+moto (T5): uma pessoa é considerada PILOTO de uma moto
     # quando seu bbox sobrepõe a moto em >= esta fração da área da pessoa e seu
     # centro horizontal cai dentro da moto. Vira UMA detecção (moto principal +
