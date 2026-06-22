@@ -275,15 +275,31 @@ try:
                 return _display_cache["path"]
 
             def _plate_image(v_idx: int, plate: str) -> str | None:
-                """Frame da ocorrência com o VEÍCULO daquela detecção destacado e a
-                PLACA escrita sobre o bbox dele (Tarefa B) — assim, com vários
-                veículos no frame, dá pra saber de qual veículo é a placa."""
+                """Frame da ocorrência com o bbox SOMENTE do veículo daquela
+                detecção (amarelo) e a PLACA escrita por cima (Tarefas B + D) —
+                com vários veículos, cada frame salvo mostra só o seu veículo."""
                 from app.services.detection_overlay_service import draw_detections
 
                 drawn = draw_detections(
-                    analysis_bytes, detections, highlight_index=v_idx, highlight_label=plate
+                    analysis_bytes,
+                    detections,
+                    highlight_index=v_idx,
+                    highlight_label=plate,
+                    only_index=v_idx,
                 )
                 return save_bytes(drawn, camera_id)
+
+            # Imagem do EVENTO de detecção (Detecções): bbox só do objeto daquele
+            # evento (Tarefa D). Cacheada por índice de detecção p/ não redesenhar.
+            _event_img_cache: dict[int, str | None] = {}
+
+            def _event_image(det_index: int) -> str | None:
+                if det_index not in _event_img_cache:
+                    from app.services.detection_overlay_service import draw_detections
+
+                    drawn = draw_detections(analysis_bytes, detections, only_index=det_index)
+                    _event_img_cache[det_index] = save_bytes(drawn, camera_id)
+                return _event_img_cache[det_index]
 
             # OCR centrado no TRACK com seleção de melhor frame (política híbrida):
             #   - pending: roda OCR no 1º frame com qualidade >= OCR_MIN_QUALITY
@@ -501,7 +517,7 @@ try:
                         existing.bbox_y = det.bbox_y
                         existing.bbox_w = det.bbox_w
                         existing.bbox_h = det.bbox_h
-                        existing.image_path = _display_image()
+                        existing.image_path = _event_image(di)
                         if companion_category is not None:
                             existing.companion_category = companion_category
                             existing.companion_type = companion_type
@@ -521,7 +537,7 @@ try:
                         bbox_y=det.bbox_y,
                         bbox_w=det.bbox_w,
                         bbox_h=det.bbox_h,
-                        image_path=_display_image(),
+                        image_path=_event_image(di),
                         companion_category=companion_category,
                         companion_type=companion_type,
                     )
