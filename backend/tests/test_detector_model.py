@@ -20,6 +20,18 @@ def test_available_models_lista_onnx(tmp_path, monkeypatch):
     assert dms.available_models() == ["yolov8n", "yolov8s"]
 
 
+def test_available_models_ignora_modelos_de_face(tmp_path, monkeypatch):
+    """Modelos .onnx de FACE (YuNet/SFace) não podem aparecer no seletor YOLO."""
+    _make_models(tmp_path, [
+        "yolov8n",
+        "yolov8s",
+        "face_detection_yunet_2023mar",
+        "face_recognition_sface_2021dec",
+    ])
+    monkeypatch.setenv("MODELS_DIR", str(tmp_path))
+    assert dms.available_models() == ["yolov8n", "yolov8s"]
+
+
 def test_default_prefere_m(tmp_path, monkeypatch):
     _make_models(tmp_path, ["yolov8n", "yolov8s", "yolov8m"])
     monkeypatch.setenv("MODELS_DIR", str(tmp_path))
