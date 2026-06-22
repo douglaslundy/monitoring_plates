@@ -254,11 +254,23 @@ export default function AdminCamerasPage() {
   async function handleDelete(camera: Camera) {
     try {
       await api.delete(`/api/cameras/${camera.id}`);
-      toast(`Câmera "${camera.name}" removida`);
+      toast(`Câmera "${camera.name}" e seus dados removidos`);
       setDeleteTarget(null);
       fetchData();
     } catch {
       toast("Erro ao remover câmera", "error");
+      setDeleteTarget(null);
+    }
+  }
+
+  async function handleDeactivate(camera: Camera) {
+    try {
+      await api.patch(`/api/cameras/${camera.id}`, { is_active: false });
+      toast(`Câmera "${camera.name}" desativada (dados mantidos)`);
+      setDeleteTarget(null);
+      fetchData();
+    } catch {
+      toast("Erro ao desativar câmera", "error");
       setDeleteTarget(null);
     }
   }
@@ -288,6 +300,7 @@ export default function AdminCamerasPage() {
     setEditTarget(null);
     setEditForm(null);
     setEditError("");
+    setRoiModal(null);
   }
 
   async function handleEditSave(e: React.FormEvent) {
@@ -338,6 +351,7 @@ export default function AdminCamerasPage() {
     setForm(emptyForm);
     setFormErrors({});
     setSubmitError("");
+    setRoiModal(null);
   }
 
   async function copyText(text: string, setCopied: (v: boolean) => void) {
@@ -533,33 +547,51 @@ export default function AdminCamerasPage() {
         open={!!deleteTarget}
         onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
         title="Remover câmera"
+        description={deleteTarget ? `Câmera "${deleteTarget.name}"` : undefined}
       >
-        <p className="text-sm text-muted-foreground mb-5">
-          Tem certeza que deseja remover a câmera{" "}
-          <strong>&ldquo;{deleteTarget?.name}&rdquo;</strong>? Esta ação não pode ser desfeita.
-        </p>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setDeleteTarget(null)}
-            className="flex-1 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => deleteTarget && handleDelete(deleteTarget)}
-            className="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors"
-          >
-            Remover
-          </button>
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">
+            <p className="font-medium mb-1">Atenção: ação destrutiva e irreversível.</p>
+            <p>
+              Apagar esta câmera também apaga <strong>permanentemente todas as detecções
+              e ocorrências (leituras de placa) desta câmera</strong>. As placas
+              monitoradas cadastradas (por cliente) <strong>não</strong> são afetadas.
+            </p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Se quiser apenas tirar a câmera de operação <strong>mantendo o histórico</strong>,
+            use “Apenas desativar”.
+          </p>
+          <div className="grid grid-cols-1 gap-2 pt-1">
+            <button
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+              className="py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+            >
+              Apagar câmera e todas as detecções/ocorrências
+            </button>
+            <button
+              onClick={() => deleteTarget && handleDeactivate(deleteTarget)}
+              className="py-2 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+            >
+              Apenas desativar (mantém o histórico)
+            </button>
+            <button
+              onClick={() => setDeleteTarget(null)}
+              className="py-2 text-sm text-muted-foreground hover:underline"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       </Modal>
 
       <Modal
-        open={!!editTarget && !!editForm}
+        open={!!editTarget && !!editForm && roiModal === null}
         onOpenChange={(o) => {
-          // Não fecha (nem reseta o form) enquanto o seletor de ROI está aberto:
-          // abrir o modal de ROI por cima dispararia o fechamento deste (Radix
-          // trata o clique no modal de cima como "fora"), perdendo o form.
+          // Enquanto o seletor de ROI está aberto este modal fica oculto
+          // (open=false controlado), preservando o form em estado React — assim
+          // não há dois dialogs Radix simultâneos (que se fechavam entre si e
+          // perdiam o form). O guard evita reset por algum onOpenChange residual.
           if (roiModal !== null) return;
           if (!o) closeEdit();
         }}
@@ -669,9 +701,9 @@ export default function AdminCamerasPage() {
 
       {/* ── Wizard: Nova Câmera ── */}
       <Modal
-        open={wizardOpen}
+        open={wizardOpen && roiModal === null}
         onOpenChange={(o) => {
-          // Mantém o wizard aberto enquanto o seletor de ROI estiver por cima.
+          // Oculto enquanto o seletor de ROI está aberto (só 1 dialog por vez).
           if (roiModal !== null) return;
           if (!o) closeWizard(); else setWizardOpen(true);
         }}

@@ -194,7 +194,11 @@ def update_camera(
     current_user: User = Depends(get_current_user),
 ):
     camera = _get_camera_or_403(camera_id, current_user, db)
-    for k, v in payload.model_dump(exclude_none=True).items():
+    # exclude_unset (não exclude_none): aplica os campos ENVIADOS na requisição,
+    # inclusive quando vêm como null. Isso permite LIMPAR a ROI (x/y/largura/altura
+    # em branco -> null -> volta a analisar o frame inteiro). Campos não enviados
+    # não são alterados (semântica PATCH).
+    for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(camera, k, v)
     db.commit()
     db.refresh(camera)
