@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, ImageOff } from "lucide-react";
+import api from "@/lib/api";
 
 export interface Roi {
   x: number;
@@ -19,6 +20,10 @@ interface PixelRect {
 
 interface RoiSelectorProps {
   cameraId: string | null;
+  /** No cadastro (sem cameraId): captura um frame da RTSP digitada. */
+  rtspUrl?: string | null;
+  dualLens?: boolean;
+  lensSide?: string | null;
   initial?: Roi | null;
   onConfirm: (roi: Roi) => void;
   onCancel: () => void;
@@ -33,25 +38,59 @@ function clamp01(v: number): number {
  * (ROI) que a câmera deve analisar. Ao confirmar, devolve a ROI em frações 0..1.
  * Precisa de um frame disponível — câmera salva e conectada.
  */
-export function RoiSelector({ cameraId, initial, onConfirm, onCancel }: RoiSelectorProps) {
+export function RoiSelector({ cameraId, rtspUrl, dualLens, lensSide, initial, onConfirm, onCancel }: RoiSelectorProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const blobUrlRef = useRef<string | null>(null);
   const [rect, setRect] = useState<PixelRect | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [start, setStart] = useState<{ x: number; y: number } | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const [src, setSrc] = useState<string>("");
 
+  const hasSource = Boolean(cameraId || (rtspUrl && rtspUrl.trim()));
+
+  function revokeBlob() {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  }
+
   const reload = useCallback(() => {
-    if (!cameraId) return;
+    setRect(null);
     setLoaded(false);
     setError(false);
-    setSrc(`/api/images/cameras/${cameraId}/latest.jpg?ts=${Date.now()}`);
-  }, [cameraId]);
+    revokeBlob();
+    if (cameraId) {
+      // Câmera existente: usa o último frame salvo.
+      setSrc(`/api/images/cameras/${cameraId}/latest.jpg?ts=${Date.now()}`);
+      return;
+    }
+    if (rtspUrl && rtspUrl.trim()) {
+      // Cadastro: captura um frame da RTSP digitada via backend.
+      setCapturing(true);
+      api
+        .post(
+          "/api/cameras/preview-frame",
+          { rtsp_url: rtspUrl.trim(), dual_lens: Boolean(dualLens), lens_side: lensSide ?? null },
+          { responseType: "blob" }
+        )
+        .then((r) => {
+          const url = URL.createObjectURL(r.data as Blob);
+          blobUrlRef.current = url;
+          setSrc(url);
+        })
+        .catch(() => setError(true))
+        .finally(() => setCapturing(false));
+    }
+  }, [cameraId, rtspUrl, dualLens, lensSide]);
 
   useEffect(() => {
     reload();
+    return () => revokeBlob();
   }, [reload]);
 
   // Converte a ROI inicial (frações) em pixels quando a imagem carrega.
@@ -123,12 +162,12 @@ export function RoiSelector({ cameraId, initial, onConfirm, onCancel }: RoiSelec
     });
   }
 
-  if (!cameraId) {
+  if (!hasSource) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          O preview usa um frame ao vivo da câmera. Salve a câmera e aguarde a conexão
-          (alguns segundos); depois edite-a para desenhar a área de análise.
+          Para o preview, informe a URL RTSP da câmera (no cadastro) ou salve a câmera
+          e aguarde a conexão. Câmeras por agente: o preview aparece após o 1º frame.
         </p>
         <div className="flex justify-end">
           <button onClick={onCancel} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">
@@ -162,7 +201,12 @@ export function RoiSelector({ cameraId, initial, onConfirm, onCancel }: RoiSelec
         {error ? (
           <div className="flex flex-col items-center justify-center gap-2 p-10 text-muted-foreground">
             <ImageOff className="h-10 w-10 opacity-40" />
-            <p className="text-sm">Sem frame disponível ainda. Verifique se a câmera está conectada.</p>
+            <p className="text-sm">Não foi possível obter um frame. Verifique a URL/conexão da câmera.</p>
+          </div>
+        ) : capturing ? (
+          <div className="flex flex-col items-center justify-center gap-2 p-10 text-muted-foreground">
+            <RefreshCw className="h-8 w-8 animate-spin opacity-50" />
+            <p className="text-sm">Capturando frame da câmera…</p>
           </div>
         ) : (
           <>

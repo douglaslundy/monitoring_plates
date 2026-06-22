@@ -1011,6 +1011,9 @@ export default function AdminCamerasPage() {
       >
         <RoiSelector
           cameraId={roiModal === "edit" ? (editTarget?.id ?? null) : null}
+          rtspUrl={roiModal === "create" ? form.rtsp_url : null}
+          dualLens={roiModal === "create" ? form.dual_lens : undefined}
+          lensSide={roiModal === "create" ? form.lens_side : undefined}
           initial={(() => {
             const src = roiModal === "edit" ? editForm : form;
             if (!src) return null;

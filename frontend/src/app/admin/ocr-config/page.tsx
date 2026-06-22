@@ -18,7 +18,7 @@ import {
   Cpu,
 } from "lucide-react";
 
-type EngineType = "easyocr" | "plate_recognizer";
+type EngineType = "fast_alpr" | "easyocr" | "plate_recognizer";
 type EngineMode = "cloud" | "onpremise";
 
 interface OcrEngineConfig {
@@ -49,9 +49,13 @@ const BR_STATES = [
 ];
 
 const ENGINE_LABELS: Record<EngineType, string> = {
-  easyocr: "EasyOCR",
+  fast_alpr: "Fast-ALPR (local)",
+  easyocr: "EasyOCR (local)",
   plate_recognizer: "Plate Recognizer",
 };
+
+// Motores locais (sem credenciais e não removíveis).
+const LOCAL_ENGINES: EngineType[] = ["fast_alpr", "easyocr"];
 
 const DEFAULT_PR_URL = "https://api.platerecognizer.com/v1/plate-reader/";
 
@@ -368,7 +372,7 @@ export default function OcrConfigPage() {
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground mt-0.5">
-                        {cfg.engine_type === "easyocr"
+                        {LOCAL_ENGINES.includes(cfg.engine_type)
                           ? "Motor local, sem custos externos"
                           : cfg.api_token
                           ? "Credenciais configuradas"
@@ -403,7 +407,7 @@ export default function OcrConfigPage() {
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    {cfg.engine_type !== "easyocr" && (
+                    {!LOCAL_ENGINES.includes(cfg.engine_type) && (
                       <button
                         onClick={() => setDeleteConfirm(cfg)}
                         className="p-1.5 border rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"

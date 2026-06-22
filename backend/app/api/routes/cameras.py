@@ -47,6 +47,45 @@ def _get_camera_or_403(camera_id: UUID, current_user: User, db: Session) -> Came
     return camera
 
 
+from pydantic import BaseModel
+from fastapi import Response
+
+
+class PreviewFrameRequest(BaseModel):
+    rtsp_url: str
+    dual_lens: bool = False
+    lens_side: str | None = None
+
+
+@router.post("/preview-frame")
+def preview_frame(
+    payload: PreviewFrameRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Captura UM frame de uma RTSP (câmera ainda não salva) p/ o seletor de ROI
+    no cadastro. Só admin. Aplica o recorte da lente se dual-lens."""
+    if current_user.role not in (UserRole.super_admin, UserRole.client_admin):
+        raise HTTPException(status_code=403, detail="Permissão insuficiente")
+    url = (payload.rtsp_url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Informe a URL RTSP da câmera.")
+    # Timeout de socket p/ não travar em URL inacessível (FFmpeg via OpenCV).
+    import os
+
+    os.environ.setdefault(
+        "OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;5000000"
+    )
+    frame = capture_rtsp_frame(url)
+    if frame is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Não foi possível capturar um frame. Verifique a URL/conexão da câmera.",
+        )
+    if payload.dual_lens and payload.lens_side in ("upper", "lower"):
+        frame = crop_half_frame(frame, payload.lens_side)
+    return Response(content=frame, media_type="image/jpeg")
+
+
 def _serialize_camera(camera: Camera) -> dict:
     telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
     quality = get_image_quality(str(camera.id))
