@@ -20,6 +20,8 @@ _CATEGORY_COLORS: dict[str, tuple[int, int, int]] = {
     "animal": (0, 165, 255),    # laranja
 }
 _DEFAULT_COLOR = (200, 200, 200)
+# Cor do veículo destacado (o da ocorrência) — amarelo (BGR), bem visível.
+_HIGHLIGHT_COLOR = (0, 255, 255)
 
 
 def label_text(label: str, confidence: float) -> str:
@@ -35,12 +37,22 @@ def _color_for(category: str) -> tuple[int, int, int]:
     return _CATEGORY_COLORS.get(category, _DEFAULT_COLOR)
 
 
-def draw_detections(frame_bytes: bytes, detections: Iterable) -> bytes:
+def draw_detections(
+    frame_bytes: bytes,
+    detections: Iterable,
+    highlight_index: int | None = None,
+    highlight_label: str | None = None,
+) -> bytes:
     """Devolve o JPEG com as caixas/labels desenhadas.
 
     `detections` são objetos com category, vehicle_type, confidence e bbox_*.
     Aceita também um `label_override` opcional por detecção (Tarefa 5: agrupar
     'moto e pessoa'). Sem cv2/numpy ou sem detecções, devolve os bytes originais.
+
+    Tarefa B: `highlight_index` marca o veículo da ocorrência atual — sua caixa é
+    desenhada destacada (amarela, mais grossa) e recebe `highlight_label` (a PLACA)
+    escrita por cima, para identificar de qual veículo é a placa quando há vários
+    no frame. Os demais objetos ficam com a caixa/label normais.
     """
     dets = list(detections)
     if not dets:
@@ -61,19 +73,24 @@ def draw_detections(frame_bytes: bytes, detections: Iterable) -> bytes:
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = max(0.5, min(w, h) / 1000.0)
 
-    for d in dets:
+    for idx, d in enumerate(dets):
         category = getattr(d, "category", "vehicle")
+        is_highlight = highlight_index is not None and idx == highlight_index
         label = getattr(d, "label_override", None) or getattr(d, "vehicle_type", "obj")
-        color = _color_for(category)
+        color = _HIGHLIGHT_COLOR if is_highlight else _color_for(category)
+        box_thickness = thickness * 2 if is_highlight else thickness
         x1 = max(0, int(getattr(d, "bbox_x", 0)))
         y1 = max(0, int(getattr(d, "bbox_y", 0)))
         x2 = min(w, x1 + int(getattr(d, "bbox_w", 0)))
         y2 = min(h, y1 + int(getattr(d, "bbox_h", 0)))
         if x2 <= x1 or y2 <= y1:
             continue
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, box_thickness)
 
-        text = label_text(label, getattr(d, "confidence", 0.0))
+        if is_highlight and highlight_label:
+            text = highlight_label  # a PLACA
+        else:
+            text = label_text(label, getattr(d, "confidence", 0.0))
         (tw, th), baseline = cv2.getTextSize(text, font, font_scale, thickness)
         # Faixa de fundo do texto, acima da caixa (ou dentro se colar no topo).
         ty = y1 - 4

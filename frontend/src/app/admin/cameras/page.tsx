@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { useToast } from "@/components/ui/Toast";
+import { RoiSelector, type Roi } from "@/components/cameras/RoiSelector";
 import {
   Camera as CameraIcon,
   Plus,
@@ -139,6 +140,7 @@ export default function AdminCamerasPage() {
   const [deleteTarget, setDeleteTarget] = useState<Camera | null>(null);
   const [editTarget, setEditTarget] = useState<Camera | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [roiModal, setRoiModal] = useState<null | "create" | "edit">(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState("");
   const [previewCamera, setPreviewCamera] = useState<Camera | null>(null);
@@ -622,11 +624,21 @@ export default function AdminCamerasPage() {
               </label>
             </div>
             <div className="rounded border p-3 bg-gray-50 space-y-3">
-              <div>
-                <p className="text-sm font-medium">ROI para detecção</p>
-                <p className="text-xs text-muted-foreground">
-                  Valores entre 0 e 1. Deixe vazio para analisar o frame inteiro.
-                </p>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">ROI para detecção</p>
+                  <p className="text-xs text-muted-foreground">
+                    Valores entre 0 e 1. Deixe vazio para analisar o frame inteiro.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRoiModal("edit")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-white shrink-0"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  Selecionar no preview
+                </button>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <input placeholder="x" value={editForm.roi_x} onChange={(e) => setEditForm((p) => (p ? { ...p, roi_x: e.target.value } : p))} className={inputCls()} />
@@ -841,11 +853,21 @@ export default function AdminCamerasPage() {
             </div>
 
             <div className="rounded border p-3 bg-gray-50 space-y-3">
-              <div>
-                <p className="text-sm font-medium">ROI para detecção</p>
-                <p className="text-xs text-muted-foreground">
-                  Valores entre 0 e 1. Deixe vazio para analisar o frame inteiro.
-                </p>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">ROI para detecção</p>
+                  <p className="text-xs text-muted-foreground">
+                    Valores entre 0 e 1. Deixe vazio para analisar o frame inteiro.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRoiModal("create")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium hover:bg-white shrink-0"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  Selecionar no preview
+                </button>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <input
@@ -971,6 +993,42 @@ export default function AdminCamerasPage() {
           </div>
         </Modal>
       )}
+
+      {/* ── Preview + seleção de ROI ── */}
+      <Modal
+        open={roiModal !== null}
+        onOpenChange={(o) => { if (!o) setRoiModal(null); }}
+        title="Selecionar área de análise (ROI)"
+        description="Arraste sobre o frame para definir a região que a câmera deve analisar."
+      >
+        <RoiSelector
+          cameraId={roiModal === "edit" ? (editTarget?.id ?? null) : null}
+          initial={(() => {
+            const src = roiModal === "edit" ? editForm : form;
+            if (!src) return null;
+            const nx = parseFloat(src.roi_x), ny = parseFloat(src.roi_y);
+            const nw = parseFloat(src.roi_width), nh = parseFloat(src.roi_height);
+            if ([nx, ny, nw, nh].some((v) => Number.isNaN(v)) || nw <= 0 || nh <= 0) return null;
+            return { x: nx, y: ny, width: nw, height: nh } as Roi;
+          })()}
+          onConfirm={(roi: Roi) => {
+            if (roiModal === "edit") {
+              setEditForm((p) => (p ? {
+                ...p,
+                roi_x: String(roi.x), roi_y: String(roi.y),
+                roi_width: String(roi.width), roi_height: String(roi.height),
+              } : p));
+            } else {
+              setField("roi_x", String(roi.x));
+              setField("roi_y", String(roi.y));
+              setField("roi_width", String(roi.width));
+              setField("roi_height", String(roi.height));
+            }
+            setRoiModal(null);
+          }}
+          onCancel={() => setRoiModal(null)}
+        />
+      </Modal>
     </div>
   );
 }

@@ -120,6 +120,7 @@ def update_tracks(
     now: float,
     frame_w: int | None = None,
     frame_h: int | None = None,
+    backend: str = "legacy",
 ) -> tuple[list[dict], list[dict], dict[int, dict], list[dict]]:
     """Atualiza os tracks com as detecções do frame.
 
@@ -164,52 +165,59 @@ def update_tracks(
     expired = [t for t in state if now - float(t["last_seen_at"]) > _eff_max_age(t)]
     tracks = [t for t in state if now - float(t["last_seen_at"]) <= _eff_max_age(t)]
 
-    # 2. Associação gulosa (mesma categoria), 1-para-1. Candidato aceito por IoU
-    #    suficiente OU centro dentro do gate de distância. Ordena por IoU (desc)
-    #    e, empatado, pelo centro mais próximo.
-    pairs: list[tuple[float, float, int, int]] = []
-    for di, det in enumerate(detections):
-        for ti, tr in enumerate(tracks):
-            if det["category"] != tr["category"]:
-                continue
-            ptr = _predict_bbox(tr, now)
-            iou = _iou(det["bbox"], ptr)
-            dist = _center_dist(det["bbox"], ptr)
-            if iou >= iou_min or dist <= _dist_gate(det["bbox"], ptr):
-                pairs.append((iou, -dist, di, ti))
-    pairs.sort(reverse=True)
-
+    # 2. Associação detecção→track. Dois backends, MESMA máquina de estados depois.
+    #    spawn_block = detecções proibidas de iniciar track novo (ByteTrack: baixa
+    #    confiança sem casamento).
     matched_det: dict[int, int] = {}
-    matched_track: set[int] = set()
-    for _iou_val, _neg_dist, di, ti in pairs:
-        if di in matched_det or ti in matched_track:
-            continue
-        matched_det[di] = ti
-        matched_track.add(ti)
+    spawn_block: set[int] = set()
+    if backend == "bytetrack":
+        from app.services.bytetrack_service import associate as _bt_associate
 
-    # 2b. Associação CROSS-CATEGORY por IoU muito alto: o mesmo objeto físico
-    #     classificado de formas diferentes entre frames (cão ora "dog" ora
-    #     "person") mantém caixas quase idênticas. Sobreposição >= limiar alto =
-    #     mesmo objeto -> associa para o track VOTAR a classe (corrige o erro por
-    #     maioria), sem fundir objetos realmente distintos (que não se sobrepõem
-    #     tanto).
-    same_obj_iou = settings.TRACK_SAME_OBJECT_IOU
-    cross: list[tuple[float, int, int]] = []
-    for di, det in enumerate(detections):
-        if di in matched_det:
-            continue
-        for ti, tr in enumerate(tracks):
-            if ti in matched_track or det["category"] == tr["category"]:
+        matched_det, spawn_block = _bt_associate(tracks, detections, now)
+    else:
+        # Legacy: associação gulosa (mesma categoria), 1-para-1. Candidato aceito
+        # por IoU suficiente OU centro dentro do gate. Ordena por IoU (desc) e,
+        # empatado, pelo centro mais próximo.
+        matched_track: set[int] = set()
+        pairs: list[tuple[float, float, int, int]] = []
+        for di, det in enumerate(detections):
+            for ti, tr in enumerate(tracks):
+                if det["category"] != tr["category"]:
+                    continue
+                ptr = _predict_bbox(tr, now)
+                iou = _iou(det["bbox"], ptr)
+                dist = _center_dist(det["bbox"], ptr)
+                if iou >= iou_min or dist <= _dist_gate(det["bbox"], ptr):
+                    pairs.append((iou, -dist, di, ti))
+        pairs.sort(reverse=True)
+        for _iou_val, _neg_dist, di, ti in pairs:
+            if di in matched_det or ti in matched_track:
                 continue
-            iou = _iou(det["bbox"], _predict_bbox(tr, now))
-            if iou >= same_obj_iou:
-                cross.append((iou, di, ti))
-    cross.sort(reverse=True)
-    for _iou_val, di, ti in cross:
-        if di in matched_det or ti in matched_track:
-            continue
-        matched_det[di] = ti
-        matched_track.add(ti)
+            matched_det[di] = ti
+            matched_track.add(ti)
+
+        # 2b. Associação CROSS-CATEGORY por IoU muito alto: o mesmo objeto físico
+        #     classificado de formas diferentes entre frames (cão ora "dog" ora
+        #     "person") mantém caixas quase idênticas. Sobreposição >= limiar alto =
+        #     mesmo objeto -> associa para o track VOTAR a classe (corrige o erro
+        #     por maioria), sem fundir objetos realmente distintos.
+        same_obj_iou = settings.TRACK_SAME_OBJECT_IOU
+        cross: list[tuple[float, int, int]] = []
+        for di, det in enumerate(detections):
+            if di in matched_det:
+                continue
+            for ti, tr in enumerate(tracks):
+                if ti in matched_track or det["category"] == tr["category"]:
+                    continue
+                iou = _iou(det["bbox"], _predict_bbox(tr, now))
+                if iou >= same_obj_iou:
+                    cross.append((iou, di, ti))
+        cross.sort(reverse=True)
+        for _iou_val, di, ti in cross:
+            if di in matched_det or ti in matched_track:
+                continue
+            matched_det[di] = ti
+            matched_track.add(ti)
 
     newly: list[dict] = []
     det_to_track: dict[int, dict] = {}
@@ -294,9 +302,10 @@ def update_tracks(
         _maybe_register(tr, di)
         det_to_track[di] = tr
 
-    # 4. Detecções sem casamento → novos tracks.
+    # 4. Detecções sem casamento → novos tracks (exceto as bloqueadas: no
+    #    ByteTrack, detecções de baixa confiança sem par não iniciam track).
     for di, det in enumerate(detections):
-        if di in matched_det:
+        if di in matched_det or di in spawn_block:
             continue
         tr = {
             "track_id": uuid.uuid4().hex[:16],
