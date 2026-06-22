@@ -557,6 +557,10 @@ export default function AdminCamerasPage() {
       <Modal
         open={!!editTarget && !!editForm}
         onOpenChange={(o) => {
+          // Não fecha (nem reseta o form) enquanto o seletor de ROI está aberto:
+          // abrir o modal de ROI por cima dispararia o fechamento deste (Radix
+          // trata o clique no modal de cima como "fora"), perdendo o form.
+          if (roiModal !== null) return;
           if (!o) closeEdit();
         }}
         title="Editar câmera"
@@ -666,7 +670,11 @@ export default function AdminCamerasPage() {
       {/* ── Wizard: Nova Câmera ── */}
       <Modal
         open={wizardOpen}
-        onOpenChange={(o) => { if (!o) closeWizard(); else setWizardOpen(true); }}
+        onOpenChange={(o) => {
+          // Mantém o wizard aberto enquanto o seletor de ROI estiver por cima.
+          if (roiModal !== null) return;
+          if (!o) closeWizard(); else setWizardOpen(true);
+        }}
         title={
           wizardStep === 1
             ? "Nova Câmera — Tipo de conexão"
