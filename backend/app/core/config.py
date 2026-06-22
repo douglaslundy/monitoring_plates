@@ -139,6 +139,15 @@ class Settings(BaseSettings):
     # precisa caber inteiro p/ contar — corrige animais que cruzam rápido na borda.
     TRACK_MIN_REGISTER_VOTES: int = 2
 
+    # ── Backend de rastreamento (selecionável pelo admin via Redis) ────────────
+    # "legacy" = tracker próprio (IoU+centro+velocidade, frames esparsos).
+    # "bytetrack" = associação BYTE de 2 estágios + rajada de frames no movimento.
+    TRACKER_BACKEND_DEFAULT: str = "legacy"
+    # ByteTrack: limiares de confiança (alta/baixa) e IoU mínimo de casamento.
+    BYTETRACK_HIGH_THRESH: float = 0.5
+    BYTETRACK_LOW_THRESH: float = 0.2
+    BYTETRACK_MATCH_IOU: float = 0.2
+
     # ── Política de OCR híbrida (frame_processor) ──────────────────────────────
     # Qualidade mínima do recorte (0..1, frame_quality_service) para disparar o
     # OCR de um track ainda não lido. Evita rodar OCR em frame borrado/minúsculo.
@@ -168,6 +177,12 @@ class Settings(BaseSettings):
     # objeto parado é recontado. Como o OCR do parado "dorme", o custo é só 1 YOLO
     # a cada 25s por câmera estática.
     CAPTURE_FORCE_SEND_SECONDS: float = 25.0
+    # Rajada-no-movimento (só quando o backend de tracker = bytetrack): enquanto há
+    # movimento, envia frames seguidos a esta taxa por até N segundos, p/ o
+    # ByteTrack ver a passagem com continuidade (IoU alto entre frames). Cena
+    # parada continua no heartbeat. No backend legacy isto é ignorado.
+    CAPTURE_BURST_FPS: float = 8.0
+    CAPTURE_BURST_SECONDS: float = 3.0
 
     # Live WebRTC (go2rtc). GO2RTC_URL = endpoint interno p/ a API (sync de
     # streams); GO2RTC_PUBLIC_URL = base acessada pelo navegador do operador.

@@ -82,6 +82,9 @@ export default function OcrConfigPage() {
   // Modelo de detecção (YOLO) — Tarefa A.
   const [detModel, setDetModel] = useState<{ current: string; default: string; available: string[] } | null>(null);
   const [savingModel, setSavingModel] = useState(false);
+  // Backend de rastreamento (legacy | bytetrack).
+  const [tracker, setTracker] = useState<{ current: string; default: string; available: string[] } | null>(null);
+  const [savingTracker, setSavingTracker] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -99,6 +102,10 @@ export default function OcrConfigPage() {
       .get<{ current: string; default: string; available: string[] }>("/api/detector/model")
       .then((r) => setDetModel(r.data))
       .catch(() => setDetModel(null));
+    api
+      .get<{ current: string; default: string; available: string[] }>("/api/detector/tracker")
+      .then((r) => setTracker(r.data))
+      .catch(() => setTracker(null));
   }, []);
 
   async function changeDetectorModel(model: string) {
@@ -117,6 +124,28 @@ export default function OcrConfigPage() {
       setSavingModel(false);
     }
   }
+
+  async function changeTracker(backend: string) {
+    setSavingTracker(true);
+    setError("");
+    try {
+      const r = await api.put<{ current: string; default: string; available: string[] }>(
+        "/api/detector/tracker",
+        { backend }
+      );
+      setTracker(r.data);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(msg || "Erro ao alterar o rastreador");
+    } finally {
+      setSavingTracker(false);
+    }
+  }
+
+  const TRACKER_LABELS: Record<string, string> = {
+    legacy: "Atual (IoU+centro, frames esparsos)",
+    bytetrack: "ByteTrack (rajada no movimento)",
+  };
 
   function openCreate() {
     setEditing(null);
@@ -262,6 +291,46 @@ export default function OcrConfigPage() {
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             A troca vale para novas detecções (os workers recarregam o modelo em alguns segundos).
+          </p>
+        </div>
+      )}
+
+      {/* Backend de rastreamento (legacy | bytetrack) */}
+      {tracker && (
+        <div className="mb-6 bg-white border rounded-xl p-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-10 w-10 rounded-full bg-purple-100 flex items-center justify-center">
+              <Cpu className="h-5 w-5 text-purple-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold">Rastreador (tracking)</h3>
+              <p className="text-sm text-muted-foreground">
+                Algoritmo que segue cada objeto entre frames. <b>ByteTrack</b> envia
+                frames em rajada durante o movimento (melhor associação na passagem);
+                o <b>Atual</b> usa frames esparsos (menor CPU).
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            <select
+              value={tracker.current}
+              disabled={savingTracker}
+              onChange={(e) => changeTracker(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+            >
+              {tracker.available.map((b) => (
+                <option key={b} value={b}>
+                  {TRACKER_LABELS[b] ?? b}
+                  {b === tracker.default ? " (padrão)" : ""}
+                </option>
+              ))}
+            </select>
+            {savingTracker && <span className="text-sm text-muted-foreground">Aplicando…</span>}
+            <Badge variant="info">Atual: {TRACKER_LABELS[tracker.current] ?? tracker.current}</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            A troca vale para novas detecções (workers leem em alguns segundos). ByteTrack
+            usa mais CPU enquanto há movimento.
           </p>
         </div>
       )}

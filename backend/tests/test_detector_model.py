@@ -123,3 +123,35 @@ def test_put_model_negado_para_nao_admin(client, user_a, monkeypatch):
     monkeypatch.setattr(detector_route, "available_models", lambda: ["yolov8s", "yolov8m"])
     r = client.put("/api/detector/model", json={"model": "yolov8m"}, headers=_auth_header(user_a))
     assert r.status_code == 403
+
+
+# ── Endpoint /api/detector/tracker (backend de rastreamento) ─────────────────
+
+
+def test_get_tracker_endpoint(client, super_admin_user, monkeypatch):
+    monkeypatch.setattr(detector_route, "get_backend", lambda: "legacy")
+    monkeypatch.setattr(detector_route, "default_backend", lambda: "legacy")
+    r = client.get("/api/detector/tracker", headers=_auth_header(super_admin_user))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["current"] == "legacy"
+    assert "bytetrack" in body["available"]
+
+
+def test_put_tracker_super_admin_ok(client, super_admin_user, monkeypatch):
+    monkeypatch.setattr(detector_route, "set_backend", lambda b: True)
+    monkeypatch.setattr(detector_route, "get_backend", lambda: "bytetrack")
+    monkeypatch.setattr(detector_route, "default_backend", lambda: "legacy")
+    r = client.put("/api/detector/tracker", json={"backend": "bytetrack"}, headers=_auth_header(super_admin_user))
+    assert r.status_code == 200
+    assert r.json()["current"] == "bytetrack"
+
+
+def test_put_tracker_rejeita_invalido(client, super_admin_user):
+    r = client.put("/api/detector/tracker", json={"backend": "foobar"}, headers=_auth_header(super_admin_user))
+    assert r.status_code == 400
+
+
+def test_put_tracker_negado_para_nao_admin(client, user_a):
+    r = client.put("/api/detector/tracker", json={"backend": "bytetrack"}, headers=_auth_header(user_a))
+    assert r.status_code == 403

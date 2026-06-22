@@ -255,9 +255,11 @@ try:
 
             frame_w = _safe_dim(detections[0].frame_w) if detections else 0
             frame_h = _safe_dim(detections[0].frame_h) if detections else 0
+            from app.services.tracker_backend_service import get_backend
+
             track_state = load_tracks(str(camera.id))
             track_state, newly, det_to_track, expired = update_tracks(
-                track_state, tracker_dets, now_ts, frame_w, frame_h
+                track_state, tracker_dets, now_ts, frame_w, frame_h, backend=get_backend()
             )
 
             # Imagem de exibição: salva o FRAME CHEIO (resolução nativa) no máximo

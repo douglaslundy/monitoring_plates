@@ -53,6 +53,22 @@ class CameraCapture(threading.Thread):
         self._last_seen_update = 0.0
         self._last_force_send = 0.0
         self._force_send = True  # 1o frame após conectar sempre dispara ANPR
+        self._last_motion_at = 0.0  # p/ a rajada do backend bytetrack
+        self._backend: str | None = None
+        self._backend_checked_at = 0.0
+
+    def _tracker_backend(self) -> str:
+        """Backend de rastreamento atual (cacheado ~10s p/ não bater no Redis por frame)."""
+        now = time.time()
+        if self._backend is None or now - self._backend_checked_at > 10.0:
+            try:
+                from app.services.tracker_backend_service import get_backend
+
+                self._backend = get_backend()
+            except Exception:
+                self._backend = "legacy"
+            self._backend_checked_at = now
+        return self._backend or "legacy"
 
     def stop(self) -> None:
         self._stop.set()
@@ -131,15 +147,22 @@ class CameraCapture(threading.Thread):
         # segurança p/ algo lento/estático que o motion gating perdeu). Em cena
         # parada isso vira ~1 envio a cada CAPTURE_FORCE_SEND_SECONDS — antes era
         # a cada 8s, floodando o pipeline com o objeto estacionado.
+        if moved:
+            self._last_motion_at = now
         heartbeat_due = (now - self._last_force_send) >= settings.CAPTURE_FORCE_SEND_SECONDS
-        if not (moved or self._force_send or heartbeat_due):
+        # Rajada (só backend bytetrack): durante a passagem (até CAPTURE_BURST_SECONDS
+        # após o último movimento) envia TODOS os frames, p/ o ByteTrack ver a
+        # passagem com continuidade (IoU alto entre frames consecutivos).
+        burst = (
+            self._tracker_backend() == "bytetrack"
+            and (now - self._last_motion_at) <= settings.CAPTURE_BURST_SECONDS
+        )
+        if not (moved or burst or self._force_send or heartbeat_due):
             return
-        # Envio "forçado" = bootstrap/heartbeat SEM movimento. Esses frames NÃO
-        # podem ser descartados pela amostragem de alto volume: são eles que
-        # mantêm vivo o track de um objeto PARADO entre as passagens. Sem isso, a
-        # amostragem (1 a cada N) espaça os frames processados além do max_age do
-        # track e o objeto parado é recontado a cada vez.
-        forced = (not moved) and (self._force_send or heartbeat_due)
+        # Envio "forçado" = NÃO pode ser descartado pela amostragem de alto volume.
+        # Inclui: bootstrap/heartbeat SEM movimento (mantêm vivo o track do objeto
+        # PARADO) e os frames da rajada do bytetrack (precisam de continuidade).
+        forced = ((not moved) and (self._force_send or heartbeat_due)) or burst
         self._force_send = False
         # Qualquer envio (movimento/bootstrap/heartbeat) reinicia o heartbeat:
         # ele só dispara após um período inteiro SEM nenhum frame enviado.
