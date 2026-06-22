@@ -223,6 +223,41 @@ def test_client_user_pode_cadastrar_camera_no_proprio_cliente(client, db, tenant
 
 # ── /api/agent/frame ───────────────────────────────────────────────────────────
 
+def test_update_camera_limpa_roi(client, db, super_admin, tenant_a):
+    """Bug 2: enviar ROI em branco (null) deve LIMPAR a ROI (frame inteiro)."""
+    cam = Camera(
+        client_id=tenant_a.id, name="ROIcam", connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://x/roi", is_active=True,
+        roi_x=0.1, roi_y=0.2, roi_width=0.3, roi_height=0.4,
+    )
+    db.add(cam); db.commit(); db.refresh(cam)
+    token = login(client, "admin@sistema.com")
+    res = client.patch(
+        f"/api/cameras/{cam.id}",
+        json={"roi_x": None, "roi_y": None, "roi_width": None, "roi_height": None},
+        headers=auth(token),
+    )
+    assert res.status_code == 200, res.text
+    db.refresh(cam)
+    assert cam.roi_x is None and cam.roi_y is None
+    assert cam.roi_width is None and cam.roi_height is None
+
+
+def test_update_camera_nao_altera_campo_nao_enviado(client, db, super_admin, tenant_a):
+    """exclude_unset: campo NÃO enviado não muda (semântica PATCH)."""
+    cam = Camera(
+        client_id=tenant_a.id, name="Original", connection_type=ConnectionType.rtsp,
+        rtsp_url="rtsp://x/o", is_active=True, roi_x=0.1, roi_y=0.2, roi_width=0.3, roi_height=0.4,
+    )
+    db.add(cam); db.commit(); db.refresh(cam)
+    token = login(client, "admin@sistema.com")
+    res = client.patch(f"/api/cameras/{cam.id}", json={"name": "Novo Nome"}, headers=auth(token))
+    assert res.status_code == 200, res.text
+    db.refresh(cam)
+    assert cam.name == "Novo Nome"
+    assert cam.roi_x == 0.1  # não enviado -> inalterado
+
+
 def test_preview_frame_admin_captura(client, db, super_admin):
     """POST /api/cameras/preview-frame devolve o JPEG capturado da RTSP."""
     from app.api.routes import cameras as cam_route
