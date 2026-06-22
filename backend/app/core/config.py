@@ -86,7 +86,11 @@ class Settings(BaseSettings):
     # como novo (e re-salvo) toda vez que algo passa. Quanto maior, menos
     # re-salvamento de objeto parado — mas dois veículos distintos no MESMO ponto
     # dentro desta janela podem ser fundidos (subcontagem). Ajuste por câmera.
-    TRACK_MAX_AGE_SECONDS: float = 30.0
+    # MAIOR que CAPTURE_FORCE_SEND_SECONDS (25s) + folga p/ a latência do worker:
+    # garante que o track de um objeto parado sobreviva entre frames processados
+    # (com heartbeat forçado a cada 25s) e não seja recontado a cada passagem,
+    # inclusive com modelos YOLO mais lentos (intervalo de processamento maior).
+    TRACK_MAX_AGE_SECONDS: float = 60.0
     # Frames mínimos para CONFIRMAR um track. 1 = confirma ao aparecer (não
     # subconta objetos vistos em um único frame amostrado e não exige estado
     # SEMPRE no Redis). A contagem-única vem do flag `counted` do track + a
@@ -120,8 +124,9 @@ class Settings(BaseSettings):
     # como novo (e re-salvo) quando algo passa após um longo período sem
     # movimento. Um veículo que apenas passou (estava em movimento) expira no
     # TRACK_MAX_AGE_SECONDS normal — então um novo veículo no mesmo ponto ainda
-    # é contado.
-    TRACK_STATIONARY_MAX_AGE_SECONDS: float = 300.0
+    # é contado. Generoso (15 min): um veículo realmente estacionado persiste por
+    # muito tempo sem ser recontado, mesmo com frames esparsos.
+    TRACK_STATIONARY_MAX_AGE_SECONDS: float = 900.0
     # Estacionário = deslocamento médio do centro por frame <= este fator × tamanho
     # médio do bbox, após TRACK_STATIONARY_MIN_HITS frames.
     TRACK_STATIONARY_RADIUS_RATIO: float = 0.25
@@ -157,12 +162,12 @@ class Settings(BaseSettings):
     MOTION_MIN_AREA_RATIO: float = 0.0035
     MOTION_COOLDOWN_SECONDS: float = 0.0
     # Heartbeat de cobertura: garante AO MENOS um frame ao ANPR a cada N segundos
-    # quando NÃO há movimento (rede de segurança caso o motion gating perca algo
-    # lento/estático). Qualquer envio (movimento ou heartbeat) reinicia o timer.
-    # Era 8s fixo (enviava cena parada ao pipeline o tempo todo, custo de CPU à
-    # toa); subiu para reduzir a carga em cenas estáticas — o objeto parado já não
-    # é re-OCR'd (o track "dorme"), então o heartbeat só precisa cobrir o raro.
-    CAPTURE_FORCE_SEND_SECONDS: float = 45.0
+    # quando NÃO há movimento. Esses frames são "forçados" (não descartados pela
+    # amostragem) e MANTÊM VIVO o track de um objeto parado — por isso precisa ser
+    # MENOR que TRACK_MAX_AGE_SECONDS (60s), senão o track expira entre frames e o
+    # objeto parado é recontado. Como o OCR do parado "dorme", o custo é só 1 YOLO
+    # a cada 25s por câmera estática.
+    CAPTURE_FORCE_SEND_SECONDS: float = 25.0
 
     # Live WebRTC (go2rtc). GO2RTC_URL = endpoint interno p/ a API (sync de
     # streams); GO2RTC_PUBLIC_URL = base acessada pelo navegador do operador.

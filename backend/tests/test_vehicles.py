@@ -180,6 +180,30 @@ def test_detector_pessoa_e_cachorro_sobrepostos_ambos_detectados():
     assert "animal" in categories, "cachorro (animal) sobreposto à pessoa não pode ser suprimido pelo NMS"
 
 
+def test_detector_mesmo_veiculo_car_e_truck_sobrepostos_uma_deteccao():
+    """O MESMO veículo detectado ora 'car' ora 'truck' (caixas quase idênticas)
+    deve virar UMA detecção. Antes, o NMS por classe (COCO id) mantinha as duas
+    (car e truck têm ids diferentes), gerando 2 tracks/contagens do mesmo veículo
+    parado. Agora o NMS é por CATEGORIA: caixas 'vehicle' competem entre si."""
+    import sys
+    from unittest.mock import patch
+
+    from app.services.vehicle_detection_service import VehicleDetector
+
+    car_box = (300.0, 280.0, 220.0, 170.0)
+    truck_box = (304.0, 284.0, 224.0, 174.0)  # quase igual -> IoU > 0.45
+    output = _fake_yolo_two_boxes(car_box, 2, 0.80, truck_box, 7, 0.75)
+
+    detector = VehicleDetector()
+    mock_ort = _mock_onnxruntime(output)
+    with patch.dict(sys.modules, {"onnxruntime": mock_ort}), \
+         patch("os.path.exists", return_value=True):
+        detections = detector.detect(_make_vehicle_image())
+
+    vehicles = [d for d in detections if d.category == "vehicle"]
+    assert len(vehicles) == 1, f"esperado 1 veículo, veio {[d.vehicle_type for d in vehicles]}"
+
+
 def test_vehicle_stats_endpoint_conta_por_tipo(client, db):
     from app.models.vehicle_event import VehicleEvent
 

@@ -313,13 +313,23 @@ class VehicleDetector:
         y2 = np.clip(y2, 0, orig_h)
 
         xyxy = np.stack([x1, y1, x2, y2], axis=1)
-        # NMS class-aware: objetos de classes diferentes (ex.: uma pessoa e o
-        # cachorro ao seu lado) podem se sobrepor sem que um deva suprimir o
-        # outro. Deslocamos as caixas por um offset proporcional à classe antes
-        # do NMS, de modo que só caixas da MESMA classe competem entre si. Sem
-        # isto, o cachorro (menor confiança) sumia quando encostava na pessoa.
+        # NMS por CATEGORIA (não por classe COCO). Objetos de categorias
+        # DIFERENTES (ex.: uma pessoa e o cachorro ao seu lado) podem se sobrepor
+        # sem que um suprima o outro — deslocamos as caixas por um offset por
+        # CATEGORIA. Já caixas da MESMA categoria competem entre si: o MESMO
+        # veículo detectado ora "car" ora "truck"/"bus" (caixas quase idênticas)
+        # tem a duplicata suprimida — antes (offset por classe) sobravam as duas,
+        # gerando 2 tracks/contagens do mesmo veículo (inclusive parado).
+        _cat_offset = {"vehicle": 0.0, "person": 1.0, "animal": 2.0}
         max_coord = float(max(orig_w, orig_h)) + 1.0
-        offset = class_ids.astype(np.float32)[:, None] * max_coord
+        cat_idx = np.array(
+            [
+                _cat_offset.get(active[int(c)][0], 3.0) if int(c) in active else 3.0
+                for c in class_ids
+            ],
+            dtype=np.float32,
+        )
+        offset = cat_idx[:, None] * max_coord
         keep_idx = self._nms(xyxy + offset, confidences, settings.VEHICLE_IOU_THRESHOLD)
 
         results = []
