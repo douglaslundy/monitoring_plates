@@ -274,6 +274,17 @@ try:
                     _display_cache["path"] = save_bytes(drawn, camera_id)
                 return _display_cache["path"]
 
+            def _plate_image(v_idx: int, plate: str) -> str | None:
+                """Frame da ocorrência com o VEÍCULO daquela detecção destacado e a
+                PLACA escrita sobre o bbox dele (Tarefa B) — assim, com vários
+                veículos no frame, dá pra saber de qual veículo é a placa."""
+                from app.services.detection_overlay_service import draw_detections
+
+                drawn = draw_detections(
+                    analysis_bytes, detections, highlight_index=v_idx, highlight_label=plate
+                )
+                return save_bytes(drawn, camera_id)
+
             # OCR centrado no TRACK com seleção de melhor frame (política híbrida):
             #   - pending: roda OCR no 1º frame com qualidade >= OCR_MIN_QUALITY
             #     (alerta cedo). Ao ler a placa -> cria ocorrência + alerta -> read.
@@ -387,7 +398,7 @@ try:
                             camera_id=camera.id,
                             plate=plate,
                             confidence=confidence,
-                            image_path=_display_image(),
+                            image_path=_plate_image(v_idx, plate),
                             expires_at=expires_at,
                             vehicle_type=vehicle_type,
                             vehicle_color=result.get("vehicle_color"),
@@ -417,7 +428,6 @@ try:
                         )
                     if existing_occ is not None:
                         persist_started_at = perf_counter()
-                        existing_occ.image_path = _display_image()
                         prev_conf = float(v_track.get("plate_confidence") or 0.0)
                         if plate != v_track.get("plate") and confidence > prev_conf:
                             existing_occ.plate = plate
@@ -429,6 +439,8 @@ try:
                             existing_occ.ocr_engine_used = result.get("engine")
                             v_track["plate"] = plate
                             v_track["plate_confidence"] = float(confidence)
+                        # Frame melhor com a placa efetiva sobre o bbox do veículo.
+                        existing_occ.image_path = _plate_image(v_idx, existing_occ.plate)
                         persistence_seconds = perf_counter() - persist_started_at
                         occ = existing_occ
                     v_track["best_quality"] = quality
