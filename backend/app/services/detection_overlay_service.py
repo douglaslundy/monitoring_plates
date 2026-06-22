@@ -42,6 +42,7 @@ def draw_detections(
     detections: Iterable,
     highlight_index: int | None = None,
     highlight_label: str | None = None,
+    only_index: int | None = None,
 ) -> bytes:
     """Devolve o JPEG com as caixas/labels desenhadas.
 
@@ -53,6 +54,11 @@ def draw_detections(
     desenhada destacada (amarela, mais grossa) e recebe `highlight_label` (a PLACA)
     escrita por cima, para identificar de qual veículo é a placa quando há vários
     no frame. Os demais objetos ficam com a caixa/label normais.
+
+    Tarefa D (visual): `only_index` faz desenhar SOMENTE a caixa daquela detecção
+    (as outras ficam sem caixa). Assim o frame salvo de cada detecção mostra só o
+    objeto a que se refere — sem parecer "detecção triplicada" quando passam vários
+    veículos. É apenas a imagem salva; o rastreamento usa TODAS as detecções.
     """
     dets = list(detections)
     if not dets:
@@ -74,6 +80,8 @@ def draw_detections(
     font_scale = max(0.5, min(w, h) / 1000.0)
 
     for idx, d in enumerate(dets):
+        if only_index is not None and idx != only_index:
+            continue  # Tarefa D: desenha só a caixa desta detecção.
         category = getattr(d, "category", "vehicle")
         is_highlight = highlight_index is not None and idx == highlight_index
         label = getattr(d, "label_override", None) or getattr(d, "vehicle_type", "obj")

@@ -223,6 +223,43 @@ def test_client_user_pode_cadastrar_camera_no_proprio_cliente(client, db, tenant
 
 # ── /api/agent/frame ───────────────────────────────────────────────────────────
 
+def test_preview_frame_admin_captura(client, db, super_admin):
+    """POST /api/cameras/preview-frame devolve o JPEG capturado da RTSP."""
+    from app.api.routes import cameras as cam_route
+
+    token = login(client, "admin@sistema.com")
+    with patch.object(cam_route, "capture_rtsp_frame", return_value=b"\xff\xd8jpegbytes"):
+        res = client.post("/api/cameras/preview-frame", json={"rtsp_url": "rtsp://x/s"}, headers=auth(token))
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"].startswith("image/jpeg")
+    assert res.content == b"\xff\xd8jpegbytes"
+
+
+def test_preview_frame_falha_captura_retorna_422(client, db, super_admin):
+    from app.api.routes import cameras as cam_route
+
+    token = login(client, "admin@sistema.com")
+    with patch.object(cam_route, "capture_rtsp_frame", return_value=None):
+        res = client.post("/api/cameras/preview-frame", json={"rtsp_url": "rtsp://x/s"}, headers=auth(token))
+    assert res.status_code == 422
+
+
+def test_preview_frame_dual_lens_recorta(client, db, super_admin):
+    from app.api.routes import cameras as cam_route
+
+    token = login(client, "admin@sistema.com")
+    with patch.object(cam_route, "capture_rtsp_frame", return_value=b"full"), \
+         patch.object(cam_route, "crop_half_frame", return_value=b"half") as mock_crop:
+        res = client.post(
+            "/api/cameras/preview-frame",
+            json={"rtsp_url": "rtsp://x/s", "dual_lens": True, "lens_side": "lower"},
+            headers=auth(token),
+        )
+    assert res.status_code == 200
+    assert res.content == b"half"
+    mock_crop.assert_called_once()
+
+
 def test_agent_frame_token_correto(client, db, super_admin, tenant_a):
     """/api/agent/frame with valid Bearer token returns 200 and queues a task."""
     import sys
