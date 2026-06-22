@@ -77,6 +77,8 @@ export default function OcrConfigPage() {
   const [saving, setSaving] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [testing, setTesting] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<OcrEngineConfig | null>(null);
+  const [deleting, setDeleting] = useState(false);
   // Modelo de detecção (YOLO) — Tarefa A.
   const [detModel, setDetModel] = useState<{ current: string; default: string; available: string[] } | null>(null);
   const [savingModel, setSavingModel] = useState(false);
@@ -168,10 +170,19 @@ export default function OcrConfigPage() {
     load();
   }
 
-  async function remove(cfg: OcrEngineConfig) {
-    if (!confirm(`Remover configuração de ${ENGINE_LABELS[cfg.engine_type]}?`)) return;
-    await api.delete(`/api/ocr-config/${cfg.id}`);
-    load();
+  async function confirmRemove() {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api/ocr-config/${deleteConfirm.id}`);
+      setDeleteConfirm(null);
+      load();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(msg || "Erro ao remover configuração");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function testConnection(cfg: OcrEngineConfig) {
@@ -325,7 +336,7 @@ export default function OcrConfigPage() {
                     </button>
                     {cfg.engine_type !== "easyocr" && (
                       <button
-                        onClick={() => remove(cfg)}
+                        onClick={() => setDeleteConfirm(cfg)}
                         className="p-1.5 border rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -478,6 +489,33 @@ export default function OcrConfigPage() {
               {saving ? "Salvando..." : "Salvar"}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={deleteConfirm !== null}
+        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+        title="Remover motor OCR"
+        description={
+          deleteConfirm
+            ? `Tem certeza que deseja remover a configuração de ${ENGINE_LABELS[deleteConfirm.engine_type] ?? deleteConfirm.engine_type}? Esta ação não pode ser desfeita.`
+            : undefined
+        }
+      >
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={() => setDeleteConfirm(null)}
+            className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={confirmRemove}
+            disabled={deleting}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+          >
+            {deleting ? "Removendo…" : "Remover"}
+          </button>
         </div>
       </Modal>
     </div>

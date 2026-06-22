@@ -132,7 +132,7 @@ try:
             warm_worker_models()
 
     @celery_app.task(name="app.workers.frame_processor.process_frame")
-    def process_frame(camera_id: str, frame_b64: str) -> None:
+    def process_frame(camera_id: str, frame_b64: str, forced: bool = False) -> None:
         import base64
         import json
         import hashlib
@@ -189,7 +189,11 @@ try:
             record_preview_frame(str(camera.id))
             record_image_quality(str(camera.id), analysis_bytes)
             preview_telemetry = get_preview_telemetry(str(camera.id), camera.is_online)
-            if not _should_sample_high_volume_frame(str(camera.id), preview_telemetry.preview_frames_last_minute, cache):
+            # Frames "forçados" (heartbeat/bootstrap sem movimento) NUNCA são
+            # descartados pela amostragem: são eles que mantêm vivo o track de um
+            # objeto PARADO entre as passagens (senão o intervalo entre frames
+            # processados ultrapassa o max_age do track e o parado é recontado).
+            if not forced and not _should_sample_high_volume_frame(str(camera.id), preview_telemetry.preview_frames_last_minute, cache):
                 logger.debug(
                     "High-volume frame sampled camera=%s frames_last_minute=%s",
                     camera.id,

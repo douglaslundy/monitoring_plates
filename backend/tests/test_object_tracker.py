@@ -45,14 +45,15 @@ def test_objeto_sai_por_muito_tempo_e_volta_conta_de_novo():
     box = _box(100, 100)
     state: list = []
     total = 0
-    state, newly, _, _ = update_tracks(state, [box], now=3000.0)  # hit 1
+    state, newly, _, _ = update_tracks(state, [box], now=3000.0)  # hit 1 -> conta
     total += _count_new(newly)
-    state, newly, _, _ = update_tracks(state, [box], now=3000.5)  # hit 2 -> conta
+    state, newly, _, _ = update_tracks(state, [box], now=3000.5)  # hit 2 (mesmo track)
     total += _count_new(newly)
-    # some por > TRACK_MAX_AGE_SECONDS (30s) e volta -> novo track -> conta de novo
-    state, newly, _, _ = update_tracks(state, [box], now=3040.0)  # hit 1 (novo)
+    # some por > TRACK_MAX_AGE_SECONDS (60s) e volta -> novo track -> conta de novo.
+    # (2 hits não bastam p/ virar estacionário, então expira no max_age normal.)
+    state, newly, _, _ = update_tracks(state, [box], now=3080.0)  # hit 1 (novo) -> conta
     total += _count_new(newly)
-    state, newly, _, _ = update_tracks(state, [box], now=3040.5)  # hit 2 -> conta
+    state, newly, _, _ = update_tracks(state, [box], now=3080.5)  # hit 2 (mesmo track)
     total += _count_new(newly)
     assert total == 2
 

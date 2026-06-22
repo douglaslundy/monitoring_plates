@@ -365,7 +365,12 @@ def save_tracks(camera_id: str, state: list[dict]) -> None:
     if client is None:
         return
     try:
-        ttl = max(int(settings.TRACK_MAX_AGE_SECONDS * 4), 120)
+        # TTL deve cobrir a vida de um track ESTACIONÁRIO (senão a chave expira no
+        # Redis antes de TRACK_STATIONARY_MAX_AGE_SECONDS e o objeto parado é
+        # recontado quando a próxima detecção chega). Bug anterior: 120s fixo, bem
+        # menor que a vida do estacionário (300s+).
+        ttl = int(max(settings.TRACK_STATIONARY_MAX_AGE_SECONDS, settings.TRACK_MAX_AGE_SECONDS) * 2)
+        ttl = max(ttl, 120)
         client.set(_key(camera_id), json.dumps(state), ex=ttl)
     except Exception:
         return

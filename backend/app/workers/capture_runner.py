@@ -134,11 +134,17 @@ class CameraCapture(threading.Thread):
         heartbeat_due = (now - self._last_force_send) >= settings.CAPTURE_FORCE_SEND_SECONDS
         if not (moved or self._force_send or heartbeat_due):
             return
+        # Envio "forçado" = bootstrap/heartbeat SEM movimento. Esses frames NÃO
+        # podem ser descartados pela amostragem de alto volume: são eles que
+        # mantêm vivo o track de um objeto PARADO entre as passagens. Sem isso, a
+        # amostragem (1 a cada N) espaça os frames processados além do max_age do
+        # track e o objeto parado é recontado a cada vez.
+        forced = (not moved) and (self._force_send or heartbeat_due)
         self._force_send = False
         # Qualquer envio (movimento/bootstrap/heartbeat) reinicia o heartbeat:
         # ele só dispara após um período inteiro SEM nenhum frame enviado.
         self._last_force_send = now
-        self._enqueue(cv2, frame)
+        self._enqueue(cv2, frame, forced=forced)
 
     def _has_motion(self, cv2, frame) -> bool:
         small = cv2.resize(frame, (320, 180))
@@ -154,7 +160,7 @@ class CameraCapture(threading.Thread):
         ratio = changed / float(thresh.size)
         return ratio >= settings.MOTION_MIN_AREA_RATIO
 
-    def _enqueue(self, cv2, frame) -> None:
+    def _enqueue(self, cv2, frame, forced: bool = False) -> None:
         import base64
 
         ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, settings.CAPTURE_JPEG_QUALITY])
@@ -163,7 +169,7 @@ class CameraCapture(threading.Thread):
         try:
             from app.workers.frame_processor import process_frame
 
-            process_frame.delay(self.camera_id, base64.b64encode(buf.tobytes()).decode())
+            process_frame.delay(self.camera_id, base64.b64encode(buf.tobytes()).decode(), forced)
         except Exception as exc:
             logger.warning("Camera %s: falha ao enfileirar (%s)", self.camera_id, exc)
 

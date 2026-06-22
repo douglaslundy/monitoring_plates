@@ -23,9 +23,18 @@ def _models_dir() -> str:
 
 
 def available_models() -> list[str]:
-    """Modelos disponíveis = arquivos .onnx em MODELS_DIR (sem extensão)."""
+    """Modelos de DETECÇÃO disponíveis = arquivos .onnx YOLO em MODELS_DIR.
+
+    Filtra pelo prefixo ``yolo`` para NÃO listar outros .onnx da mesma pasta —
+    em especial os modelos de FACE (YuNet/SFace), que apareciam por engano no
+    seletor de modelo da página de OCR.
+    """
     try:
-        return sorted(f[:-5] for f in os.listdir(_models_dir()) if f.endswith(".onnx"))
+        return sorted(
+            f[:-5]
+            for f in os.listdir(_models_dir())
+            if f.endswith(".onnx") and f.lower().startswith("yolo")
+        )
     except Exception:
         return []
 
