@@ -43,6 +43,7 @@ def draw_detections(
     highlight_index: int | None = None,
     highlight_label: str | None = None,
     only_index: int | None = None,
+    annotations: dict[int, dict] | None = None,
 ) -> bytes:
     """Devolve o JPEG com as caixas/labels desenhadas.
 
@@ -59,6 +60,12 @@ def draw_detections(
     (as outras ficam sem caixa). Assim o frame salvo de cada detecção mostra só o
     objeto a que se refere — sem parecer "detecção triplicada" quando passam vários
     veículos. É apenas a imagem salva; o rastreamento usa TODAS as detecções.
+
+    Imagem única por frame: `annotations` = {índice_da_detecção: {"label": str,
+    "highlight": bool}}. Quando informado, desenha SOMENTE os índices anotados —
+    cada um com seu rótulo (placa ou classe) e realce opcional (amarelo, para o
+    veículo com placa). Usado para uma imagem só por frame com bbox apenas nos
+    objetos NOVOS daquele frame.
     """
     dets = list(detections)
     if not dets:
@@ -80,10 +87,20 @@ def draw_detections(
     font_scale = max(0.5, min(w, h) / 1000.0)
 
     for idx, d in enumerate(dets):
-        if only_index is not None and idx != only_index:
-            continue  # Tarefa D: desenha só a caixa desta detecção.
+        forced_label: str | None = None
+        if annotations is not None:
+            if idx not in annotations:
+                continue  # Imagem única: desenha só os índices anotados.
+            ann = annotations[idx]
+            is_highlight = bool(ann.get("highlight"))
+            forced_label = ann.get("label")
+        else:
+            if only_index is not None and idx != only_index:
+                continue  # Tarefa D: desenha só a caixa desta detecção.
+            is_highlight = highlight_index is not None and idx == highlight_index
+            if is_highlight and highlight_label:
+                forced_label = highlight_label
         category = getattr(d, "category", "vehicle")
-        is_highlight = highlight_index is not None and idx == highlight_index
         label = getattr(d, "label_override", None) or getattr(d, "vehicle_type", "obj")
         color = _HIGHLIGHT_COLOR if is_highlight else _color_for(category)
         box_thickness = thickness * 2 if is_highlight else thickness
@@ -95,10 +112,7 @@ def draw_detections(
             continue
         cv2.rectangle(img, (x1, y1), (x2, y2), color, box_thickness)
 
-        if is_highlight and highlight_label:
-            text = highlight_label  # a PLACA
-        else:
-            text = label_text(label, getattr(d, "confidence", 0.0))
+        text = forced_label if forced_label else label_text(label, getattr(d, "confidence", 0.0))
         (tw, th), baseline = cv2.getTextSize(text, font, font_scale, thickness)
         # Faixa de fundo do texto, acima da caixa (ou dentro se colar no topo).
         ty = y1 - 4

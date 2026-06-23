@@ -274,32 +274,26 @@ try:
                     _display_cache["path"] = save_bytes(drawn, camera_id)
                 return _display_cache["path"]
 
-            def _plate_image(v_idx: int, plate: str) -> str | None:
-                """Frame da ocorrência com o bbox SOMENTE do veículo daquela
-                detecção (amarelo) e a PLACA escrita por cima (Tarefas B + D) —
-                com vários veículos, cada frame salvo mostra só o seu veículo."""
+            # ── Imagem ÚNICA por frame ────────────────────────────────────────
+            # Os registros criados NESTE frame (ocorrências + eventos de detecção)
+            # compartilham UMA imagem só, com bbox apenas nos objetos NOVOS deste
+            # frame. Objeto parado/já registrado não entra (não está em `newly`),
+            # então não recebe caixa. `frame_annotations` acumula índice→rótulo;
+            # `frame_records` são os objetos ORM que receberão o image_path final;
+            # `pending_alerts` são as ocorrências novas a alertar DEPOIS da imagem.
+            frame_annotations: dict[int, dict] = {}
+            frame_records: list = []
+            pending_alerts: list[str] = []
+
+            def _solo_refine_image(v_idx: int, plate: str) -> str | None:
+                """Refino: imagem com a caixa só do veículo refinado (com a placa)."""
                 from app.services.detection_overlay_service import draw_detections
 
                 drawn = draw_detections(
-                    analysis_bytes,
-                    detections,
-                    highlight_index=v_idx,
-                    highlight_label=plate,
-                    only_index=v_idx,
+                    analysis_bytes, detections,
+                    annotations={v_idx: {"label": plate, "highlight": True}},
                 )
                 return save_bytes(drawn, camera_id)
-
-            # Imagem do EVENTO de detecção (Detecções): bbox só do objeto daquele
-            # evento (Tarefa D). Cacheada por índice de detecção p/ não redesenhar.
-            _event_img_cache: dict[int, str | None] = {}
-
-            def _event_image(det_index: int) -> str | None:
-                if det_index not in _event_img_cache:
-                    from app.services.detection_overlay_service import draw_detections
-
-                    drawn = draw_detections(analysis_bytes, detections, only_index=det_index)
-                    _event_img_cache[det_index] = save_bytes(drawn, camera_id)
-                return _event_img_cache[det_index]
 
             # OCR centrado no TRACK com seleção de melhor frame (política híbrida):
             #   - pending: roda OCR no 1º frame com qualidade >= OCR_MIN_QUALITY
@@ -414,7 +408,9 @@ try:
                             camera_id=camera.id,
                             plate=plate,
                             confidence=confidence,
-                            image_path=_plate_image(v_idx, plate),
+                            # placeholder (coluna NOT NULL); sobrescrito ao final
+                            # pela imagem única do frame, antes do commit/alerta.
+                            image_path="",
                             expires_at=expires_at,
                             vehicle_type=vehicle_type,
                             vehicle_color=result.get("vehicle_color"),
@@ -424,9 +420,13 @@ try:
                         )
                         db.add(occ)
                         db.flush()
-                        process_alerts(str(occ.id), db)
                         persistence_seconds = perf_counter() - persist_started_at
                         v_track["occurrence_id"] = str(occ.id)
+                        # Entra na imagem única do frame (caixa amarela + placa) e
+                        # o alerta é disparado depois que a imagem estiver pronta.
+                        frame_annotations[v_idx] = {"label": plate, "highlight": True}
+                        frame_records.append(occ)
+                        pending_alerts.append(str(occ.id))
                     v_track["plate"] = plate
                     v_track["plate_confidence"] = float(confidence)
                     v_track["best_quality"] = quality
@@ -455,8 +455,8 @@ try:
                             existing_occ.ocr_engine_used = result.get("engine")
                             v_track["plate"] = plate
                             v_track["plate_confidence"] = float(confidence)
-                        # Frame melhor com a placa efetiva sobre o bbox do veículo.
-                        existing_occ.image_path = _plate_image(v_idx, existing_occ.plate)
+                        # Refino: imagem com a caixa só do veículo refinado.
+                        existing_occ.image_path = _solo_refine_image(v_idx, existing_occ.plate)
                         persistence_seconds = perf_counter() - persist_started_at
                         occ = existing_occ
                     v_track["best_quality"] = quality
@@ -487,17 +487,24 @@ try:
                     companion_category = rider.category
                     companion_type = rider.vehicle_type
 
+                tr_live = det_to_track.get(di)
                 link_occ = None
                 if tr["category"] == "vehicle":
                     # Busca o track vivo desta detecção para pegar o occurrence_id
                     # gravado pelo loop OCR multi-veículo.
-                    tr_live = det_to_track.get(di)
                     occ_id_str = (tr_live or tr).get("occurrence_id")
                     if occ_id_str:
                         try:
                             link_occ = uuid.UUID(occ_id_str)
                         except Exception:
                             pass
+
+                # Anotação deste objeto para a imagem única do frame: placa (se o
+                # veículo foi lido) destacada, senão o rótulo de classe.
+                _plate_lbl = (tr_live or {}).get("plate") if tr["category"] == "vehicle" else None
+                frame_annotations.setdefault(
+                    di, {"label": _plate_lbl or tr["label"], "highlight": bool(_plate_lbl)}
+                )
 
                 if tr.get("reason") == "class_change":
                     existing = (
@@ -517,31 +524,49 @@ try:
                         existing.bbox_y = det.bbox_y
                         existing.bbox_w = det.bbox_w
                         existing.bbox_h = det.bbox_h
-                        existing.image_path = _event_image(di)
+                        existing.image_path = None  # imagem única definida ao final
                         if companion_category is not None:
                             existing.companion_category = companion_category
                             existing.companion_type = companion_type
                         if link_occ is not None:
                             existing.occurrence_id = link_occ
+                        frame_records.append(existing)
                         continue
 
-                db.add(
-                    VehicleEvent(
-                        camera_id=camera.id,
-                        occurrence_id=link_occ,
-                        category=tr["category"],
-                        vehicle_type=tr["label"],
-                        track_id=tr["track_id"],
-                        confidence=det.confidence,
-                        bbox_x=det.bbox_x,
-                        bbox_y=det.bbox_y,
-                        bbox_w=det.bbox_w,
-                        bbox_h=det.bbox_h,
-                        image_path=_event_image(di),
-                        companion_category=companion_category,
-                        companion_type=companion_type,
-                    )
+                ev = VehicleEvent(
+                    camera_id=camera.id,
+                    occurrence_id=link_occ,
+                    category=tr["category"],
+                    vehicle_type=tr["label"],
+                    track_id=tr["track_id"],
+                    confidence=det.confidence,
+                    bbox_x=det.bbox_x,
+                    bbox_y=det.bbox_y,
+                    bbox_w=det.bbox_w,
+                    bbox_h=det.bbox_h,
+                    image_path=None,  # imagem única definida ao final
+                    companion_category=companion_category,
+                    companion_type=companion_type,
                 )
+                db.add(ev)
+                frame_records.append(ev)
+
+            # Imagem ÚNICA do frame: desenha bbox só nos objetos NOVOS deste frame
+            # e atribui a MESMA imagem a todos os registros criados agora.
+            if frame_records and frame_annotations:
+                from app.services.detection_overlay_service import draw_detections
+
+                _shared_path = save_bytes(
+                    draw_detections(analysis_bytes, detections, annotations=frame_annotations),
+                    camera_id,
+                )
+                for _rec in frame_records:
+                    _rec.image_path = _shared_path
+
+            # Alertas das novas ocorrências — depois da imagem pronta, p/ o alerta
+            # (e-mail/WhatsApp) carregar a imagem do frame.
+            for _occ_id in pending_alerts:
+                process_alerts(_occ_id, db)
 
             # Bloco facial: detecta/identifica rostos das pessoas rastreadas e
             # grava 1 FaceDetection por track; fecha a duração dos tracks expirados.
