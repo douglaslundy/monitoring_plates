@@ -75,10 +75,16 @@ def _put_stream(name: str, src: str) -> bool:
             params={"name": name, "src": src},
             timeout=_TIMEOUT,
         )
-        ok = resp.status_code < 400
-        if not ok:
+        # go2rtc registra em memória mas retorna 400 quando não consegue
+        # persistir no go2rtc.yaml (volume read-only em produção). O stream
+        # fica ativo de qualquer forma — tratar como sucesso nesses casos.
+        if resp.status_code >= 400:
+            body = resp.text or ""
+            if "read-only" in body or "yaml" in body.lower():
+                return True  # registrado em memória, yaml é best-effort
             logger.warning("go2rtc register %s -> HTTP %s (src=%s)", name, resp.status_code, src)
-        return ok
+            return False
+        return True
     except Exception as exc:
         logger.warning("go2rtc indisponível ao registrar %s: %s", name, exc)
         return False
