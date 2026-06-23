@@ -172,6 +172,52 @@ class FaceRouter:
             logger.warning("Identify no motor %s falhou (%s) — caindo p/ local", engine_type, exc)
         return self._local_identify(client_id, image_bytes)
 
+    def identify_all(self, image_bytes: bytes) -> Optional[FaceMatch]:
+        """Identifica rosto buscando em TODOS os clientes — uso exclusivo do super_admin (teste)."""
+        embedding = _local_engine.embed(image_bytes)
+        if not embedding:
+            return None
+        candidates = self._load_all_embeddings()
+        best_pid: Optional[str] = None
+        best_sim = 0.0
+        for pid, emb in candidates:
+            sim = cosine_similarity(embedding, emb)
+            if sim > best_sim:
+                best_sim = sim
+                best_pid = pid
+        if best_pid is not None and best_sim >= settings.FACE_MATCH_THRESHOLD:
+            return FaceMatch(person_id=best_pid, confidence=round(best_sim, 4))
+        return None
+
+    def _load_all_embeddings(self) -> list[tuple[str, list[float]]]:
+        """Todos os embeddings locais de todas as pessoas ativas (sem filtro de cliente)."""
+        result: list[tuple[str, list[float]]] = []
+        try:
+            from app.core.database import SessionLocal
+            from app.models.person import Person
+            from app.models.person_face import PersonFace
+
+            db = SessionLocal()
+            try:
+                rows = (
+                    db.query(PersonFace.embedding, Person.id)
+                    .join(Person, PersonFace.person_id == Person.id)
+                    .filter(
+                        Person.is_active == True,  # noqa: E712
+                        PersonFace.engine_type == "opencv",
+                        PersonFace.embedding.isnot(None),
+                    )
+                    .all()
+                )
+                for emb, pid in rows:
+                    if emb:
+                        result.append((str(pid), list(emb)))
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning("Não foi possível carregar todos embeddings para teste: %s", exc)
+        return result
+
     # ── Motor local (OpenCV) ─────────────────────────────────────────────────
     def _local_identify(self, client_id: str, image_bytes: bytes) -> Optional[FaceMatch]:
         embedding = _local_engine.embed(image_bytes)

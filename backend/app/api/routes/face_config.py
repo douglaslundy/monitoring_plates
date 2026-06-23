@@ -183,8 +183,8 @@ async def test_image(
 
     faces = []
     for box in face_boxes:
-        # Tenta identificar (usa motor do sistema — fallback p/ local)
-        match = face_recognizer.identify("__test__", box.crop_bytes)
+        # Tenta identificar buscando em todos os clientes (modo teste super_admin)
+        match = face_recognizer.identify_all(box.crop_bytes)
         person_info = None
         if match:
             person = db.query(Person).filter(Person.id == uuid.UUID(match.person_id)).first()
