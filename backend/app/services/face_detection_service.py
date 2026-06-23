@@ -136,7 +136,7 @@ class OpenCVFaceEngine:
         if image is None:
             return None
         faces = self._run_detector(detector, image)
-        if not faces or len(faces) == 0:
+        if faces is None or len(faces) == 0:
             return None
         try:
             import numpy as np
