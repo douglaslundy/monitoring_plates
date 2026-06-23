@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     SECRET_KEY: str = "troque-esta-chave-em-producao"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+    # 7 dias. Antes 8h, mas o cookie do front durava 24h: ao reabrir o navegador
+    # "logado" com o token já expirado, as chamadas davam 401 e exigiam novo
+    # login (páginas "sumiam"). Token e cookie agora têm a MESMA validade (7d).
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
 
     STORAGE_TYPE: str = "local"
     STORAGE_PATH: str = "./storage"

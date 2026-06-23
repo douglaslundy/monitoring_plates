@@ -25,8 +25,10 @@ export interface UserMe {
 }
 
 function setTokenCookie(token: string): void {
+  // Mesma validade do token de acesso (7 dias) — evita o cookie sobreviver ao
+  // token e dar a falsa sensação de "logado" (com 401 nas páginas).
   const expires = new Date();
-  expires.setDate(expires.getDate() + 1);
+  expires.setDate(expires.getDate() + 7);
   document.cookie = `auth-token=${encodeURIComponent(token)}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
 }
 
