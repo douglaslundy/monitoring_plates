@@ -21,7 +21,7 @@ from app.models.face_detection import FaceDetection
 from app.models.person import Person
 from app.models.camera import Camera
 from app.models.alert_sent import AlertSent, AlertChannel
-from app.services.email_service import send_plate_alert
+from app.services.email_service import send_face_alert
 from app.services.storage_service import get_url, read_file_bytes
 
 logger = logging.getLogger(__name__)
@@ -270,13 +270,14 @@ def _already_sent(db: Session, fd: FaceDetection, person: Person, channel: Alert
 def _send_email_alert(fd, person, camera, image_url, message, db) -> None:
     if _already_sent(db, fd, person, AlertChannel.email):
         return
-    success = send_plate_alert(
+    success = send_face_alert(
         to=person.alert_email,
-        plate=_person_name(person),
+        person_name=_person_name(person),
         camera_name=camera.name,
         location=camera.location or "",
-        detected_at=fd.detected_at.isoformat() if fd.detected_at else "",
+        detected_at=fd.detected_at.strftime("%d/%m/%Y %H:%M") if fd.detected_at else "",
         image_url=image_url,
+        confidence=fd.confidence,
     )
     db.add(
         AlertSent(
@@ -376,13 +377,14 @@ def _already_sent_unknown(db: Session, fd: FaceDetection, channel: AlertChannel)
 def _send_unknown_email_alert(fd, camera, image_url, message, cam_config, db) -> None:
     if _already_sent_unknown(db, fd, AlertChannel.email):
         return
-    success = send_plate_alert(
+    success = send_face_alert(
         to=cam_config.unknown_face_email,
-        plate="Face desconhecida",
+        person_name="Face desconhecida",
         camera_name=camera.name,
         location=camera.location or "",
-        detected_at=fd.detected_at.isoformat() if fd.detected_at else "",
+        detected_at=fd.detected_at.strftime("%d/%m/%Y %H:%M") if fd.detected_at else "",
         image_url=image_url,
+        confidence=fd.confidence,
     )
     db.add(
         AlertSent(
@@ -467,9 +469,9 @@ def _publish_unknown_ws_alert(fd, camera, image_url: str) -> None:
 # ── Alertas de teste (endpoint test-image, sem gravar no banco) ──────────────
 
 def _send_test_face_alert_email(person: Person, detected_at: str) -> None:
-    send_plate_alert(
+    send_face_alert(
         to=person.alert_email,
-        plate=person.name or "Pessoa",
+        person_name=person.name or "Pessoa",
         camera_name="[TESTE]",
         location="Teste manual via painel",
         detected_at=detected_at,
@@ -484,6 +486,12 @@ def _send_test_face_alert_whatsapp(person: Person, image_bytes: bytes, detected_
     model, cfg = get_effective_whatsapp_delivery_config(db)
     if model is not None and not cfg.is_active:
         return
+    msg_lines = [
+        f"\U0001f464 {person.name or 'Pessoa'} reconhecido(a)",
+        "Câmera: [TESTE]",
+        "Local: Teste manual via painel",
+        f"Horário: {detected_at}",
+    ]
     send_whatsapp_alert(
         to=person.alert_whatsapp,
         plate=person.name or "Pessoa",
@@ -492,5 +500,6 @@ def _send_test_face_alert_whatsapp(person: Person, image_bytes: bytes, detected_
         detected_at=detected_at,
         image_url="",
         image_bytes=image_bytes,
+        message="\n".join(msg_lines),
         config=cfg,
     )
