@@ -8,6 +8,7 @@ from app.models.user import User, UserRole
 from app.schemas.ops import OpsMetricsRead, OpsMetricsResetRead, SystemMetricsRead
 from app.services.operational_metrics_service import build_operational_metrics, reset_camera_metrics
 from app.services.system_metrics_service import get_system_metrics
+from app.core.config import settings
 
 router = APIRouter(prefix="/ops", tags=["ops"])
 
@@ -34,6 +35,20 @@ def reset_metrics(
         raise HTTPException(status_code=403, detail="Acesso restrito a administradores.")
     cameras_reset = reset_camera_metrics(db, current_user)
     return OpsMetricsResetRead(cameras_reset=cameras_reset)
+
+
+@router.post("/queue/flush")
+def flush_queue(
+    current_user: User = Depends(get_current_user),
+):
+    """Esvazia a fila OCR (Redis list 'frames'). Restrito a super_admin."""
+    if current_user.role != UserRole.super_admin:
+        raise HTTPException(status_code=403, detail="Acesso restrito ao super_admin.")
+    import redis as redis_lib
+    r = redis_lib.from_url(settings.REDIS_URL)
+    removed = r.llen("frames")
+    r.delete("frames")
+    return {"removed": removed}
 
 
 @router.get("/system", response_model=SystemMetricsRead)

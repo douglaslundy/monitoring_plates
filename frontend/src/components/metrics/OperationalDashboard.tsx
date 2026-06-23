@@ -7,7 +7,7 @@ import type { OperationalMetrics } from "@/types";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { Badge } from "@/components/ui/Badge";
 import { SystemResources } from "@/components/live/SystemResources";
-import { Trash2 } from "lucide-react";
+import { Trash2, Eraser } from "lucide-react";
 
 function ocrVariant(status: OperationalMetrics["ocr_pipeline_status"]) {
   if (status === "healthy") return "success";
@@ -44,7 +44,10 @@ function operationalLabel(status: OperationalMetrics["operational_status"]) {
 export function OperationalDashboard() {
   const [metrics, setMetrics] = useState<OperationalMetrics | null>(null);
   const [canReset, setCanReset] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [flushing, setFlushing] = useState(false);
+  const [flushResult, setFlushResult] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const loadMetrics = useCallback(async () => {
@@ -59,11 +62,31 @@ export function OperationalDashboard() {
   useEffect(() => {
     void loadMetrics();
     getMe()
-      .then((me) => setCanReset(me.role === "super_admin" || me.role === "client_admin"))
+      .then((me) => {
+        setCanReset(me.role === "super_admin" || me.role === "client_admin");
+        setIsSuperAdmin(me.role === "super_admin");
+      })
       .catch(() => setCanReset(false));
     const id = window.setInterval(() => void loadMetrics(), 5000);
     return () => window.clearInterval(id);
   }, [loadMetrics]);
+
+  const flushQueue = useCallback(async () => {
+    if (flushing) return;
+    setFlushing(true);
+    setFlushResult(null);
+    setError("");
+    try {
+      const res = await api.post<{ removed: number }>("/api/ops/queue/flush");
+      setFlushResult(`${res.data.removed} frame(s) removidos da fila.`);
+      setTimeout(() => setFlushResult(null), 4000);
+      await loadMetrics();
+    } catch {
+      setError("Erro ao limpar a fila OCR.");
+    } finally {
+      setFlushing(false);
+    }
+  }, [flushing, loadMetrics]);
 
   const resetMetrics = useCallback(async () => {
     if (resetting) return;
@@ -83,17 +106,44 @@ export function OperationalDashboard() {
     <div>
       <SystemResources />
 
-      {canReset && (
-        <div className="mb-6 flex justify-end">
-          <button
-            onClick={() => void resetMetrics()}
-            className="px-3 py-2 rounded border border-red-300 text-red-700 text-sm inline-flex items-center gap-2 disabled:opacity-60 hover:bg-red-50 transition-colors"
-            disabled={resetting}
-            title="Zera as métricas acumuladas (OCR, FPS, latência, qualidade) das câmeras"
-          >
-            <Trash2 className="h-4 w-4" />
-            {resetting ? "Resetando..." : "Resetar métricas"}
-          </button>
+      {(canReset || isSuperAdmin) && (
+        <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            {flushResult && (
+              <span className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-1.5">
+                {flushResult}
+              </span>
+            )}
+            {error && (
+              <span className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-1.5">
+                {error}
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2 ml-auto">
+            {isSuperAdmin && (
+              <button
+                onClick={() => void flushQueue()}
+                className="px-3 py-2 rounded border border-orange-300 text-orange-700 text-sm inline-flex items-center gap-2 disabled:opacity-60 hover:bg-orange-50 transition-colors"
+                disabled={flushing}
+                title="Remove todos os frames pendentes da fila OCR no Redis"
+              >
+                <Eraser className="h-4 w-4" />
+                {flushing ? "Limpando..." : "Limpar fila OCR"}
+              </button>
+            )}
+            {canReset && (
+              <button
+                onClick={() => void resetMetrics()}
+                className="px-3 py-2 rounded border border-red-300 text-red-700 text-sm inline-flex items-center gap-2 disabled:opacity-60 hover:bg-red-50 transition-colors"
+                disabled={resetting}
+                title="Zera as métricas acumuladas (OCR, FPS, latência, qualidade) das câmeras"
+              >
+                <Trash2 className="h-4 w-4" />
+                {resetting ? "Resetando..." : "Resetar métricas"}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
