@@ -67,7 +67,7 @@ const DEFAULT_PR_URL = "https://api.platerecognizer.com/v1/plate-reader/";
 
 function emptyForm() {
   return {
-    engine_type: "plate_recognizer" as EngineType,
+    engine_type: "fast_alpr" as EngineType,
     mode: "cloud" as EngineMode,
     api_token: "",
     api_url: DEFAULT_PR_URL,
@@ -529,14 +529,12 @@ export default function OcrConfigPage() {
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    {!LOCAL_ENGINES.includes(cfg.engine_type) && (
-                      <button
-                        onClick={() => setDeleteConfirm(cfg)}
-                        className="p-1.5 border rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setDeleteConfirm(cfg)}
+                      className="p-1.5 border rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
 

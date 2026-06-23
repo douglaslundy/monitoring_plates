@@ -56,7 +56,7 @@ function planToForm(p: Plan): PlanForm {
     email_alerts: p.email_alerts,
     realtime_alerts: p.realtime_alerts,
     price_monthly: String(p.price_monthly),
-    ocr_engine: p.ocr_engine,
+    ocr_engine: (p.ocr_engine === "easyocr" ? "fast_alpr" : p.ocr_engine) as PlanForm["ocr_engine"],
     ocr_enabled: p.ocr_enabled,
     face_recognition_enabled: p.face_recognition_enabled,
     face_engine: p.face_engine,
@@ -377,10 +377,12 @@ export default function PlansPage() {
               disabled={!form.face_recognition_enabled}
             >
               <option value="system_default">Padrão do sistema</option>
-              <option value="opencv">OpenCV (local)</option>
-              <option value="rekognition">AWS Rekognition</option>
-              <option value="luxand">Luxand</option>
-              <option value="facepp">Face++</option>
+              <option value="insightface">InsightFace / ArcFace (local, gratuito)</option>
+              <option value="deepface">DeepFace / ArcFace (local, gratuito)</option>
+              <option value="opencv">OpenCV / SFace (local, básico)</option>
+              <option value="rekognition">AWS Rekognition (pago)</option>
+              <option value="luxand">Luxand Cloud (pago)</option>
+              <option value="facepp">Face++ (pago)</option>
             </select>
           </div>
 
