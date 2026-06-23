@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     FACE_MODEL_DIR: str = ""  # vazio -> usa MODELS_DIR no serviço
     FACE_DETECTOR_MODEL: str = "face_detection_yunet_2023mar.onnx"
     FACE_RECOGNIZER_MODEL: str = "face_recognition_sface_2021dec.onnx"
-    FACE_MIN_DETECT_SCORE: float = 0.7
+    FACE_MIN_DETECT_SCORE: float = 0.5
     FACE_MATCH_THRESHOLD: float = 0.36  # similaridade de cosseno SFace
     FACE_MIN_CROP_SIDE: int = 80
 
