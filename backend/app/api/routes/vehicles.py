@@ -4,13 +4,15 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, get_current_user
 from app.models.camera import Camera
+from app.models.occurrence import Occurrence
 from app.models.user import User, UserRole
 from app.models.vehicle_event import VehicleEvent
 from app.schemas.vehicle_event import (
@@ -318,3 +320,53 @@ def export_events(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="vehicle_events_{ts}.csv"'},
     )
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[UUID]
+
+
+@router.delete("/bulk", status_code=200)
+def bulk_delete_vehicles(
+    payload: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in (UserRole.super_admin, UserRole.client_admin):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    from app.services.storage_service import delete_file
+
+    q = db.query(VehicleEvent).filter(VehicleEvent.id.in_(payload.ids))
+    if current_user.role != UserRole.super_admin:
+        allowed_ids = [
+            c.id for c in db.query(Camera).filter(Camera.client_id == current_user.client_id).all()
+        ]
+        q = q.filter(VehicleEvent.camera_id.in_(allowed_ids))
+
+    events = q.all()
+    deleted = 0
+    seen_images: set = set()
+
+    for event in events:
+        if event.image_path and event.image_path not in seen_images:
+            seen_images.add(event.image_path)
+            try:
+                delete_file(event.image_path)
+            except Exception:
+                pass
+        if event.occurrence_id:
+            occ = db.query(Occurrence).filter(Occurrence.id == event.occurrence_id).first()
+            if occ:
+                if occ.image_path and occ.image_path not in seen_images:
+                    seen_images.add(occ.image_path)
+                    try:
+                        delete_file(occ.image_path)
+                    except Exception:
+                        pass
+                db.delete(occ)
+        db.delete(event)
+        deleted += 1
+
+    db.commit()
+    return {"deleted": deleted}

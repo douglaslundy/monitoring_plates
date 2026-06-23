@@ -109,8 +109,42 @@ def test_config(
         return FaceEngineTestResult(
             success=True,
             engine_type=config.engine_type,
-            message="Motor local (OpenCV) não requer credenciais externas. Configuração válida.",
+            message="Motor local (OpenCV YuNet+SFace) não requer credenciais. Configuração válida.",
         )
+
+    if config.engine_type == FaceEngineType.insightface.value:
+        try:
+            from app.services.face_detection_service import InsightFaceEngine
+            eng = InsightFaceEngine()
+            app_obj = eng._get_app()
+            if app_obj is not None:
+                return FaceEngineTestResult(
+                    success=True, engine_type=config.engine_type,
+                    message=f"InsightFace (ArcFace buffalo_sc) carregado com {len(app_obj.models)} modelo(s). Pronto para uso.",
+                )
+            return FaceEngineTestResult(
+                success=False, engine_type=config.engine_type,
+                message="InsightFace não carregou os modelos. Verifique se o pacote insightface está instalado.",
+            )
+        except Exception as e:
+            return FaceEngineTestResult(success=False, engine_type=config.engine_type, message=f"Erro: {e}")
+
+    if config.engine_type == FaceEngineType.deepface.value:
+        try:
+            from app.services.face_detection_service import DeepFaceEngine
+            eng = DeepFaceEngine()
+            ok = eng._ensure_ready()
+            if ok:
+                return FaceEngineTestResult(
+                    success=True, engine_type=config.engine_type,
+                    message="DeepFace (ArcFace) disponível. Pronto para uso.",
+                )
+            return FaceEngineTestResult(
+                success=False, engine_type=config.engine_type,
+                message="DeepFace não inicializou. Verifique se o pacote deepface está instalado.",
+            )
+        except Exception as e:
+            return FaceEngineTestResult(success=False, engine_type=config.engine_type, message=f"Erro: {e}")
 
     try:
         if config.engine_type == FaceEngineType.rekognition.value:

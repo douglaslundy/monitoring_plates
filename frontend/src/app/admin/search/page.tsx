@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import api from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Modal } from "@/components/ui/Modal";
@@ -16,6 +16,7 @@ import {
   ZoomIn,
   ChevronFirst,
   ChevronLast,
+  Trash2,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -91,12 +92,16 @@ export default function AdminSearchPage() {
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useViewMode("placas-view");
   const plateRef = useRef<HTMLInputElement>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    api
-      .get<Camera[]>("/api/cameras")
-      .then((r) => setCameras(r.data))
-      .catch(() => {});
+    api.get<Camera[]>("/api/cameras").then((r) => setCameras(r.data)).catch(() => {});
+    api.get<{ role: string }>("/api/auth/me").then((r) => {
+      setIsAdmin(r.data.role === "super_admin" || r.data.role === "client_admin");
+    }).catch(() => {});
     plateRef.current?.focus();
   }, []);
 
@@ -114,6 +119,7 @@ export default function AdminSearchPage() {
         });
         setResult(res.data);
         setPage(p);
+        setSelectedIds(new Set());
       } catch {
         /* ignore */
       } finally {
@@ -122,6 +128,40 @@ export default function AdminSearchPage() {
     },
     [plate, cameraId, dateFrom, dateTo, pageSize]
   );
+
+  const allSelected = useMemo(
+    () => result && result.items.length > 0 && result.items.every((o) => selectedIds.has(o.id)),
+    [result, selectedIds]
+  );
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (!result) return;
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(result.items.map((o) => o.id)));
+  }, [result, allSelected]);
+
+  const handleBulkDelete = useCallback(async () => {
+    setDeleting(true);
+    try {
+      await api.delete("/api/occurrences/bulk", { data: { ids: Array.from(selectedIds) } });
+      setConfirmDelete(false);
+      setSelectedIds(new Set());
+      search(page);
+    } catch {
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedIds, page, search]);
 
   useEffect(() => {
     search(1);
@@ -261,12 +301,37 @@ export default function AdminSearchPage() {
       {result && (
         <>
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              {result.total === 0
-                ? "Nenhuma ocorrência encontrada"
-                : `${result.total} ocorrência${result.total !== 1 ? "s" : ""} encontrada${result.total !== 1 ? "s" : ""}`}
-            </p>
+            <div className="flex items-center gap-3">
+              {isAdmin && result.items.length > 0 && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!allSelected}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/50"
+                    aria-label="Selecionar todas"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {allSelected ? "Desmarcar todas" : "Selecionar todas"}
+                  </span>
+                </label>
+              )}
+              <p className="text-sm text-muted-foreground" aria-live="polite">
+                {result.total === 0
+                  ? "Nenhuma ocorrência encontrada"
+                  : `${result.total} ocorrência${result.total !== 1 ? "s" : ""} encontrada${result.total !== 1 ? "s" : ""}`}
+              </p>
+            </div>
             <div className="flex items-center gap-3 flex-wrap">
+              {isAdmin && selectedIds.size > 0 && (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  Apagar selecionadas ({selectedIds.size})
+                </button>
+              )}
               {result.pages > 1 && (
                 <p className="text-xs text-muted-foreground">
                   Página {result.page} de {result.pages}
@@ -286,85 +351,108 @@ export default function AdminSearchPage() {
               {viewMode === "blocks" ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {result.items.map((occ) => (
-                    <button
+                    <div
                       key={occ.id}
-                      onClick={() => setSelected(occ)}
-                      aria-label={`Ver detalhes da placa ${occ.plate}`}
-                      className="bg-white rounded-xl border shadow-sm overflow-hidden text-left hover:shadow-md hover:border-primary/40 transition-all group focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className="relative bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md hover:border-primary/40 transition-all group"
                     >
-                      <div className="aspect-video bg-gray-100 relative overflow-hidden">
-                        {occ.image_url ? (
-                          <img
-                            src={occ.image_url}
-                            alt={`Captura da placa ${occ.plate}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            loading="lazy"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = "none";
-                            }}
+                      {isAdmin && (
+                        <label
+                          className="absolute top-2 left-2 z-10 flex items-center cursor-pointer"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(occ.id)}
+                            onChange={() => toggleSelect(occ.id)}
+                            className="h-4 w-4 rounded border-gray-300 bg-white text-primary focus:ring-primary/50 shadow"
                           />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <CameraIcon className="h-8 w-8 text-gray-300" aria-hidden="true" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="p-3">
-                        <div className="inline-block bg-gray-900 text-white px-2 py-0.5 rounded mb-2">
-                          <HighlightPlate plate={occ.plate} query={plate} />
+                        </label>
+                      )}
+                      <button
+                        onClick={() => setSelected(occ)}
+                        aria-label={`Ver detalhes da placa ${occ.plate}`}
+                        className="w-full text-left focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-inset"
+                      >
+                        <div className="aspect-video bg-gray-100 relative overflow-hidden">
+                          {occ.image_url ? (
+                            <img
+                              src={occ.image_url}
+                              alt={`Captura da placa ${occ.plate}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              loading="lazy"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <CameraIcon className="h-8 w-8 text-gray-300" aria-hidden="true" />
+                            </div>
+                          )}
                         </div>
-                        <ConfidenceBar value={occ.confidence} />
-                        <p className="text-xs text-muted-foreground mt-2 truncate">
-                          {occ.camera.name}
-                          {occ.camera.location ? ` · ${occ.camera.location}` : ""}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {formatDt(occ.detected_at)}
-                        </p>
-                      </div>
-                    </button>
+                        <div className="p-3">
+                          <div className="inline-block bg-gray-900 text-white px-2 py-0.5 rounded mb-2">
+                            <HighlightPlate plate={occ.plate} query={plate} />
+                          </div>
+                          <ConfidenceBar value={occ.confidence} />
+                          <p className="text-xs text-muted-foreground mt-2 truncate">
+                            {occ.camera.name}{occ.camera.location ? ` · ${occ.camera.location}` : ""}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">{formatDt(occ.detected_at)}</p>
+                        </div>
+                      </button>
+                    </div>
                   ))}
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
                   {result.items.map((occ) => (
-                    <button
+                    <div
                       key={occ.id}
-                      onClick={() => setSelected(occ)}
-                      aria-label={`Ver detalhes da placa ${occ.plate}`}
-                      className="flex items-center gap-3 bg-white rounded-lg border p-2 text-left hover:shadow-sm hover:border-primary/40 transition-all focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className="flex items-center gap-3 bg-white rounded-lg border hover:shadow-sm hover:border-primary/40 transition-all"
                     >
-                      <div className="h-14 w-20 flex-shrink-0 overflow-hidden rounded bg-gray-100">
-                        {occ.image_url ? (
-                          <img
-                            src={occ.image_url}
-                            alt={`Captura da placa ${occ.plate}`}
-                            className="h-full w-full object-cover"
-                            loading="lazy"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = "none";
-                            }}
+                      {isAdmin && (
+                        <label className="flex-shrink-0 pl-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(occ.id)}
+                            onChange={() => toggleSelect(occ.id)}
+                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/50"
                           />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center">
-                            <CameraIcon className="h-6 w-6 text-gray-300" aria-hidden="true" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="inline-block bg-gray-900 text-white px-2 py-0.5 rounded">
-                          <HighlightPlate plate={occ.plate} query={plate} />
+                        </label>
+                      )}
+                      <button
+                        onClick={() => setSelected(occ)}
+                        aria-label={`Ver detalhes da placa ${occ.plate}`}
+                        className="flex flex-1 items-center gap-3 p-2 text-left focus:outline-none"
+                      >
+                        <div className="h-14 w-20 flex-shrink-0 overflow-hidden rounded bg-gray-100">
+                          {occ.image_url ? (
+                            <img
+                              src={occ.image_url}
+                              alt={`Captura da placa ${occ.plate}`}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <CameraIcon className="h-6 w-6 text-gray-300" aria-hidden="true" />
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1 truncate">
-                          {occ.camera.name}
-                          {occ.camera.location ? ` · ${occ.camera.location}` : ""}
-                        </p>
-                        <p className="text-xs text-gray-400">{formatDt(occ.detected_at)}</p>
-                      </div>
-                      <div className="hidden sm:block w-32 flex-shrink-0">
-                        <ConfidenceBar value={occ.confidence} />
-                      </div>
-                    </button>
+                        <div className="min-w-0 flex-1">
+                          <div className="inline-block bg-gray-900 text-white px-2 py-0.5 rounded">
+                            <HighlightPlate plate={occ.plate} query={plate} />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1 truncate">
+                            {occ.camera.name}{occ.camera.location ? ` · ${occ.camera.location}` : ""}
+                          </p>
+                          <p className="text-xs text-gray-400">{formatDt(occ.detected_at)}</p>
+                        </div>
+                        <div className="hidden sm:block w-32 flex-shrink-0">
+                          <ConfidenceBar value={occ.confidence} />
+                        </div>
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -471,6 +559,38 @@ export default function AdminSearchPage() {
           </p>
         </div>
       )}
+
+      {/* ── Modal confirmação exclusão ── */}
+      <Modal
+        open={confirmDelete}
+        onOpenChange={(open) => !open && setConfirmDelete(false)}
+        title="Confirmar exclusão"
+        description={`Você está prestes a apagar ${selectedIds.size} ocorrência${selectedIds.size === 1 ? "" : "s"} permanentemente.`}
+        className="max-w-md"
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            Esta ação não pode ser desfeita. Os registros e as imagens armazenadas serão excluídos permanentemente.
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className="px-4 py-2 rounded-lg border text-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => void handleBulkDelete()}
+              disabled={deleting}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              {deleting ? "Apagando..." : `Apagar ${selectedIds.size} registro${selectedIds.size === 1 ? "" : "s"}`}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Detail modal ── */}
       <Modal

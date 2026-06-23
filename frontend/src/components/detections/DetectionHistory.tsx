@@ -19,6 +19,7 @@ import {
   Layers3,
   PawPrint,
   Search,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -27,7 +28,6 @@ import { useViewMode } from "@/hooks/useViewMode";
 
 const API_BASE = typeof window !== "undefined" ? window.location.origin : "";
 
-// Rótulos PT por label de detecção (COCO).
 const LABELS: Record<string, string> = {
   car: "Carro",
   motorcycle: "Moto",
@@ -51,12 +51,9 @@ function labelFor(type: string): string {
   return LABELS[type] ?? type;
 }
 
-// Rótulo de exibição: agrupa piloto+moto em "Moto + Pessoa" (T5).
 function displayLabel(event: { vehicle_type: string; companion_type?: string | null }): string {
   const main = labelFor(event.vehicle_type);
-  if (event.companion_type) {
-    return `${main} + ${labelFor(event.companion_type)}`;
-  }
+  if (event.companion_type) return `${main} + ${labelFor(event.companion_type)}`;
   return main;
 }
 
@@ -81,9 +78,6 @@ function formatDateTime(value: string): string {
   });
 }
 
-// O input datetime-local dá a hora LOCAL escolhida (sem fuso). Converte para o
-// instante UTC (ISO com 'Z') que o backend compara contra detected_at. Sem isso
-// o filtro de data/hora ficava deslocado pelo fuso (parecia não funcionar).
 function localToIso(local: string): string | undefined {
   if (!local) return undefined;
   const d = new Date(local);
@@ -94,8 +88,6 @@ function HourChart({ data }: { data: { hour: number; count: number }[] }) {
   const max = Math.max(...data.map((item) => item.count), 1);
   return (
     <div>
-      {/* As barras são filhas DIRETAS do container de altura fixa (h-28) para
-          que `height: %` resolva contra uma altura definida. */}
       <div className="flex items-end gap-1 h-28">
         {data.map((item) => (
           <div
@@ -103,11 +95,9 @@ function HourChart({ data }: { data: { hour: number; count: number }[] }) {
             className="flex-1 flex flex-col items-stretch h-full"
             title={`${item.hour}h: ${item.count}`}
           >
-            {/* Rótulo com a quantidade de cada coluna (oculto quando zero). */}
             <span className="h-3 text-center text-[10px] leading-3 text-muted-foreground tabular-nums">
               {item.count > 0 ? item.count : ""}
             </span>
-            {/* Área da barra: % resolve contra esta região (altura - rótulo). */}
             <div className="flex-1 flex items-end">
               <div
                 className="w-full rounded-t-md bg-primary/75 hover:bg-primary transition-colors"
@@ -145,6 +135,10 @@ export default function DetectionHistory({ title, description }: { title: string
   const [loadingPage, setLoadingPage] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<VehicleEventWithCamera | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const activeFilters = useMemo(
     () => Boolean(cameraId || vehicleType || dateFrom || dateTo),
@@ -153,6 +147,9 @@ export default function DetectionHistory({ title, description }: { title: string
 
   useEffect(() => {
     api.get<Camera[]>("/api/cameras").then((r) => setCameras(r.data)).catch(() => {});
+    api.get<{ role: string }>("/api/auth/me").then((r) => {
+      setIsAdmin(r.data.role === "super_admin" || r.data.role === "client_admin");
+    }).catch(() => {});
   }, []);
 
   const loadStats = useCallback(async (cat: string) => {
@@ -184,6 +181,7 @@ export default function DetectionHistory({ title, description }: { title: string
         });
         setResult(response.data);
         setPage(targetPage);
+        setSelectedIds(new Set());
       } catch {
         setError("Nao foi possivel carregar os eventos de deteccao.");
       } finally {
@@ -199,13 +197,11 @@ export default function DetectionHistory({ title, description }: { title: string
     void loadEvents(1);
   }, [category, loadEvents, loadStats, pageSize]);
 
-  const handleSearch = useCallback(() => {
-    void loadEvents(1);
-  }, [loadEvents]);
+  const handleSearch = useCallback(() => { void loadEvents(1); }, [loadEvents]);
 
   const handleSelectCategory = useCallback((value: string) => {
     setCategory(value);
-    setVehicleType(""); // os tipos disponíveis dependem da categoria
+    setVehicleType("");
   }, []);
 
   const handleClearFilters = useCallback(() => {
@@ -213,9 +209,7 @@ export default function DetectionHistory({ title, description }: { title: string
     setVehicleType("");
     setDateFrom("");
     setDateTo("");
-    window.requestAnimationFrame(() => {
-      void loadEvents(1);
-    });
+    window.requestAnimationFrame(() => { void loadEvents(1); });
   }, [loadEvents]);
 
   const handleExport = useCallback(() => {
@@ -239,10 +233,48 @@ export default function DetectionHistory({ title, description }: { title: string
     [stats]
   );
 
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const allSelected = useMemo(
+    () => result && result.items.length > 0 && result.items.every((e) => selectedIds.has(e.id)),
+    [result, selectedIds]
+  );
+
+  const toggleSelectAll = useCallback(() => {
+    if (!result) return;
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(result.items.map((e) => e.id)));
+    }
+  }, [result, allSelected]);
+
+  const handleBulkDelete = useCallback(async () => {
+    setDeleting(true);
+    try {
+      await api.delete("/api/vehicles/bulk", { data: { ids: Array.from(selectedIds) } });
+      setConfirmDelete(false);
+      setSelectedIds(new Set());
+      void loadStats(category);
+      void loadEvents(page);
+    } catch {
+      setError("Erro ao apagar as detecções selecionadas.");
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedIds, category, page, loadStats, loadEvents]);
+
   const topType = stats?.by_type[0];
   const topCamera = stats?.top_cameras[0];
   const byHour = stats?.by_hour ?? [];
-  // O dropdown de "tipo" é dinâmico: reflete os tipos da categoria selecionada.
   const typeOptions = stats?.by_type ?? [];
 
   return (
@@ -267,11 +299,7 @@ export default function DetectionHistory({ title, description }: { title: string
               <Icon className="h-4 w-4" aria-hidden="true" />
               {cat.label}
               {count !== null && (
-                <span
-                  className={`rounded-full px-1.5 text-xs ${
-                    active ? "bg-white/20" : "bg-gray-100 text-muted-foreground"
-                  }`}
-                >
+                <span className={`rounded-full px-1.5 text-xs ${active ? "bg-white/20" : "bg-gray-100 text-muted-foreground"}`}>
                   {count}
                 </span>
               )}
@@ -338,9 +366,7 @@ export default function DetectionHistory({ title, description }: { title: string
             >
               <option value="">Todas as câmeras</option>
               {cameras.map((camera) => (
-                <option key={camera.id} value={camera.id}>
-                  {camera.name}
-                </option>
+                <option key={camera.id} value={camera.id}>{camera.name}</option>
               ))}
             </select>
           </div>
@@ -430,10 +456,35 @@ export default function DetectionHistory({ title, description }: { title: string
       ) : result ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              {result.total} detecç{result.total === 1 ? "ão" : "ões"} encontrada{result.total === 1 ? "" : "s"}.
-            </p>
             <div className="flex items-center gap-3">
+              {isAdmin && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!allSelected}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/50"
+                    aria-label="Selecionar todos"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {allSelected ? "Desmarcar todos" : "Selecionar todos"}
+                  </span>
+                </label>
+              )}
+              <p className="text-sm text-muted-foreground" aria-live="polite">
+                {result.total} detecç{result.total === 1 ? "ão" : "ões"} encontrada{result.total === 1 ? "" : "s"}.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {isAdmin && selectedIds.size > 0 && (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  Apagar selecionados ({selectedIds.size})
+                </button>
+              )}
               <p className="text-xs text-muted-foreground">
                 {result.page} de {result.pages} página{result.pages === 1 ? "" : "s"}
               </p>
@@ -444,84 +495,112 @@ export default function DetectionHistory({ title, description }: { title: string
           {viewMode === "blocks" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {result.items.map((event) => (
-                <button
-                  key={event.id}
-                  onClick={() => setSelected(event)}
-                  className="overflow-hidden rounded-xl border bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <div className="aspect-video bg-black">
-                    {event.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={event.image_url}
-                        alt={`${displayLabel(event)} em ${event.camera.name}`}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
+                <div key={event.id} className="relative overflow-hidden rounded-xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                  {isAdmin && (
+                    <label
+                      className="absolute top-2 left-2 z-10 flex items-center cursor-pointer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(event.id)}
+                        onChange={() => toggleSelect(event.id)}
+                        className="h-4 w-4 rounded border-gray-300 bg-white text-primary focus:ring-primary/50 shadow"
                       />
-                    ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 text-white/60">
-                        <CameraIcon className="h-10 w-10" aria-hidden="true" />
-                        <span className="text-xs">Sem imagem capturada</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-2 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                        {displayLabel(event)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{Math.round(event.confidence * 100)}%</span>
+                    </label>
+                  )}
+                  <button
+                    onClick={() => setSelected(event)}
+                    className="w-full text-left focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-inset"
+                  >
+                    <div className="aspect-video bg-black">
+                      {event.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={event.image_url}
+                          alt={`${displayLabel(event)} em ${event.camera.name}`}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 text-white/60">
+                          <CameraIcon className="h-10 w-10" aria-hidden="true" />
+                          <span className="text-xs">Sem imagem capturada</span>
+                        </div>
+                      )}
                     </div>
-                    {event.plate && <p className="font-mono text-sm font-semibold tracking-wider">{event.plate}</p>}
-                    <p className="font-medium">{event.camera.name}</p>
-                    <p className="text-sm text-muted-foreground">{event.camera.location || "Sem local"}</p>
-                    <p className="text-xs text-muted-foreground">{formatDateTime(event.detected_at)}</p>
-                  </div>
-                </button>
+                    <div className="space-y-2 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                          {displayLabel(event)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{Math.round(event.confidence * 100)}%</span>
+                      </div>
+                      {event.plate && <p className="font-mono text-sm font-semibold tracking-wider">{event.plate}</p>}
+                      <p className="font-medium">{event.camera.name}</p>
+                      <p className="text-sm text-muted-foreground">{event.camera.location || "Sem local"}</p>
+                      <p className="text-xs text-muted-foreground">{formatDateTime(event.detected_at)}</p>
+                    </div>
+                  </button>
+                </div>
               ))}
             </div>
           ) : (
             <div className="flex flex-col gap-2">
               {result.items.map((event) => (
-                <button
+                <div
                   key={event.id}
-                  onClick={() => setSelected(event)}
-                  className="flex items-center gap-3 rounded-lg border bg-white p-2 text-left shadow-sm transition hover:border-primary/40 hover:shadow focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="flex items-center gap-3 rounded-lg border bg-white shadow-sm transition hover:border-primary/40 hover:shadow"
                 >
-                  <div className="h-14 w-20 flex-shrink-0 overflow-hidden rounded bg-black">
-                    {event.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={event.image_url}
-                        alt={`${displayLabel(event)} em ${event.camera.name}`}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
+                  {isAdmin && (
+                    <label className="flex-shrink-0 pl-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(event.id)}
+                        onChange={() => toggleSelect(event.id)}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/50"
                       />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-white/50">
-                        <CameraIcon className="h-6 w-6" aria-hidden="true" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                        {displayLabel(event)}
-                      </span>
-                      {event.plate && (
-                        <span className="font-mono text-sm font-semibold tracking-wider">{event.plate}</span>
+                    </label>
+                  )}
+                  <button
+                    onClick={() => setSelected(event)}
+                    className="flex flex-1 items-center gap-3 p-2 text-left focus:outline-none"
+                  >
+                    <div className="h-14 w-20 flex-shrink-0 overflow-hidden rounded bg-black">
+                      {event.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={event.image_url}
+                          alt={`${displayLabel(event)} em ${event.camera.name}`}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-white/50">
+                          <CameraIcon className="h-6 w-6" aria-hidden="true" />
+                        </div>
                       )}
                     </div>
-                    <p className="mt-1 truncate text-sm font-medium">
-                      {event.camera.name}
-                      {event.camera.location ? ` · ${event.camera.location}` : ""}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{formatDateTime(event.detected_at)}</p>
-                  </div>
-                  <span className="hidden flex-shrink-0 text-xs text-muted-foreground sm:block">
-                    {Math.round(event.confidence * 100)}%
-                  </span>
-                </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                          {displayLabel(event)}
+                        </span>
+                        {event.plate && (
+                          <span className="font-mono text-sm font-semibold tracking-wider">{event.plate}</span>
+                        )}
+                      </div>
+                      <p className="mt-1 truncate text-sm font-medium">
+                        {event.camera.name}
+                        {event.camera.location ? ` · ${event.camera.location}` : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{formatDateTime(event.detected_at)}</p>
+                    </div>
+                    <span className="hidden flex-shrink-0 text-xs text-muted-foreground sm:block pr-2">
+                      {Math.round(event.confidence * 100)}%
+                    </span>
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -606,6 +685,7 @@ export default function DetectionHistory({ title, description }: { title: string
         </>
       ) : null}
 
+      {/* Modal detalhe */}
       <Modal
         open={selected !== null}
         onOpenChange={(open) => !open && setSelected(null)}
@@ -630,7 +710,6 @@ export default function DetectionHistory({ title, description }: { title: string
                 </div>
               )}
             </div>
-
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <p className="text-xs text-muted-foreground">Categoria</p>
@@ -663,6 +742,38 @@ export default function DetectionHistory({ title, description }: { title: string
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal confirmação de exclusão */}
+      <Modal
+        open={confirmDelete}
+        onOpenChange={(open) => !open && setConfirmDelete(false)}
+        title="Confirmar exclusão"
+        description={`Você está prestes a apagar ${selectedIds.size} detecç${selectedIds.size === 1 ? "ão" : "ões"} permanentemente.`}
+        className="max-w-md"
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            Esta ação não pode ser desfeita. Os registros do banco de dados e as imagens armazenadas serão excluídos permanentemente.
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className="px-4 py-2 rounded-lg border text-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => void handleBulkDelete()}
+              disabled={deleting}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              {deleting ? "Apagando..." : `Apagar ${selectedIds.size} registro${selectedIds.size === 1 ? "" : "s"}`}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {!result && !loading && (

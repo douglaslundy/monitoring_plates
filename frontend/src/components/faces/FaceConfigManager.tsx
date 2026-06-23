@@ -695,49 +695,47 @@ export function FaceConfigManager() {
 
         <div>
           <label className="block text-xs font-medium mb-1.5">Motor</label>
-          <div className="grid grid-cols-1 gap-2">
-            {ENGINES.map((eng) => (
-              <label
-                key={eng.value}
-                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${
-                  editing ? "opacity-50 cursor-not-allowed" : ""
-                } ${
-                  selected === eng.value
-                    ? "border-primary bg-primary/5"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="engine"
-                  value={eng.value}
-                  checked={selected === eng.value}
-                  disabled={!!editing}
-                  onChange={() => {
-                    if (!editing) {
-                      setSelected(eng.value);
-                      setForm({ ...EMPTY_FORM, threshold: DEFAULT_THRESHOLDS[eng.value] ?? "0.80" });
-                    }
-                  }}
-                  className="mt-0.5 accent-primary"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium">{eng.label}</span>
-                    {eng.free ? (
-                      <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">Gratuito</span>
-                    ) : (
-                      <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Pago</span>
-                    )}
-                    {eng.recommended && (
-                      <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Recomendado</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{eng.desc}</p>
-                </div>
-              </label>
-            ))}
-          </div>
+          <select
+            value={selected}
+            disabled={!!editing}
+            onChange={(e) => {
+              if (!editing) {
+                const v = e.target.value as EngineType;
+                setSelected(v);
+                setForm({ ...EMPTY_FORM, threshold: DEFAULT_THRESHOLDS[v] ?? "0.80" });
+              }
+            }}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+          >
+            <optgroup label="— Gratuito (local) —">
+              {ENGINES.filter((e) => e.free).map((eng) => (
+                <option key={eng.value} value={eng.value}>
+                  {eng.label}{eng.recommended ? " ★ Recomendado" : ""}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="— Pago (nuvem) —">
+              {ENGINES.filter((e) => !e.free).map((eng) => (
+                <option key={eng.value} value={eng.value}>{eng.label}</option>
+              ))}
+            </optgroup>
+          </select>
+          {(() => {
+            const eng = ENGINES.find((e) => e.value === selected);
+            return eng ? (
+              <div className="mt-1.5 flex items-center gap-2">
+                {eng.free ? (
+                  <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">Gratuito</span>
+                ) : (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Pago</span>
+                )}
+                {eng.recommended && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Recomendado</span>
+                )}
+                <span className="text-xs text-muted-foreground">{eng.desc}</span>
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {/* Credenciais: apenas para motores de nuvem (pagos) */}

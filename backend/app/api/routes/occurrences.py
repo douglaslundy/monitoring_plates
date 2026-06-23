@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
@@ -14,6 +15,7 @@ from app.api.deps import get_db, get_current_user
 from app.models.camera import Camera
 from app.models.occurrence import Occurrence
 from app.models.user import User, UserRole
+from app.models.vehicle_event import VehicleEvent
 from app.schemas.occurrence import (
     CameraMin,
     OccurrencePage,
@@ -271,3 +273,46 @@ def get_occurrence(
         if not cam or cam.client_id != current_user.client_id:
             raise HTTPException(status_code=403, detail="Acesso negado")
     return _serialize(occ)
+
+
+class BulkDeleteOccurrenceRequest(BaseModel):
+    ids: List[UUID]
+
+
+@router.delete("/bulk", status_code=200)
+def bulk_delete_occurrences(
+    payload: BulkDeleteOccurrenceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in (UserRole.super_admin, UserRole.client_admin):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    from app.services.storage_service import delete_file
+
+    q = db.query(Occurrence).filter(Occurrence.id.in_(payload.ids))
+    if current_user.role != UserRole.super_admin:
+        allowed_ids = [
+            c.id for c in db.query(Camera).filter(Camera.client_id == current_user.client_id).all()
+        ]
+        q = q.filter(Occurrence.camera_id.in_(allowed_ids))
+
+    occs = q.all()
+    deleted = 0
+    seen_images: set = set()
+
+    for occ in occs:
+        if occ.image_path and occ.image_path not in seen_images:
+            seen_images.add(occ.image_path)
+            try:
+                delete_file(occ.image_path)
+            except Exception:
+                pass
+        db.query(VehicleEvent).filter(VehicleEvent.occurrence_id == occ.id).update(
+            {"occurrence_id": None}, synchronize_session=False
+        )
+        db.delete(occ)
+        deleted += 1
+
+    db.commit()
+    return {"deleted": deleted}
