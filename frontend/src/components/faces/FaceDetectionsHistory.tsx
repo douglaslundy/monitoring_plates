@@ -82,7 +82,7 @@ export function FaceDetectionsHistory({ title, description }: { title: string; d
   async function handleBulkDelete() {
     setDeleting(true);
     try {
-      await api.delete("/api/face-detections/bulk", { data: { ids: [...selectedIds] } });
+      await api.delete("/api/face-detections/bulk", { data: { ids: Array.from(selectedIds) } });
       setItems((prev) => prev.filter((i) => !selectedIds.has(i.id)));
       setSelectedIds(new Set());
       setConfirmDelete(false);
