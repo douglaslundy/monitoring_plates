@@ -24,6 +24,62 @@ _DEFAULT_COLOR = (200, 200, 200)
 _HIGHLIGHT_COLOR = (0, 255, 255)
 
 
+def draw_labeled_boxes(
+    frame_bytes: bytes,
+    boxes: list[dict],
+) -> str:
+    """Desenha bboxes com rótulos em uma imagem e retorna base64 JPEG.
+
+    Cada item de `boxes`: {"x", "y", "w", "h", "label": str, "highlight": bool}.
+    Usado nos endpoints de teste (OCR e face) para visualização imediata.
+    Retorna string base64 vazia se cv2 não estiver disponível.
+    """
+    try:
+        import base64
+        import cv2
+        import numpy as np
+    except Exception:
+        return ""
+
+    arr = np.frombuffer(frame_bytes, np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        return ""
+
+    h, w = img.shape[:2]
+    thickness = max(2, int(round(min(w, h) / 300)))
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = max(0.5, min(w, h) / 800.0)
+
+    for box in boxes:
+        x1 = max(0, int(box["x"]))
+        y1 = max(0, int(box["y"]))
+        x2 = min(w, x1 + int(box["w"]))
+        y2 = min(h, y1 + int(box["h"]))
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        color = _HIGHLIGHT_COLOR if box.get("highlight") else (0, 200, 0)
+        box_t = thickness * 2 if box.get("highlight") else thickness
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, box_t)
+
+        text = str(box.get("label", ""))
+        if text:
+            (tw, th), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+            ty = y1 - 4
+            top = ty - th - baseline
+            if top < 0:
+                ty = y1 + th + baseline + 4
+                top = y1
+            cv2.rectangle(img, (x1, top), (x1 + tw + 6, ty + baseline), color, -1)
+            cv2.putText(img, text, (x1 + 3, ty), font, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
+
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    if not ok:
+        return ""
+    return base64.b64encode(buf.tobytes()).decode()
+
+
 def label_text(label: str, confidence: float) -> str:
     """Texto exibido na caixa: '<label> <conf>%'."""
     try:

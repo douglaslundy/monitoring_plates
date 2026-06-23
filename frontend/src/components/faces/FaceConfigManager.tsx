@@ -547,8 +547,30 @@ export function FaceConfigManager() {
         </div>
         {imageTestError && <p className="text-sm text-red-600">{imageTestError}</p>}
         {imageTestResult && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-sm font-medium">{imageTestResult.message}</p>
+
+            {/* Imagem anotada com bboxes */}
+            {imageTestResult.annotated_image && (
+              <div className="rounded-lg overflow-hidden border">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`data:image/jpeg;base64,${imageTestResult.annotated_image}`}
+                  alt="Resultado da detecção"
+                  className="w-full object-contain max-h-96"
+                />
+              </div>
+            )}
+
+            {/* Alertas disparados */}
+            {imageTestResult.alerts_fired?.length > 0 && (
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                <Bell className="h-4 w-4 shrink-0" />
+                <span className="font-medium">Alertas disparados:</span>
+                <span>{imageTestResult.alerts_fired.join(", ")}</span>
+              </div>
+            )}
+
             {imageTestResult.faces.map((f, i) => (
               <div key={i} className={`p-3 rounded-lg border text-sm ${f.match.person_id ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
                 <div className="flex items-center gap-2">
@@ -568,7 +590,7 @@ export function FaceConfigManager() {
                   </span>
                 </div>
                 {f.match.person?.alert_active && (
-                  <p className="mt-1 text-xs text-amber-700 font-medium">⚠ Alerta ativo para esta pessoa</p>
+                  <p className="mt-1 text-xs text-amber-700 font-medium">⚠ Alerta ativo — notificações enviadas</p>
                 )}
               </div>
             ))}

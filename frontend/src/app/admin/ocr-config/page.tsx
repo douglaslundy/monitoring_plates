@@ -405,8 +405,30 @@ export default function OcrConfigPage() {
           <p className="mt-3 text-sm text-red-600">{imageTestError}</p>
         )}
         {imageTestResult && (
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-3">
             <p className="text-sm font-medium text-gray-700">{imageTestResult.message}</p>
+
+            {/* Imagem anotada com bboxes */}
+            {imageTestResult.annotated_image && (
+              <div className="rounded-lg overflow-hidden border">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`data:image/jpeg;base64,${imageTestResult.annotated_image}`}
+                  alt="Resultado da detecção"
+                  className="w-full object-contain max-h-96"
+                />
+              </div>
+            )}
+
+            {/* Alertas disparados */}
+            {imageTestResult.alerts_fired.length > 0 && (
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span className="font-medium">Alertas disparados:</span>
+                <span>{imageTestResult.alerts_fired.join(", ")}</span>
+              </div>
+            )}
+
             {imageTestResult.results.map((r, i) => (
               <div key={i} className={`p-3 rounded-lg border text-sm ${r.plate ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
                 <div className="flex items-center gap-2">

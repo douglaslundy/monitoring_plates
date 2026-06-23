@@ -462,3 +462,32 @@ def _publish_unknown_ws_alert(fd, camera, image_url: str) -> None:
         r.publish(f"ws:alerts:{camera.client_id}", json.dumps(payload))
     except Exception:
         logger.warning("Could not publish unknown face WebSocket alert to Redis", exc_info=True)
+
+
+# ── Alertas de teste (endpoint test-image, sem gravar no banco) ──────────────
+
+def _send_test_face_alert_email(person: Person, detected_at: str) -> None:
+    send_plate_alert(
+        to=person.alert_email,
+        plate=person.name or "Pessoa",
+        camera_name="[TESTE]",
+        location="Teste manual via painel",
+        detected_at=detected_at,
+        image_url="",
+    )
+
+
+def _send_test_face_alert_whatsapp(person: Person, image_bytes: bytes, detected_at: str, db: Session) -> None:
+    from app.services.whatsapp_service import send_whatsapp_alert, build_whatsapp_message
+    from app.services.whatsapp_settings_service import get_effective_whatsapp_delivery_config
+
+    model, cfg = get_effective_whatsapp_delivery_config(db)
+    if model is not None and not cfg.is_active:
+        return
+    msg = build_whatsapp_message(person.name or "Pessoa", "[TESTE]", "", detected_at)
+    send_whatsapp_alert(
+        phone=person.alert_whatsapp,
+        message=msg,
+        delivery_config=cfg,
+        image_bytes=image_bytes,
+    )

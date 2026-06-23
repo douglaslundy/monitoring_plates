@@ -346,6 +346,8 @@ export interface FaceCameraAlertConfig {
 export interface OcrImageTestResult {
   found: boolean;
   message: string;
+  annotated_image: string | null;
+  alerts_fired: string[];
   results: Array<{
     category: string;
     vehicle_type: string;
@@ -365,6 +367,8 @@ export interface OcrImageTestResult {
 export interface FaceImageTestResult {
   found: boolean;
   message: string;
+  annotated_image: string | null;
+  alerts_fired: string[];
   faces: Array<{
     bbox: { x: number; y: number; w: number; h: number };
     confidence: number;

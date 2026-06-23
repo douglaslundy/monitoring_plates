@@ -200,39 +200,39 @@ async def test_image(
     db: Session = Depends(get_db),
     _=Depends(require_super_admin),
 ):
-    """Executa OCR em uma imagem enviada pelo usuário (sem salvar no banco).
-    Útil para diagnosticar se o motor está lendo placas corretamente."""
+    """Executa OCR em uma imagem enviada, retorna imagem anotada com bboxes e dispara alertas reais para placas monitoradas."""
+    from datetime import datetime, timezone
     from app.services.ocr_service import recognizer
     from app.services.vehicle_detection_service import vehicle_detector
+    from app.services.detection_overlay_service import draw_labeled_boxes
     from app.models.monitored_plate import MonitoredPlate
 
     image_bytes = await file.read()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Arquivo vazio.")
 
-    # Detecta veículos no frame
     detections = vehicle_detector.detect(image_bytes)
     if not detections:
-        return {"found": False, "message": "Nenhum veículo detectado na imagem.", "results": []}
+        return {"found": False, "message": "Nenhum veículo detectado na imagem.", "results": [], "annotated_image": None}
 
     results = []
+    boxes_for_draw: list[dict] = []
+    alerts_fired: list[str] = []
+
     for det in detections:
         if det.category != "vehicle":
-            continue
-        ocr_result = recognizer.recognize(det.crop_bytes, camera_id=None)
-        if ocr_result is None:
-            results.append({
-                "category": det.category,
-                "vehicle_type": det.vehicle_type,
-                "confidence": det.confidence,
-                "plate": None,
-                "ocr_confidence": None,
-                "alert": None,
+            # Desenha pessoa/animal sem OCR
+            boxes_for_draw.append({
+                "x": det.bbox_x, "y": det.bbox_y, "w": det.bbox_w, "h": det.bbox_h,
+                "label": det.vehicle_type or det.category,
+                "highlight": False,
             })
             continue
 
-        plate = ocr_result.get("plate")
-        # Verifica se a placa está monitorada (sem salvar alerta)
+        ocr_result = recognizer.recognize(det.crop_bytes, camera_id=None)
+        plate = ocr_result.get("plate") if ocr_result else None
+
+        monitored = None
         alert_info = None
         if plate:
             monitored = (
@@ -248,18 +248,63 @@ async def test_image(
                     "has_whatsapp": bool(monitored.alert_whatsapp),
                 }
 
+        label = plate if plate else (det.vehicle_type or "sem placa")
+        boxes_for_draw.append({
+            "x": det.bbox_x, "y": det.bbox_y, "w": det.bbox_w, "h": det.bbox_h,
+            "label": label,
+            "highlight": bool(monitored),
+        })
+
+        # Dispara alertas reais para placas monitoradas
+        if monitored:
+            detected_at = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S")
+            if monitored.alert_email:
+                try:
+                    from app.services.email_service import send_plate_alert
+                    send_plate_alert(
+                        to=monitored.alert_email,
+                        plate=plate,
+                        camera_name="[TESTE]",
+                        location="Teste manual via painel",
+                        detected_at=detected_at,
+                        image_url="",
+                    )
+                    alerts_fired.append(f"email:{monitored.alert_email}")
+                except Exception:
+                    pass
+            if monitored.alert_whatsapp:
+                try:
+                    from app.services.whatsapp_service import send_whatsapp_alert, build_whatsapp_message
+                    from app.services.whatsapp_settings_service import get_effective_whatsapp_delivery_config
+                    cfg = get_effective_whatsapp_delivery_config(db)
+                    if cfg:
+                        msg = build_whatsapp_message(plate, "[TESTE]", "", detected_at)
+                        send_whatsapp_alert(
+                            phone=monitored.alert_whatsapp,
+                            message=msg,
+                            delivery_config=cfg,
+                            image_bytes=image_bytes,
+                        )
+                        alerts_fired.append(f"whatsapp:{monitored.alert_whatsapp}")
+                except Exception:
+                    pass
+
         results.append({
             "category": det.category,
             "vehicle_type": det.vehicle_type,
             "confidence": det.confidence,
             "plate": plate,
-            "ocr_confidence": ocr_result.get("confidence"),
-            "engine": ocr_result.get("engine"),
+            "ocr_confidence": ocr_result.get("confidence") if ocr_result else None,
+            "engine": ocr_result.get("engine") if ocr_result else None,
             "alert": alert_info,
         })
 
+    annotated_image = draw_labeled_boxes(image_bytes, boxes_for_draw)
+
     return {
-        "found": any(r["plate"] for r in results),
+        "found": any(r.get("plate") for r in results),
         "message": f"{len(results)} veículo(s) detectado(s).",
         "results": results,
+        "annotated_image": annotated_image or None,
+        "alerts_fired": alerts_fired,
     }

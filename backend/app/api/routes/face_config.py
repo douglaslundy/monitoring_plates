@@ -162,30 +162,36 @@ async def test_image(
     db: Session = Depends(get_db),
     _=Depends(require_super_admin),
 ):
-    """Executa detecção e identificação facial em imagem enviada (sem salvar no banco).
-    Útil para verificar se o motor de faces está funcionando corretamente."""
+    """Detecta e identifica rostos, retorna imagem anotada com bboxes e dispara alertas reais para pessoas cadastradas."""
+    from datetime import datetime, timezone
     from app.services.face_detection_service import face_engine
     from app.services.face_service import face_recognizer
+    from app.services.detection_overlay_service import draw_labeled_boxes
     from app.models.person import Person
 
     image_bytes = await file.read()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Arquivo vazio.")
 
-    # Detecta rostos na imagem
     face_boxes = face_engine.detect(image_bytes)
     if not face_boxes:
         return {
             "found": False,
             "message": "Nenhum rosto detectado na imagem pelo motor local (YuNet).",
             "faces": [],
+            "annotated_image": None,
+            "alerts_fired": [],
         }
 
     faces = []
+    boxes_for_draw: list[dict] = []
+    alerts_fired: list[str] = []
+
     for box in face_boxes:
-        # Tenta identificar buscando em todos os clientes (modo teste super_admin)
         match = face_recognizer.identify_all(box.crop_bytes)
+        person: Person | None = None
         person_info = None
+
         if match:
             person = db.query(Person).filter(Person.id == uuid.UUID(match.person_id)).first()
             if person:
@@ -197,22 +203,48 @@ async def test_image(
                     "has_whatsapp": bool(person.alert_whatsapp),
                 }
 
+        label = person.name if person else "Desconhecida"
+        boxes_for_draw.append({
+            "x": box.bbox_x, "y": box.bbox_y, "w": box.bbox_w, "h": box.bbox_h,
+            "label": label,
+            "highlight": bool(person and person.alert_active),
+        })
+
+        # Dispara alertas reais para pessoas com alerta ativo
+        if person and person.alert_active:
+            detected_at = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S")
+            if person.alert_email:
+                try:
+                    from app.services.face_alert_service import _send_test_face_alert_email
+                    _send_test_face_alert_email(person, detected_at)
+                    alerts_fired.append(f"email:{person.alert_email}")
+                except Exception:
+                    pass
+            if person.alert_whatsapp:
+                try:
+                    from app.services.face_alert_service import _send_test_face_alert_whatsapp
+                    _send_test_face_alert_whatsapp(person, image_bytes, detected_at, db)
+                    alerts_fired.append(f"whatsapp:{person.alert_whatsapp}")
+                except Exception:
+                    pass
+
         faces.append({
-            "bbox": {
-                "x": box.bbox_x, "y": box.bbox_y,
-                "w": box.bbox_w, "h": box.bbox_h,
-            },
+            "bbox": {"x": box.bbox_x, "y": box.bbox_y, "w": box.bbox_w, "h": box.bbox_h},
             "confidence": box.confidence,
             "match": {
                 "person_id": match.person_id if match else None,
                 "match_confidence": match.confidence if match else None,
                 "person": person_info,
-            } if match else {"person_id": None, "match_confidence": None, "person": None},
+            },
         })
 
     recognized = [f for f in faces if f["match"]["person_id"]]
+    annotated_image = draw_labeled_boxes(image_bytes, boxes_for_draw)
+
     return {
         "found": True,
         "message": f"{len(faces)} rosto(s) detectado(s), {len(recognized)} reconhecido(s).",
         "faces": faces,
+        "annotated_image": annotated_image or None,
+        "alerts_fired": alerts_fired,
     }
