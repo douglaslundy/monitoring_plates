@@ -15,7 +15,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.core.config import settings
-from app.services.face_detection_service import OpenCVFaceEngine, cosine_similarity
+from app.services.face_detection_service import OpenCVFaceEngine, cosine_similarity, get_local_engine
+
+LOCAL_ENGINE_TYPES = {"opencv", "insightface", "deepface"}
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +143,12 @@ class FaceRouter:
         self.invalidate(client_id)  # novo rosto -> invalida cache de embeddings
         if client_id in (None, "None"):  # pessoa global do admin
             self.invalidate("__global__")
+        # Motores locais: gera embedding aqui mesmo
+        if engine_type in LOCAL_ENGINE_TYPES:
+            eng = get_local_engine(engine_type)
+            embedding = eng.embed(image_bytes)
+            return EnrollResult(engine_type, embedding, None)
+        # Motores de nuvem
         try:
             if engine_type == "rekognition":
                 ref = self._rekognition_enroll(client_id, person_id, image_bytes)
@@ -155,14 +163,18 @@ class FaceRouter:
                 if ref:
                     return EnrollResult("facepp", None, ref)
         except Exception as exc:
-            logger.warning("Enroll no motor %s falhou (%s) — usando local", engine_type, exc)
-        # local (padrão e fallback)
+            logger.warning("Enroll no motor %s falhou (%s) — usando local opencv", engine_type, exc)
+        # fallback para opencv se nuvem falhar
         embedding = _local_engine.embed(image_bytes)
         return EnrollResult("opencv", embedding, None)
 
     # ── Identify ────────────────────────────────────────────────────────────
     def identify(self, client_id: str, image_bytes: bytes) -> Optional[FaceMatch]:
         engine_type = self.resolve_engine_type(client_id)
+        # Motores locais não precisam de fallback: executam embedding localmente
+        if engine_type in LOCAL_ENGINE_TYPES:
+            return self._local_identify(client_id, image_bytes, engine_type)
+        # Motores de nuvem com fallback para opencv
         try:
             if engine_type == "rekognition":
                 match = self._rekognition_identify(client_id, image_bytes)
@@ -178,23 +190,26 @@ class FaceRouter:
                     return match
         except Exception as exc:
             logger.warning("Identify no motor %s falhou (%s) — caindo p/ local", engine_type, exc)
-        return self._local_identify(client_id, image_bytes)
+        return self._local_identify(client_id, image_bytes, "opencv")
 
     def identify_all(self, image_bytes: bytes) -> Optional["FaceMatchWithScore"]:
         """Identifica rosto buscando em TODOS os clientes — uso exclusivo do super_admin (teste).
 
-        Usa detect_and_embed na imagem COMPLETA para evitar double-YuNet em recorte:
-        o embed() clássico re-detecta dentro de um recorte onde a face preenche o frame,
-        fazendo o YuNet falhar. detect_and_embed detecta corretamente na foto original.
-        Retorna também best_sim para debug de threshold.
+        Usa o motor ativo do sistema (padrão) para gerar o embedding.
+        Retorna best_sim para debug de threshold.
         """
-        result = _local_engine.detect_and_embed(image_bytes)
+        engine_type = self._system_default()
+        eng = get_local_engine(engine_type)
+        result = eng.detect_and_embed(image_bytes)
         if result is None:
+            logger.info("identify_all: detect_and_embed retornou None (motor=%s)", engine_type)
             return None
         _, embedding = result
         if not embedding:
+            logger.info("identify_all: embedding vazio (motor=%s)", engine_type)
             return None
-        candidates = self._load_all_embeddings()
+        candidates = self._load_all_embeddings(engine_type)
+        threshold = self._engine_threshold(engine_type)
         best_pid: Optional[str] = None
         best_sim = 0.0
         for pid, emb in candidates:
@@ -203,14 +218,14 @@ class FaceRouter:
                 best_sim = sim
                 best_pid = pid
         logger.info(
-            "identify_all: candidatos=%d best_sim=%.4f threshold=%.2f pid=%s",
-            len(candidates), best_sim, settings.FACE_MATCH_THRESHOLD, best_pid,
+            "identify_all: motor=%s candidatos=%d best_sim=%.4f threshold=%.2f pid=%s",
+            engine_type, len(candidates), best_sim, threshold, best_pid,
         )
-        if best_pid is not None and best_sim >= settings.FACE_MATCH_THRESHOLD:
+        if best_pid is not None and best_sim >= threshold:
             return FaceMatchWithScore(person_id=best_pid, confidence=round(best_sim, 4), best_sim=round(best_sim, 4))
         return FaceMatchWithScore(person_id=None, confidence=None, best_sim=round(best_sim, 4)) if best_pid else None
 
-    def _load_all_embeddings(self) -> list[tuple[str, list[float]]]:
+    def _load_all_embeddings(self, engine_type: str = "opencv") -> list[tuple[str, list[float]]]:
         """Todos os embeddings locais de todas as pessoas ativas (sem filtro de cliente)."""
         result: list[tuple[str, list[float]]] = []
         try:
@@ -225,7 +240,7 @@ class FaceRouter:
                     .join(Person, PersonFace.person_id == Person.id)
                     .filter(
                         Person.is_active == True,  # noqa: E712
-                        PersonFace.engine_type == "opencv",
+                        PersonFace.engine_type == engine_type,
                         PersonFace.embedding.isnot(None),
                     )
                     .all()
@@ -236,24 +251,36 @@ class FaceRouter:
             finally:
                 db.close()
         except Exception as exc:
-            logger.warning("Não foi possível carregar todos embeddings para teste: %s", exc)
+            logger.warning("Não foi possível carregar todos embeddings (motor=%s): %s", engine_type, exc)
         return result
 
-    def identify_by_embedding(
-        self, client_id: Optional[str], embedding: list[float]
-    ) -> Optional[FaceMatch]:
-        """Identifica usando embedding já computado — evita re-executar YuNet+SFace.
+    def _engine_threshold(self, engine_type: str) -> float:
+        """Retorna o threshold de similaridade configurado para o motor, ou o padrão global."""
+        try:
+            cfg = self._active_config(engine_type)
+            if cfg and cfg.threshold:
+                return float(cfg.threshold)
+        except Exception:
+            pass
+        # Padrões razoáveis por motor
+        defaults = {"insightface": 0.40, "deepface": 0.40, "opencv": 0.36}
+        return defaults.get(engine_type, settings.FACE_MATCH_THRESHOLD)
 
-        Só funciona para o motor local (opencv). Cloud engines recebem None e
-        o caller deve fazer fallback para identify() com a imagem original.
+    def identify_by_embedding(
+        self, client_id: Optional[str], embedding: list[float], engine_type: Optional[str] = None
+    ) -> Optional[FaceMatch]:
+        """Identifica usando embedding já computado — evita re-rodar detecção+embedding.
+
+        Funciona apenas para motores locais. Motores de nuvem devem usar identify() direto.
         """
-        engine_type = self.resolve_engine_type(client_id)
-        if engine_type != "opencv":
+        eff_type = engine_type or self.resolve_engine_type(client_id)
+        if eff_type not in LOCAL_ENGINE_TYPES:
             return None
+        threshold = self._engine_threshold(eff_type)
         eff_client_id = client_id or "__none__"
         candidates = (
-            self._load_client_embeddings(eff_client_id)
-            + self._load_global_embeddings()
+            self._load_client_embeddings(eff_client_id, eff_type)
+            + self._load_global_embeddings(eff_type)
         )
         best_pid: Optional[str] = None
         best_sim = 0.0
@@ -262,18 +289,24 @@ class FaceRouter:
             if sim > best_sim:
                 best_sim = sim
                 best_pid = pid
-        if best_pid is not None and best_sim >= settings.FACE_MATCH_THRESHOLD:
+        if best_pid is not None and best_sim >= threshold:
             return FaceMatch(person_id=best_pid, confidence=round(best_sim, 4))
         return None
 
-    # ── Motor local (OpenCV) ─────────────────────────────────────────────────
-    def _local_identify(self, client_id: str, image_bytes: bytes) -> Optional[FaceMatch]:
-        embedding = _local_engine.embed(image_bytes)
+    # ── Motores locais (OpenCV / InsightFace / DeepFace) ─────────────────────
+    def _local_identify(
+        self, client_id: str, image_bytes: bytes, engine_type: str = "opencv"
+    ) -> Optional[FaceMatch]:
+        eng = get_local_engine(engine_type)
+        embedding = eng.embed(image_bytes)
         if not embedding:
             return None
-        # Candidatos do cliente da câmera + pessoas GLOBAIS do super_admin
-        # (client_id NULL), que devem ser reconhecidas em qualquer câmera.
-        candidates = self._load_client_embeddings(client_id) + self._load_global_embeddings()
+        threshold = self._engine_threshold(engine_type)
+        # Candidatos do cliente da câmera + pessoas GLOBAIS do super_admin.
+        candidates = (
+            self._load_client_embeddings(client_id, engine_type)
+            + self._load_global_embeddings(engine_type)
+        )
         best_pid: Optional[str] = None
         best_sim = 0.0
         for pid, emb in candidates:
@@ -281,14 +314,17 @@ class FaceRouter:
             if sim > best_sim:
                 best_sim = sim
                 best_pid = pid
-        if best_pid is not None and best_sim >= settings.FACE_MATCH_THRESHOLD:
+        if best_pid is not None and best_sim >= threshold:
             return FaceMatch(person_id=best_pid, confidence=round(best_sim, 4))
         return None
 
-    def _load_client_embeddings(self, client_id: str) -> list[tuple[str, list[float]]]:
+    def _load_client_embeddings(
+        self, client_id: str, engine_type: str = "opencv"
+    ) -> list[tuple[str, list[float]]]:
+        cache_key = f"{engine_type}:{client_id}"
         now = time.time()
         with self._lock:
-            cached = self._emb_cache.get(client_id)
+            cached = self._emb_cache.get(cache_key)
             if cached and cached[1] > now:
                 return cached[0]
         result: list[tuple[str, list[float]]] = []
@@ -306,7 +342,7 @@ class FaceRouter:
                     .filter(
                         Person.client_id == uuid.UUID(str(client_id)),
                         Person.is_active == True,  # noqa: E712
-                        PersonFace.engine_type == "opencv",
+                        PersonFace.engine_type == engine_type,
                         PersonFace.embedding.isnot(None),
                     )
                     .all()
@@ -317,14 +353,17 @@ class FaceRouter:
             finally:
                 db.close()
         except Exception as exc:
-            logger.warning("Não foi possível carregar embeddings do cliente %s: %s", client_id, exc)
+            logger.warning(
+                "Não foi possível carregar embeddings do cliente %s (motor=%s): %s",
+                client_id, engine_type, exc,
+            )
         with self._lock:
-            self._emb_cache[client_id] = (result, now + _ENGINE_CACHE_TTL)
+            self._emb_cache[cache_key] = (result, now + _ENGINE_CACHE_TTL)
         return result
 
-    def _load_global_embeddings(self) -> list[tuple[str, list[float]]]:
+    def _load_global_embeddings(self, engine_type: str = "opencv") -> list[tuple[str, list[float]]]:
         """Embeddings de pessoas GLOBAIS do admin (client_id NULL), cacheados."""
-        cache_key = "__global__"
+        cache_key = f"{engine_type}:__global__"
         now = time.time()
         with self._lock:
             cached = self._emb_cache.get(cache_key)
@@ -344,7 +383,7 @@ class FaceRouter:
                     .filter(
                         Person.client_id.is_(None),
                         Person.is_active == True,  # noqa: E712
-                        PersonFace.engine_type == "opencv",
+                        PersonFace.engine_type == engine_type,
                         PersonFace.embedding.isnot(None),
                     )
                     .all()
@@ -355,7 +394,9 @@ class FaceRouter:
             finally:
                 db.close()
         except Exception as exc:
-            logger.warning("Não foi possível carregar embeddings globais: %s", exc)
+            logger.warning(
+                "Não foi possível carregar embeddings globais (motor=%s): %s", engine_type, exc
+            )
         with self._lock:
             self._emb_cache[cache_key] = (result, now + _ENGINE_CACHE_TTL)
         return result

@@ -67,6 +67,23 @@ RUN set -eux; \
 # que o container rode 100% OFFLINE na VPS. O cache fica embutido na imagem.
 RUN python -c "from fast_alpr import ALPR; ALPR()" || echo "[build] aviso: warm do fast-alpr falhou (sera baixado no 1o uso)"
 
+# Pré-baixa modelos InsightFace buffalo_sc (~190 MB) — motor gratuito de alta precisão.
+# Modelos ficam em /root/.insightface/models/ dentro da imagem.
+# Não-fatal: se falhar, o admin pode ativar o motor e os modelos serão baixados no 1o uso.
+RUN python -c "
+from insightface.app import FaceAnalysis
+app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
+app.prepare(ctx_id=0, det_size=(640, 640))
+print('[build] InsightFace buffalo_sc pronto')
+" || echo "[build] aviso: insightface warmup falhou (modelos serao baixados no 1o uso)"
+
+# Pré-baixa modelo ArcFace do DeepFace (~170 MB) — motor gratuito alternativo.
+RUN python -c "
+from deepface.models.facial_recognition.ArcFace import ArcFaceClient
+ArcFaceClient()
+print('[build] DeepFace ArcFace pronto')
+" || echo "[build] aviso: deepface warmup falhou (modelo sera baixado no 1o uso)"
+
 COPY . .
 
 EXPOSE 8000

@@ -307,3 +307,263 @@ class OpenCVFaceEngine:
 
 
 face_engine = OpenCVFaceEngine()
+
+
+# ─── InsightFace (ArcFace) ────────────────────────────────────────────────────
+
+class InsightFaceEngine:
+    """ArcFace via InsightFace — local, CPU, gratuito. Muito mais preciso que SFace.
+
+    Usa o pacote `buffalo_sc` (modelos leves ~190 MB) com CPUExecutionProvider.
+    Requer `pip install insightface onnxruntime`.
+    """
+
+    def __init__(self) -> None:
+        self._app = None
+        self._lock = threading.Lock()
+        self._init_done = False
+
+    def _get_app(self):
+        if self._init_done:
+            return self._app
+        with self._lock:
+            if self._init_done:
+                return self._app
+            try:
+                from insightface.app import FaceAnalysis  # lazy import
+
+                app = FaceAnalysis(
+                    name="buffalo_sc",
+                    providers=["CPUExecutionProvider"],
+                )
+                app.prepare(ctx_id=0, det_size=(640, 640))
+                self._app = app
+                logger.info("InsightFace buffalo_sc carregado")
+            except Exception as exc:
+                logger.warning("InsightFace não disponível (%s) — modo degradado", exc)
+                self._app = None
+            self._init_done = True
+        return self._app
+
+    def warmup(self) -> None:
+        self._get_app()
+
+    def _decode_bgr(self, image_bytes: bytes):
+        try:
+            import cv2
+            import numpy as np
+        except Exception:
+            return None
+        arr = np.frombuffer(image_bytes, np.uint8)
+        return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+    def detect_and_embed(
+        self, image_bytes: bytes
+    ) -> Optional[tuple["FaceBox", Optional[list[float]]]]:
+        app = self._get_app()
+        if app is None:
+            return None
+        try:
+            import cv2
+            import numpy as np
+
+            image_bgr = self._decode_bgr(image_bytes)
+            if image_bgr is None:
+                return None
+            h, w = image_bgr.shape[:2]
+            # InsightFace espera RGB
+            image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+            faces = app.get(image_rgb)
+            if not faces:
+                return None
+            # Maior rosto por área do bbox
+            face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+            x1, y1, x2, y2 = (int(v) for v in face.bbox)
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(w, x2), min(h, y2)
+            if x2 <= x1 or y2 <= y1:
+                return None
+            crop = image_bgr[y1:y2, x1:x2]
+            ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, settings.DETECTION_JPEG_QUALITY])
+            crop_bytes = buf.tobytes() if ok else None
+            if not crop_bytes:
+                return None
+            det_score = float(face.det_score) if hasattr(face, "det_score") else 1.0
+            face_box = FaceBox(
+                bbox_x=x1, bbox_y=y1, bbox_w=x2 - x1, bbox_h=y2 - y1,
+                confidence=round(det_score, 3), crop_bytes=crop_bytes,
+            )
+            embedding: Optional[list[float]] = None
+            if hasattr(face, "normed_embedding") and face.normed_embedding is not None:
+                embedding = np.asarray(face.normed_embedding).flatten().tolist()
+            return (face_box, embedding)
+        except Exception as exc:
+            logger.warning("InsightFace detect_and_embed falhou (%s)", exc)
+            return None
+
+    def detect(self, image_bytes: bytes) -> list["FaceBox"]:
+        app = self._get_app()
+        if app is None:
+            return []
+        try:
+            import cv2
+
+            image_bgr = self._decode_bgr(image_bytes)
+            if image_bgr is None:
+                return []
+            h, w = image_bgr.shape[:2]
+            image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+            faces = app.get(image_rgb)
+            if not faces:
+                return []
+            results: list[FaceBox] = []
+            for face in faces:
+                x1, y1, x2, y2 = (int(v) for v in face.bbox)
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w, x2), min(h, y2)
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                crop = image_bgr[y1:y2, x1:x2]
+                ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, settings.DETECTION_JPEG_QUALITY])
+                if not ok:
+                    continue
+                det_score = float(face.det_score) if hasattr(face, "det_score") else 1.0
+                results.append(FaceBox(
+                    bbox_x=x1, bbox_y=y1, bbox_w=x2 - x1, bbox_h=y2 - y1,
+                    confidence=round(det_score, 3), crop_bytes=buf.tobytes(),
+                ))
+            results.sort(key=lambda b: b.bbox_w * b.bbox_h, reverse=True)
+            return results
+        except Exception as exc:
+            logger.warning("InsightFace detect falhou (%s)", exc)
+            return []
+
+    def embed(self, image_bytes: bytes) -> Optional[list[float]]:
+        result = self.detect_and_embed(image_bytes)
+        if result is None:
+            return None
+        _, embedding = result
+        return embedding
+
+
+# ─── DeepFace (ArcFace backend) ───────────────────────────────────────────────
+
+class DeepFaceEngine:
+    """ArcFace via DeepFace — local, CPU, gratuito.
+
+    Modelos (~170 MB) baixados na primeira chamada. Requer `pip install deepface`.
+    Usa enforce_detection=False para tolerar fotos sem rosto (retorna embedding vazio).
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._init_done = False
+        self._available = False
+
+    def _ensure_ready(self) -> bool:
+        if self._init_done:
+            return self._available
+        with self._lock:
+            if self._init_done:
+                return self._available
+            try:
+                from deepface import DeepFace  # noqa: F401 — only checking availability
+
+                self._available = True
+                logger.info("DeepFace disponível")
+            except Exception as exc:
+                logger.warning("DeepFace não disponível (%s) — modo degradado", exc)
+                self._available = False
+            self._init_done = True
+        return self._available
+
+    def warmup(self) -> None:
+        self._ensure_ready()
+
+    def detect_and_embed(
+        self, image_bytes: bytes
+    ) -> Optional[tuple["FaceBox", Optional[list[float]]]]:
+        if not self._ensure_ready():
+            return None
+        try:
+            import cv2
+            import numpy as np
+            from deepface import DeepFace
+
+            arr = np.frombuffer(image_bytes, np.uint8)
+            image_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if image_bgr is None:
+                return None
+            h, w = image_bgr.shape[:2]
+
+            representations = DeepFace.represent(
+                img_path=image_bgr,
+                model_name="ArcFace",
+                detector_backend="opencv",
+                enforce_detection=False,
+                align=True,
+            )
+            if not representations:
+                return None
+            # Maior rosto por área (facial_area fornecida pelo DeepFace)
+            rep = max(
+                representations,
+                key=lambda r: r.get("facial_area", {}).get("w", 0) * r.get("facial_area", {}).get("h", 0),
+            )
+            area = rep.get("facial_area", {})
+            x, y, fw, fh = area.get("x", 0), area.get("y", 0), area.get("w", w), area.get("h", h)
+            x0, y0 = max(0, x), max(0, y)
+            x1, y1 = min(w, x + fw), min(h, y + fh)
+            if x1 <= x0 or y1 <= y0:
+                return None
+            crop = image_bgr[y0:y1, x0:x1]
+            ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, settings.DETECTION_JPEG_QUALITY])
+            crop_bytes = buf.tobytes() if ok else None
+            if not crop_bytes:
+                return None
+            face_box = FaceBox(
+                bbox_x=x0, bbox_y=y0, bbox_w=x1 - x0, bbox_h=y1 - y0,
+                confidence=round(float(rep.get("face_confidence", 1.0)), 3),
+                crop_bytes=crop_bytes,
+            )
+            raw_emb = rep.get("embedding") or []
+            if not raw_emb:
+                return None
+            emb_arr = np.asarray(raw_emb, dtype=float)
+            norm = float(np.linalg.norm(emb_arr))
+            embedding = (emb_arr / norm).tolist() if norm > 0 else emb_arr.tolist()
+            return (face_box, embedding)
+        except Exception as exc:
+            logger.warning("DeepFace detect_and_embed falhou (%s)", exc)
+            return None
+
+    def detect(self, image_bytes: bytes) -> list["FaceBox"]:
+        result = self.detect_and_embed(image_bytes)
+        if result is None:
+            return []
+        face_box, _ = result
+        return [face_box]
+
+    def embed(self, image_bytes: bytes) -> Optional[list[float]]:
+        result = self.detect_and_embed(image_bytes)
+        if result is None:
+            return None
+        _, embedding = result
+        return embedding
+
+
+# ─── Registro de motores locais ───────────────────────────────────────────────
+
+_insightface_engine = InsightFaceEngine()
+_deepface_engine = DeepFaceEngine()
+
+_LOCAL_ENGINES: dict[str, object] = {
+    "opencv": face_engine,
+    "insightface": _insightface_engine,
+    "deepface": _deepface_engine,
+}
+
+
+def get_local_engine(engine_type: str) -> "OpenCVFaceEngine | InsightFaceEngine | DeepFaceEngine":
+    """Retorna a instância singleton do motor local correspondente ao tipo."""
+    return _LOCAL_ENGINES.get(engine_type, face_engine)  # type: ignore[return-value]

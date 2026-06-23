@@ -26,13 +26,35 @@ import {
   Trash2,
 } from "lucide-react";
 
-type EngineType = "opencv" | "rekognition" | "luxand" | "facepp";
+type EngineType = "opencv" | "insightface" | "deepface" | "rekognition" | "luxand" | "facepp";
 
-const ENGINES: { value: EngineType; label: string; desc: string }[] = [
-  { value: "opencv", label: "OpenCV (local)", desc: "Motor local YuNet+SFace, sem credenciais." },
-  { value: "rekognition", label: "AWS Rekognition", desc: "Access key, secret e região." },
-  { value: "luxand", label: "Luxand", desc: "Token de API." },
-  { value: "facepp", label: "Face++", desc: "API key e secret." },
+const LOCAL_ENGINES: EngineType[] = ["opencv", "insightface", "deepface"];
+
+interface EngineInfo { value: EngineType; label: string; desc: string; free: boolean; recommended?: boolean }
+
+const ENGINES: EngineInfo[] = [
+  {
+    value: "insightface",
+    label: "InsightFace / ArcFace",
+    desc: "Motor local de alta precisão — ArcFace é o estado da arte em reconhecimento facial. Recomendado.",
+    free: true,
+    recommended: true,
+  },
+  {
+    value: "deepface",
+    label: "DeepFace / ArcFace",
+    desc: "Motor local via DeepFace com backend ArcFace. Alta precisão, modelos baixados no primeiro uso (~170 MB).",
+    free: true,
+  },
+  {
+    value: "opencv",
+    label: "OpenCV (YuNet + SFace)",
+    desc: "Motor local básico já embutido na imagem. Menor precisão — prefira InsightFace.",
+    free: true,
+  },
+  { value: "rekognition", label: "AWS Rekognition", desc: "Access key, secret e região AWS. Cobrado por imagem.", free: false },
+  { value: "luxand", label: "Luxand Cloud", desc: "Token de API Luxand. Cobrado por requisição.", free: false },
+  { value: "facepp", label: "Face++", desc: "API key e secret Face++. Cobrado por requisição.", free: false },
 ];
 
 const DAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
@@ -61,7 +83,16 @@ interface AlertForm {
   cooldown_minutes: string;
 }
 
-const EMPTY_FORM: EngineForm = { api_token: "", api_secret: "", api_url: "", region: "", threshold: "0.80" };
+const DEFAULT_THRESHOLDS: Partial<Record<EngineType, string>> = {
+  insightface: "0.40",
+  deepface: "0.40",
+  opencv: "0.36",
+  rekognition: "0.80",
+  luxand: "0.80",
+  facepp: "0.80",
+};
+
+const EMPTY_FORM: EngineForm = { api_token: "", api_secret: "", api_url: "", region: "", threshold: "0.40" };
 const EMPTY_ALERT: AlertForm = {
   unknown_face_active: false,
   unknown_face_email: "",
@@ -296,7 +327,7 @@ export function FaceConfigManager() {
   const [configs, setConfigs] = useState<FaceEngineConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<EngineType>("rekognition");
+  const [selected, setSelected] = useState<EngineType>("insightface");
   const [form, setForm] = useState<EngineForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<Record<string, FaceEngineTestResult>>({});
@@ -340,12 +371,14 @@ export function FaceConfigManager() {
     setSaving(true);
     setError("");
     try {
-      const payload: Record<string, string | number | null> = {
-        api_token: form.api_token.trim() || null,
-        api_secret: form.api_secret.trim() || null,
-        api_url: form.api_url.trim() || null,
-        region: form.region.trim() || null,
-        threshold: Number(form.threshold) || 0.8,
+      const isLocal = LOCAL_ENGINES.includes(selected);
+      const payload: Record<string, string | number | null | boolean> = {
+        mode: isLocal ? "local" : "cloud",
+        api_token: isLocal ? null : (form.api_token.trim() || null),
+        api_secret: isLocal ? null : (form.api_secret.trim() || null),
+        api_url: isLocal ? null : (form.api_url.trim() || null),
+        region: isLocal ? null : (form.region.trim() || null),
+        threshold: Number(form.threshold) || (isLocal ? 0.40 : 0.80),
       };
       if (editing) {
         await api.patch(`/api/face-config/${editing.id}`, payload);
@@ -461,10 +494,17 @@ export function FaceConfigManager() {
               <div key={c.id} className="bg-white rounded-xl border shadow-sm p-4">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold capitalize">{c.engine_type}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold">
+                        {ENGINES.find((e) => e.value === c.engine_type)?.label ?? c.engine_type}
+                      </span>
                       {c.is_active && (
                         <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">ativo</span>
+                      )}
+                      {ENGINES.find((e) => e.value === c.engine_type)?.free ? (
+                        <span className="text-xs bg-green-50 text-green-600 px-1.5 py-0.5 rounded border border-green-200">Gratuito</span>
+                      ) : (
+                        <span className="text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-200">Pago</span>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -602,7 +642,7 @@ export function FaceConfigManager() {
             ))}
             {!imageTestResult.found && (
               <div className="p-3 rounded-lg bg-gray-50 border text-sm text-gray-600">
-                Nenhum rosto detectado pelo YuNet. Tente uma foto com rosto visível e frontal.
+                Nenhum rosto detectado. Tente uma foto com rosto visível, frontal e bem iluminado.
               </div>
             )}
           </div>
@@ -655,25 +695,53 @@ export function FaceConfigManager() {
 
         <div>
           <label className="block text-xs font-medium mb-1.5">Motor</label>
-          <select
-            value={selected}
-            disabled={!!editing}
-            onChange={(e) => {
-              setSelected(e.target.value as EngineType);
-              setForm(EMPTY_FORM);
-            }}
-            className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
+          <div className="grid grid-cols-1 gap-2">
             {ENGINES.map((eng) => (
-              <option key={eng.value} value={eng.value}>
-                {eng.label}
-              </option>
+              <label
+                key={eng.value}
+                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${
+                  editing ? "opacity-50 cursor-not-allowed" : ""
+                } ${
+                  selected === eng.value
+                    ? "border-primary bg-primary/5"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="engine"
+                  value={eng.value}
+                  checked={selected === eng.value}
+                  disabled={!!editing}
+                  onChange={() => {
+                    if (!editing) {
+                      setSelected(eng.value);
+                      setForm({ ...EMPTY_FORM, threshold: DEFAULT_THRESHOLDS[eng.value] ?? "0.80" });
+                    }
+                  }}
+                  className="mt-0.5 accent-primary"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium">{eng.label}</span>
+                    {eng.free ? (
+                      <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">Gratuito</span>
+                    ) : (
+                      <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Pago</span>
+                    )}
+                    {eng.recommended && (
+                      <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Recomendado</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{eng.desc}</p>
+                </div>
+              </label>
             ))}
-          </select>
-          <p className="text-xs text-muted-foreground mt-1">{ENGINES.find((e) => e.value === selected)?.desc}</p>
+          </div>
         </div>
 
-        {selected !== "opencv" && (
+        {/* Credenciais: apenas para motores de nuvem (pagos) */}
+        {!LOCAL_ENGINES.includes(selected) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium mb-1.5">

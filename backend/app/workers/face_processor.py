@@ -37,29 +37,30 @@ try:
         expires_at_str: Optional[str],
     ) -> None:
         """Detecta e identifica o rosto de uma pessoa, grava FaceDetection e dispara alertas."""
-        from app.services.face_detection_service import face_engine
-        from app.services.face_service import face_recognizer
+        from app.services.face_detection_service import get_local_engine
+        from app.services.face_service import face_recognizer, LOCAL_ENGINE_TYPES
 
         person_crop = base64.b64decode(person_crop_b64)
 
-        # YuNet + SFace em passagem única (elimina double-YuNet)
-        result = face_engine.detect_and_embed(person_crop)
+        engine_type = face_recognizer.resolve_engine_type(client_id)
+        # Usa o motor configurado para detectar e gerar embedding
+        eng = get_local_engine(engine_type) if engine_type in LOCAL_ENGINE_TYPES else get_local_engine("opencv")
+        result = eng.detect_and_embed(person_crop)
         if result is None:
             logger.info(
-                "face async camera=%s track=%s: YuNet não encontrou rosto "
+                "face async camera=%s track=%s: motor=%s não encontrou rosto "
                 "(pessoa %dx%d px) — ângulo/distância/iluminação inadequados",
-                camera_id, track_id, bbox.get("w", 0), bbox.get("h", 0),
+                camera_id, track_id, engine_type, bbox.get("w", 0), bbox.get("h", 0),
             )
             return
 
         face_box, embedding = result
-        engine_type = face_recognizer.resolve_engine_type(client_id)
 
-        # Identificação: usa embedding pré-computado se motor é opencv,
-        # senão envia a imagem ao motor de nuvem configurado.
+        # Identificação: motores locais usam embedding pré-computado;
+        # motores de nuvem enviam a imagem do recorte.
         match: Optional[object] = None
-        if engine_type == "opencv" and embedding:
-            match = face_recognizer.identify_by_embedding(client_id, embedding)
+        if engine_type in LOCAL_ENGINE_TYPES and embedding:
+            match = face_recognizer.identify_by_embedding(client_id, embedding, engine_type)
         else:
             match = face_recognizer.identify(client_id or "", face_box.crop_bytes)
 

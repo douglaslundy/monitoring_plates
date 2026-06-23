@@ -9,6 +9,8 @@ from app.core.database import Base
 
 class FaceEngineType(str, enum.Enum):
     opencv = "opencv"
+    insightface = "insightface"
+    deepface = "deepface"
     rekognition = "rekognition"
     luxand = "luxand"
     facepp = "facepp"
