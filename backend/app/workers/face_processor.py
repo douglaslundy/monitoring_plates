@@ -87,6 +87,15 @@ try:
         from app.core.database import SessionLocal
         from app.models.face_detection import FaceDetection
 
+        # Sinaliza para o frame_processor que este track já teve rosto detectado,
+        # evitando re-enfileirar nas próximas tentativas de retry.
+        try:
+            import redis as _rmod
+            _rc = _rmod.from_url(settings.REDIS_URL, decode_responses=True)
+            _rc.setex(f"face_ok:{camera_id}:{track_id}", 7200, "1")
+        except Exception:
+            pass
+
         db = SessionLocal()
         try:
             fd = FaceDetection(

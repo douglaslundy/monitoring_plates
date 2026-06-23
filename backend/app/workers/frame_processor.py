@@ -596,14 +596,32 @@ try:
                         if getattr(_fd, "category", None) != "person":
                             continue
                         _tr = det_to_track.get(_fi)
-                        # Dispara na 1ª detecção (não aguarda counted=True):
-                        # esperar 2 votos fazia o crop ser do frame em que a pessoa
-                        # já estava virando. O faces-worker descarta se crop for ruim.
-                        if _tr is None or _tr.get("face_saved"):
+                        if _tr is None:
                             continue
 
-                        # Marca imediatamente para não re-enfileirar no próximo frame
-                        _tr["face_saved"] = True
+                        # Tenta detecção facial por até 8 frames (a cada 3 frames)
+                        # para cobrir casos em que a pessoa está de costas inicialmente.
+                        # O worker sinaliza sucesso via Redis (face_ok) e paramos de tentar.
+                        _face_attempts = _tr.get("face_attempts", 0)
+                        if _face_attempts >= 8:
+                            continue
+
+                        _face_frame_c = _tr.get("face_frame_count", 0) + 1
+                        _tr["face_frame_count"] = _face_frame_c
+
+                        # Tenta no 1º frame e depois a cada 3 frames
+                        if _face_frame_c % 3 != 1:
+                            continue
+
+                        # Para se o worker já encontrou a face com sucesso
+                        _face_key = f"face_ok:{camera_id}:{_tr.get('track_id', '')}"
+                        try:
+                            if cache and cache.get(_face_key):
+                                continue
+                        except Exception:
+                            pass
+
+                        _tr["face_attempts"] = _face_attempts + 1
 
                         process_face.apply_async(
                             kwargs={

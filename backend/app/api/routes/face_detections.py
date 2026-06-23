@@ -2,6 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
@@ -10,9 +11,13 @@ from app.models.camera import Camera
 from app.models.person import Person
 from app.models.user import User, UserRole
 from app.schemas.face_detection import FaceDetectionRead
-from app.services.storage_service import get_url
+from app.services.storage_service import get_url, delete_file
 
 router = APIRouter(prefix="/face-detections", tags=["face-detections"])
+
+
+class BulkDeleteFaceRequest(BaseModel):
+    ids: List[UUID]
 
 
 def _serialize(fd: FaceDetection, camera: Camera, person: Optional[Person]) -> FaceDetectionRead:
@@ -81,3 +86,38 @@ def get_face_detection(
     if current_user.role != UserRole.super_admin and camera.client_id != current_user.client_id:
         raise HTTPException(status_code=403, detail="Acesso negado")
     return _serialize(fd, camera, person)
+
+
+@router.delete("/bulk", status_code=200)
+def bulk_delete_face_detections(
+    payload: BulkDeleteFaceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in (UserRole.super_admin, UserRole.client_admin):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    query = db.query(FaceDetection).filter(FaceDetection.id.in_(payload.ids))
+    if current_user.role == UserRole.client_admin:
+        cam_ids = [
+            c.id
+            for c in db.query(Camera).filter(Camera.client_id == current_user.client_id).all()
+        ]
+        query = query.filter(FaceDetection.camera_id.in_(cam_ids))
+
+    detections = query.all()
+    seen_images: set[str] = set()
+    deleted = 0
+
+    for fd in detections:
+        if fd.image_path and fd.image_path not in seen_images:
+            seen_images.add(fd.image_path)
+            try:
+                delete_file(fd.image_path)
+            except Exception:
+                pass
+        db.delete(fd)
+        deleted += 1
+
+    db.commit()
+    return {"deleted": deleted}
