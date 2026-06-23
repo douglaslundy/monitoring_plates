@@ -130,6 +130,75 @@ def test_veiculo_parado_vai_ao_ocr_uma_vez(db):
     assert db.query(Occurrence).filter(Occurrence.plate == "HBR2A18").count() == 1
 
 
+def test_tres_veiculos_compartilham_uma_imagem(db):
+    """3 veículos NOVOS no mesmo frame -> 3 ocorrências (contagem mantida) mas
+    UMA imagem só (save_bytes chamado 1x) compartilhada por todos."""
+    from app.models.plan import Plan
+    from app.models.client import Client
+    from app.models.camera import Camera, ConnectionType
+    from app.models.occurrence import Occurrence
+    from app.core.database import engine
+    from sqlalchemy.orm import sessionmaker
+
+    plan = Plan(name="P3V", max_cameras=1, retention_days=30, email_alerts=False,
+                realtime_alerts=False, price_monthly=0, is_active=True)
+    db.add(plan); db.commit(); db.refresh(plan)
+    tenant = Client(name="T3V", email="t3v@t.com", plan_id=plan.id, is_active=True)
+    db.add(tenant); db.commit(); db.refresh(tenant)
+    cam = Camera(client_id=tenant.id, name="C3V", location="L3V",
+                 connection_type=ConnectionType.rtsp, rtsp_url="rtsp://x/3v", is_active=True)
+    db.add(cam); db.commit(); db.refresh(cam)
+
+    mock_recognizer = MagicMock()
+    mock_recognizer.recognize.side_effect = [
+        {"plate": "AAA1A11", "confidence": 0.9},
+        {"plate": "BBB2B22", "confidence": 0.9},
+        {"plate": "CCC3C33", "confidence": 0.9},
+    ]
+    mock_detector = MagicMock()
+    mock_detector.detect.return_value = [
+        _vehicle_detection(x=40, y=60),
+        _vehicle_detection(x=260, y=60),
+        _vehicle_detection(x=460, y=320),  # dentro do frame (não na borda)
+    ]
+    worker_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    fake = FakeRedis()
+    track_store = {"state": []}
+
+    def fake_load(_cid):
+        return copy.deepcopy(track_store["state"])
+
+    def fake_save(_cid, state):
+        track_store["state"] = copy.deepcopy(state)
+
+    mock_save = MagicMock(return_value="cameras/test/shared.jpg")
+
+    with patch("app.core.database.SessionLocal", worker_session), \
+         patch("app.services.ocr_service.recognizer", mock_recognizer), \
+         patch("app.services.vehicle_detection_service.vehicle_detector", mock_detector), \
+         patch("app.services.frame_quality_service.crop_quality", return_value=0.9), \
+         patch("app.services.storage_service.save_bytes", mock_save), \
+         patch("app.services.detection_overlay_service.draw_detections", return_value=b"drawn"), \
+         patch("app.services.alert_service.process_alerts"), \
+         patch("app.services.object_tracker_service.load_tracks", fake_load), \
+         patch("app.services.object_tracker_service.save_tracks", fake_save), \
+         patch("app.services.preview_telemetry_service.record_preview_frame"), \
+         patch("app.services.preview_telemetry_service.get_preview_telemetry", return_value=_Telemetry()), \
+         patch("app.services.image_quality_service.record_image_quality"), \
+         patch("app.services.ocr_pipeline_metrics_service.record_ocr_pipeline_metrics"), \
+         patch("app.services.ocr_pipeline_alert_service.maybe_publish_ocr_pipeline_alert"), \
+         patch("app.services.camera_health_alert_service.maybe_publish_camera_health_alert"), \
+         patch("app.services.worker_delay_alert_service.maybe_publish_worker_delay_alert"), \
+         patch("redis.from_url", return_value=fake):
+        from app.workers import frame_processor
+        importlib.reload(frame_processor)
+        frame_processor.process_frame(str(cam.id), base64.b64encode(b"frame3v").decode())
+
+    plates = {o.plate for o in db.query(Occurrence).all()}
+    assert plates == {"AAA1A11", "BBB2B22", "CCC3C33"}  # 3 ocorrências (contagem mantida)
+    assert mock_save.call_count == 1  # UMA imagem só para os 3 veículos
+
+
 def test_parado_dormant_nao_reocr_quando_outro_passa(db):
     """R1: um veículo PARADO já lido (dormant) NÃO é reenviado ao OCR quando outro
     objeto passa; só o objeto NOVO vai ao OCR."""
