@@ -311,7 +311,6 @@ export function FaceConfigManager() {
   const [imageTestResult, setImageTestResult] = useState<FaceImageTestResult | null>(null);
   const [imageTesting, setImageTesting] = useState(false);
   const [imageTestError, setImageTestError] = useState("");
-  const [testCameraId, setTestCameraId] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -424,7 +423,7 @@ export function FaceConfigManager() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      if (testCameraId) formData.append("camera_id", testCameraId);
+
       const { data } = await api.post<FaceImageTestResult>("/api/face-config/test-image", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -528,19 +527,9 @@ export function FaceConfigManager() {
           <ImageIcon className="h-4 w-4 text-amber-500" /> Testar com imagem
         </div>
         <p className="text-xs text-muted-foreground">
-          Envie uma foto para verificar detecção/reconhecimento. Selecione uma câmera para disparar alerta de face desconhecida caso não haja match.
+          Envie uma foto para verificar detecção/reconhecimento. Se a face não for reconhecida, o alerta de face desconhecida será disparado automaticamente para todas as câmeras configuradas.
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          <select
-            value={testCameraId}
-            onChange={(e) => setTestCameraId(e.target.value)}
-            className="text-sm border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-          >
-            <option value="">— Câmera (opcional, para alerta desconhecido)</option>
-            {cameras.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
           <input
             ref={fileInputRef}
             type="file"

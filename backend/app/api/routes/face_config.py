@@ -175,6 +175,7 @@ async def test_image(
     from app.models.person import Person
     from app.models.camera import Camera
     from app.models.face_detection import FaceDetection
+    from app.models.face_camera_alert_config import FaceCameraAlertConfig
 
     image_bytes = await file.read()
     if not image_bytes:
@@ -190,13 +191,25 @@ async def test_image(
             "alerts_fired": [],
         }
 
-    # Câmera opcional: usada para disparar alerta de face desconhecida
-    camera = None
+    # Câmeras com alerta de face desconhecida ativo
+    # Se camera_id informado: usa só essa câmera; caso contrário: todas com unknown_face_active
+    alert_cameras: list[Camera] = []
     if camera_id:
         try:
-            camera = db.query(Camera).filter(Camera.id == uuid.UUID(camera_id)).first()
+            cam = db.query(Camera).filter(Camera.id == uuid.UUID(camera_id)).first()
+            if cam:
+                alert_cameras = [cam]
         except Exception:
             pass
+    else:
+        cfg_rows = (
+            db.query(FaceCameraAlertConfig)
+            .filter(FaceCameraAlertConfig.unknown_face_active.is_(True))
+            .all()
+        )
+        cam_ids = [row.camera_id for row in cfg_rows]
+        if cam_ids:
+            alert_cameras = db.query(Camera).filter(Camera.id.in_(cam_ids)).all()
 
     now_str = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S")
     faces = []
@@ -243,28 +256,29 @@ async def test_image(
                 except Exception:
                     pass
 
-        # Alerta de face DESCONHECIDA: cria FaceDetection e dispara via pipeline normal
-        if person is None and camera is not None:
-            try:
-                from app.services.face_alert_service import process_unknown_face_alert
-                fd = FaceDetection(
-                    camera_id=camera.id,
-                    person_id=None,
-                    confidence=None,
-                    image_path=None,
-                    bbox_x=box.bbox_x,
-                    bbox_y=box.bbox_y,
-                    bbox_w=box.bbox_w,
-                    bbox_h=box.bbox_h,
-                    track_id="test",
-                    face_engine_used="opencv",
-                )
-                db.add(fd)
-                db.flush()
-                process_unknown_face_alert(str(fd.id), db)
-                alerts_fired.append(f"unknown_face:camera={camera.name}")
-            except Exception:
-                pass
+        # Alerta de face DESCONHECIDA: dispara para todas as câmeras configuradas
+        if person is None and alert_cameras:
+            from app.services.face_alert_service import process_unknown_face_alert
+            for cam in alert_cameras:
+                try:
+                    fd = FaceDetection(
+                        camera_id=cam.id,
+                        person_id=None,
+                        confidence=None,
+                        image_path=None,
+                        bbox_x=box.bbox_x,
+                        bbox_y=box.bbox_y,
+                        bbox_w=box.bbox_w,
+                        bbox_h=box.bbox_h,
+                        track_id="test",
+                        face_engine_used="opencv",
+                    )
+                    db.add(fd)
+                    db.flush()
+                    process_unknown_face_alert(str(fd.id), db)
+                    alerts_fired.append(f"unknown_face:camera={cam.name}")
+                except Exception:
+                    pass
 
         faces.append({
             "bbox": {"x": box.bbox_x, "y": box.bbox_y, "w": box.bbox_w, "h": box.bbox_h},
