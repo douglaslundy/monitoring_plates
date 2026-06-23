@@ -297,18 +297,28 @@ class CaptureManager:
                 del self._workers[camera_id]
 
         # Inicia threads novas.
+        new_started = False
         for camera_id, cfg in desired.items():
             if camera_id not in self._workers:
-                # Registra no go2rtc para o live WebRTC (best-effort).
-                try:
-                    from app.services.go2rtc_service import register_stream
-
-                    register_stream(camera_id, cfg["rtsp_url"], cfg["dual_lens"], cfg["lens_side"])
-                except Exception:
-                    pass
                 worker = CameraCapture(camera_id, cfg["rtsp_url"], cfg["dual_lens"], cfg["lens_side"])
                 worker.start()
                 self._workers[camera_id] = worker
+                new_started = True
+
+        # Resincroniza todos os streams go2rtc quando há mudanças — usa sync_streams
+        # para detectar câmeras com o mesmo RTSP URL e criar stream base único,
+        # evitando múltiplas conexões simultâneas ao mesmo DVR.
+        if new_started:
+            try:
+                from app.services.go2rtc_service import sync_streams
+                from app.core.database import SessionLocal
+                _db = SessionLocal()
+                try:
+                    sync_streams(_db)
+                finally:
+                    _db.close()
+            except Exception as exc:
+                logger.debug("go2rtc sync falhou: %s", exc)
 
     def run(self) -> None:
         logger.info("capture-runner iniciado")
