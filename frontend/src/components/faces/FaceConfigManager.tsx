@@ -550,6 +550,11 @@ export function FaceConfigManager() {
         {imageTestResult && (
           <div className="space-y-3">
             <p className="text-sm font-medium">{imageTestResult.message}</p>
+            {(imageTestResult as any).debug && (
+              <p className="text-xs text-muted-foreground font-mono">
+                similaridade: {((imageTestResult as any).debug.best_sim ?? "—")} | threshold: {(imageTestResult as any).debug.threshold}
+              </p>
+            )}
 
             {/* Imagem anotada com bboxes */}
             {imageTestResult.annotated_image && (

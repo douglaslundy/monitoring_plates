@@ -216,10 +216,13 @@ async def test_image(
     boxes_for_draw: list[dict] = []
     alerts_fired: list[str] = []
 
+    # Roda identify uma vez (usa imagem completa internamente via detect_and_embed)
+    _global_match = face_recognizer.identify_all(image_bytes)
+    _debug_sim = _global_match.best_sim if _global_match else None
+    print(f"[FACE-TEST] detect_and_embed={'ok' if _global_match is not None else 'None'} best_sim={_debug_sim} candidates=?", flush=True)
+
     for box in face_boxes:
-        # Usa imagem COMPLETA para identify_all — embed() re-executaria YuNet
-        # sobre o recorte (face preenchendo o frame), onde o YuNet falha em detectar.
-        match = face_recognizer.identify_all(image_bytes)
+        match = _global_match
         person: Person | None = None
         person_info = None
 
@@ -314,4 +317,5 @@ async def test_image(
         "faces": faces,
         "annotated_image": annotated_image or None,
         "alerts_fired": alerts_fired,
+        "debug": {"best_sim": _debug_sim, "threshold": settings.FACE_MATCH_THRESHOLD},
     }
