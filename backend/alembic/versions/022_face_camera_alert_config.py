@@ -21,7 +21,7 @@ def upgrade() -> None:
         "face_camera_alert_configs",
         sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("camera_id", sa.Uuid(as_uuid=True), nullable=False),
-        sa.Column("unknown_face_active", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("unknown_face_active", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("unknown_face_email", sa.String(255), nullable=True),
         sa.Column("unknown_face_whatsapp", sa.String(30), nullable=True),
         sa.Column("schedule_start_time", sa.String(8), nullable=True),
