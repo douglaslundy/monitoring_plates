@@ -2,7 +2,7 @@ import uuid
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_super_admin
@@ -154,3 +154,65 @@ def test_config(
         return FaceEngineTestResult(success=False, engine_type=config.engine_type, message=f"Erro ao conectar: {str(e)}")
 
     return FaceEngineTestResult(success=False, engine_type=config.engine_type, message="Motor desconhecido.")
+
+
+@router.post("/test-image")
+async def test_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_super_admin),
+):
+    """Executa detecção e identificação facial em imagem enviada (sem salvar no banco).
+    Útil para verificar se o motor de faces está funcionando corretamente."""
+    from app.services.face_detection_service import face_engine
+    from app.services.face_service import face_recognizer
+    from app.models.person import Person
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+
+    # Detecta rostos na imagem
+    face_boxes = face_engine.detect(image_bytes)
+    if not face_boxes:
+        return {
+            "found": False,
+            "message": "Nenhum rosto detectado na imagem pelo motor local (YuNet).",
+            "faces": [],
+        }
+
+    faces = []
+    for box in face_boxes:
+        # Tenta identificar (usa motor do sistema — fallback p/ local)
+        match = face_recognizer.identify("__test__", box.crop_bytes)
+        person_info = None
+        if match:
+            person = db.query(Person).filter(Person.id == uuid.UUID(match.person_id)).first()
+            if person:
+                person_info = {
+                    "id": str(person.id),
+                    "name": person.name,
+                    "alert_active": person.alert_active,
+                    "has_email": bool(person.alert_email),
+                    "has_whatsapp": bool(person.alert_whatsapp),
+                }
+
+        faces.append({
+            "bbox": {
+                "x": box.bbox_x, "y": box.bbox_y,
+                "w": box.bbox_w, "h": box.bbox_h,
+            },
+            "confidence": box.confidence,
+            "match": {
+                "person_id": match.person_id if match else None,
+                "match_confidence": match.confidence if match else None,
+                "person": person_info,
+            } if match else {"person_id": None, "match_confidence": None, "person": None},
+        })
+
+    recognized = [f for f in faces if f["match"]["person_id"]]
+    return {
+        "found": True,
+        "message": f"{len(faces)} rosto(s) detectado(s), {len(recognized)} reconhecido(s).",
+        "faces": faces,
+    }

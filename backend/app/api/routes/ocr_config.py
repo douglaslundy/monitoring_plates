@@ -192,3 +192,74 @@ async def test_config(
             engine_type=OcrEngineType.plate_recognizer,
             message=f"Erro ao conectar: {str(e)}",
         )
+
+
+@router.post("/test-image")
+async def test_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_super_admin),
+):
+    """Executa OCR em uma imagem enviada pelo usuário (sem salvar no banco).
+    Útil para diagnosticar se o motor está lendo placas corretamente."""
+    from app.services.ocr_service import recognizer
+    from app.services.vehicle_detection_service import vehicle_detector
+    from app.models.monitored_plate import MonitoredPlate
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+
+    # Detecta veículos no frame
+    detections = vehicle_detector.detect(image_bytes)
+    if not detections:
+        return {"found": False, "message": "Nenhum veículo detectado na imagem.", "results": []}
+
+    results = []
+    for det in detections:
+        if det.category != "vehicle":
+            continue
+        ocr_result = recognizer.recognize(det.crop_bytes, camera_id=None)
+        if ocr_result is None:
+            results.append({
+                "category": det.category,
+                "vehicle_type": det.vehicle_type,
+                "confidence": det.confidence,
+                "plate": None,
+                "ocr_confidence": None,
+                "alert": None,
+            })
+            continue
+
+        plate = ocr_result.get("plate")
+        # Verifica se a placa está monitorada (sem salvar alerta)
+        alert_info = None
+        if plate:
+            monitored = (
+                db.query(MonitoredPlate)
+                .filter(MonitoredPlate.plate == plate, MonitoredPlate.is_active == True)  # noqa: E712
+                .first()
+            )
+            if monitored:
+                alert_info = {
+                    "monitored": True,
+                    "description": monitored.description,
+                    "has_email": bool(monitored.alert_email),
+                    "has_whatsapp": bool(monitored.alert_whatsapp),
+                }
+
+        results.append({
+            "category": det.category,
+            "vehicle_type": det.vehicle_type,
+            "confidence": det.confidence,
+            "plate": plate,
+            "ocr_confidence": ocr_result.get("confidence"),
+            "engine": ocr_result.get("engine"),
+            "alert": alert_info,
+        })
+
+    return {
+        "found": any(r["plate"] for r in results),
+        "message": f"{len(results)} veículo(s) detectado(s).",
+        "results": results,
+    }

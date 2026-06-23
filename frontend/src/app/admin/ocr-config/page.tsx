@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import api from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
+import type { OcrImageTestResult } from "@/types";
 import {
   ScanLine,
   Plus,
@@ -16,6 +17,9 @@ import {
   FlaskConical,
   Power,
   Cpu,
+  ImageIcon,
+  Upload,
+  AlertTriangle,
 } from "lucide-react";
 
 type EngineType = "fast_alpr" | "easyocr" | "plate_recognizer";
@@ -85,6 +89,11 @@ export default function OcrConfigPage() {
   const [testing, setTesting] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<OcrEngineConfig | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Teste com imagem
+  const [imageTestResult, setImageTestResult] = useState<OcrImageTestResult | null>(null);
+  const [imageTesting, setImageTesting] = useState(false);
+  const [imageTestError, setImageTestError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Modelo de detecção (YOLO) — Tarefa A.
   const [detModel, setDetModel] = useState<{ current: string; default: string; available: string[] } | null>(null);
   const [savingModel, setSavingModel] = useState(false);
@@ -220,6 +229,27 @@ export default function OcrConfigPage() {
     }
   }
 
+  async function testWithImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageTesting(true);
+    setImageTestError("");
+    setImageTestResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { data } = await api.post<OcrImageTestResult>("/api/ocr-config/test-image", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setImageTestResult(data);
+    } catch {
+      setImageTestError("Erro ao processar a imagem.");
+    } finally {
+      setImageTesting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   async function testConnection(cfg: OcrEngineConfig) {
     setTesting(cfg.id);
     try {
@@ -340,6 +370,74 @@ export default function OcrConfigPage() {
           </p>
         </div>
       )}
+
+      {/* Testar motor com imagem */}
+      <div className="mb-6 bg-white border rounded-xl p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
+            <ImageIcon className="h-5 w-5 text-amber-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold">Testar com imagem</h3>
+            <p className="text-sm text-muted-foreground">
+              Envie uma foto para verificar se o motor OCR lê a placa corretamente (sem salvar no banco).
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={testWithImage}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={imageTesting}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors disabled:opacity-50"
+          >
+            <Upload className="h-4 w-4" />
+            {imageTesting ? "Processando..." : "Enviar imagem"}
+          </button>
+        </div>
+        {imageTestError && (
+          <p className="mt-3 text-sm text-red-600">{imageTestError}</p>
+        )}
+        {imageTestResult && (
+          <div className="mt-4 space-y-2">
+            <p className="text-sm font-medium text-gray-700">{imageTestResult.message}</p>
+            {imageTestResult.results.map((r, i) => (
+              <div key={i} className={`p-3 rounded-lg border text-sm ${r.plate ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+                <div className="flex items-center gap-2">
+                  {r.plate
+                    ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                    : <XCircle className="h-4 w-4 text-gray-400 shrink-0" />}
+                  <span className="font-medium">{r.plate ?? "Placa não lida"}</span>
+                  {r.plate && <Badge variant="info">{r.vehicle_type}</Badge>}
+                  {r.ocr_confidence !== null && (
+                    <Badge variant="default">{(r.ocr_confidence * 100).toFixed(0)}% OCR</Badge>
+                  )}
+                  {r.engine && <Badge variant="default">{r.engine}</Badge>}
+                </div>
+                {r.alert && (
+                  <div className="mt-2 flex items-center gap-1.5 text-amber-700">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    <span className="text-xs font-medium">PLACA MONITORADA{r.alert.description ? ` — ${r.alert.description}` : ""}</span>
+                    {r.alert.has_email && <Badge variant="warning">E-mail</Badge>}
+                    {r.alert.has_whatsapp && <Badge variant="warning">WhatsApp</Badge>}
+                  </div>
+                )}
+              </div>
+            ))}
+            {imageTestResult.results.length === 0 && !imageTestResult.found && (
+              <div className="p-3 rounded-lg bg-gray-50 border text-sm text-gray-600">
+                Nenhum veículo detectado. Tente uma imagem mais nítida com o veículo visível.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <div className="space-y-4">

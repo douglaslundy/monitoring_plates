@@ -1,11 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
-import type { FaceEngineConfig, FaceEngineTestResult } from "@/types";
-import { ScanFace, CheckCircle2, XCircle, Plus } from "lucide-react";
+import type {
+  FaceEngineConfig,
+  FaceEngineTestResult,
+  FaceCameraAlertConfig,
+  FaceImageTestResult,
+} from "@/types";
+import {
+  ScanFace,
+  CheckCircle2,
+  XCircle,
+  Plus,
+  ImageIcon,
+  Upload,
+  Bell,
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  Save,
+} from "lucide-react";
 
 type EngineType = "opencv" | "rekognition" | "luxand" | "facepp";
 
@@ -16,6 +33,8 @@ const ENGINES: { value: EngineType; label: string; desc: string }[] = [
   { value: "facepp", label: "Face++", desc: "API key e secret." },
 ];
 
+const DAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
 interface EngineForm {
   api_token: string;
   api_secret: string;
@@ -24,33 +43,289 @@ interface EngineForm {
   threshold: string;
 }
 
-const EMPTY: EngineForm = { api_token: "", api_secret: "", api_url: "", region: "", threshold: "0.80" };
+interface CameraBasic {
+  id: string;
+  name: string;
+  location: string | null;
+}
 
+interface AlertForm {
+  unknown_face_active: boolean;
+  unknown_face_email: string;
+  unknown_face_whatsapp: string;
+  schedule_start_time: string;
+  schedule_duration_minutes: string;
+  schedule_days_of_week: number[];
+  cooldown_minutes: string;
+}
+
+const EMPTY_FORM: EngineForm = { api_token: "", api_secret: "", api_url: "", region: "", threshold: "0.80" };
+const EMPTY_ALERT: AlertForm = {
+  unknown_face_active: false,
+  unknown_face_email: "",
+  unknown_face_whatsapp: "",
+  schedule_start_time: "",
+  schedule_duration_minutes: "",
+  schedule_days_of_week: [0, 1, 2, 3, 4, 5, 6],
+  cooldown_minutes: "0",
+};
+
+// ── Sub-componente: config de alertas por câmera ─────────────────────────────
+function CameraAlertRow({ cam }: { cam: CameraBasic }) {
+  const [config, setConfig] = useState<FaceCameraAlertConfig | null>(null);
+  const [form, setForm] = useState<AlertForm>(EMPTY_ALERT);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    api
+      .get<FaceCameraAlertConfig>(`/api/face-alert-config/${cam.id}`)
+      .then((r) => {
+        const c = r.data;
+        setConfig(c);
+        let days = [0, 1, 2, 3, 4, 5, 6];
+        try { if (c.schedule_days_of_week) days = JSON.parse(c.schedule_days_of_week); } catch {}
+        setForm({
+          unknown_face_active: c.unknown_face_active,
+          unknown_face_email: c.unknown_face_email ?? "",
+          unknown_face_whatsapp: c.unknown_face_whatsapp ?? "",
+          schedule_start_time: c.schedule_start_time ?? "",
+          schedule_duration_minutes: c.schedule_duration_minutes?.toString() ?? "",
+          schedule_days_of_week: days,
+          cooldown_minutes: c.cooldown_minutes?.toString() ?? "0",
+        });
+      })
+      .catch(() => {
+        setConfig(null);
+        setForm(EMPTY_ALERT);
+      });
+  }, [open, cam.id]);
+
+  function toggleDay(d: number) {
+    setForm((f) => ({
+      ...f,
+      schedule_days_of_week: f.schedule_days_of_week.includes(d)
+        ? f.schedule_days_of_week.filter((x) => x !== d)
+        : [...f.schedule_days_of_week, d].sort(),
+    }));
+  }
+
+  async function save() {
+    setSaving(true);
+    setErr("");
+    try {
+      const payload = {
+        unknown_face_active: form.unknown_face_active,
+        unknown_face_email: form.unknown_face_email.trim() || null,
+        unknown_face_whatsapp: form.unknown_face_whatsapp.trim() || null,
+        schedule_start_time: form.schedule_start_time.trim() || null,
+        schedule_duration_minutes: form.schedule_duration_minutes ? Number(form.schedule_duration_minutes) : null,
+        schedule_days_of_week: JSON.stringify(form.schedule_days_of_week),
+        cooldown_minutes: Number(form.cooldown_minutes) || 0,
+      };
+      const r = await api.put<FaceCameraAlertConfig>(`/api/face-alert-config/${cam.id}`, payload);
+      setConfig(r.data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e: unknown) {
+      setErr(extractErrorMessage(e, "Erro ao salvar."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border rounded-xl bg-white overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition text-left"
+      >
+        <div className="flex items-center gap-3">
+          <Camera className="h-4 w-4 text-muted-foreground" />
+          <div>
+            <span className="font-medium text-sm">{cam.name}</span>
+            {cam.location && <span className="text-xs text-muted-foreground ml-2">{cam.location}</span>}
+          </div>
+          {config && (config.unknown_face_active || config.cooldown_minutes > 0 || config.schedule_start_time) && (
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">configurado</span>
+          )}
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-4 border-t pt-4">
+          {/* Alerta de face desconhecida */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <Bell className="h-4 w-4" /> Alerta de face desconhecida
+            </h4>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.unknown_face_active}
+                onChange={(e) => setForm((f) => ({ ...f, unknown_face_active: e.target.checked }))}
+                className="h-4 w-4 rounded"
+              />
+              <span className="text-sm">Ativar alertas para faces não cadastradas</span>
+            </label>
+            {form.unknown_face_active && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-6">
+                <div>
+                  <label className="block text-xs font-medium mb-1">E-mail de alerta</label>
+                  <input
+                    type="email"
+                    value={form.unknown_face_email}
+                    onChange={(e) => setForm((f) => ({ ...f, unknown_face_email: e.target.value }))}
+                    placeholder="alerta@empresa.com"
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">WhatsApp de alerta</label>
+                  <input
+                    type="tel"
+                    value={form.unknown_face_whatsapp}
+                    onChange={(e) => setForm((f) => ({ ...f, unknown_face_whatsapp: e.target.value }))}
+                    placeholder="+5511999999999"
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Janela de horário */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold">Janela de horário (aplica a faces cadastradas e desconhecidas)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium mb-1">Horário de início</label>
+                <input
+                  type="time"
+                  value={form.schedule_start_time}
+                  onChange={(e) => setForm((f) => ({ ...f, schedule_start_time: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Duração (minutos após início)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={form.schedule_duration_minutes}
+                  onChange={(e) => setForm((f) => ({ ...f, schedule_duration_minutes: e.target.value }))}
+                  placeholder="ex: 480 (8h)"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-2">Dias da semana ativos</label>
+              <div className="flex gap-2 flex-wrap">
+                {DAYS.map((label, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleDay(idx)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                      form.schedule_days_of_week.includes(idx)
+                        ? "bg-primary text-primary-foreground"
+                        : "border bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Deixe horário e duração em branco para alertar 24h/dia.
+            </p>
+          </div>
+
+          {/* Cooldown */}
+          <div>
+            <label className="block text-sm font-semibold mb-1">
+              Cooldown entre alertas (minutos) — por câmera
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={10080}
+              value={form.cooldown_minutes}
+              onChange={(e) => setForm((f) => ({ ...f, cooldown_minutes: e.target.value }))}
+              className="w-32 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Após disparar um alerta para esta câmera, aguarda X minutos antes do próximo (0 = sem cooldown).
+            </p>
+          </div>
+
+          {err && <p className="text-sm text-red-600">{err}</p>}
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              {saving ? "Salvando…" : "Salvar"}
+            </button>
+            {saved && (
+              <span className="flex items-center gap-1 text-sm text-green-700">
+                <CheckCircle2 className="h-4 w-4" /> Salvo!
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Componente principal ─────────────────────────────────────────────────────
 export function FaceConfigManager() {
   const [configs, setConfigs] = useState<FaceEngineConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<EngineType>("rekognition");
-  const [form, setForm] = useState<EngineForm>(EMPTY);
+  const [form, setForm] = useState<EngineForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<Record<string, FaceEngineTestResult>>({});
+
+  // Câmeras (para alertas por câmera)
+  const [cameras, setCameras] = useState<CameraBasic[]>([]);
+
+  // Teste com imagem
+  const [imageTestResult, setImageTestResult] = useState<FaceImageTestResult | null>(null);
+  const [imageTesting, setImageTesting] = useState(false);
+  const [imageTestError, setImageTestError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await api.get<FaceEngineConfig[]>("/api/face-config");
-      setConfigs(res.data);
+      const [cfgRes, camRes] = await Promise.all([
+        api.get<FaceEngineConfig[]>("/api/face-config"),
+        api.get<CameraBasic[]>("/api/cameras"),
+      ]);
+      setConfigs(cfgRes.data);
+      setCameras(camRes.data.filter((c: CameraBasic & { enable_face?: boolean }) => true));
     } catch (e: unknown) {
-      setError(extractErrorMessage(e, "Não foi possível carregar os motores de face."));
+      setError(extractErrorMessage(e, "Não foi possível carregar configurações."));
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   function existing(engine: EngineType): FaceEngineConfig | undefined {
     return configs.find((c) => c.engine_type === engine);
@@ -73,7 +348,7 @@ export function FaceConfigManager() {
       } else {
         await api.post("/api/face-config", { engine_type: selected, ...payload });
       }
-      setForm(EMPTY);
+      setForm(EMPTY_FORM);
       await load();
     } catch (e: unknown) {
       setError(extractErrorMessage(e, "Erro ao salvar configuração."));
@@ -86,9 +361,7 @@ export function FaceConfigManager() {
     try {
       await api.post(`/api/face-config/${c.id}/activate`);
       await load();
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }
 
   async function runTest(c: FaceEngineConfig) {
@@ -103,13 +376,34 @@ export function FaceConfigManager() {
     }
   }
 
+  async function testWithImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageTesting(true);
+    setImageTestError("");
+    setImageTestResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { data } = await api.post<FaceImageTestResult>("/api/face-config/test-image", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setImageTestResult(data);
+    } catch {
+      setImageTestError("Erro ao processar a imagem.");
+    } finally {
+      setImageTesting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   return (
     <div className="p-6 space-y-6">
       <PageHeader title="Motores de Reconhecimento Facial" description="Configure e ative o motor de faces do sistema" />
 
       {error && <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">{error}</div>}
 
-      {/* Configurados */}
+      {/* Motores configurados */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2].map((i) => (
@@ -174,7 +468,68 @@ export function FaceConfigManager() {
         </div>
       )}
 
-      {/* Adicionar / editar */}
+      {/* Testar com imagem */}
+      <section className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <ImageIcon className="h-4 w-4 text-amber-500" /> Testar com imagem
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Envie uma foto para verificar se o motor detecta e reconhece o rosto (sem salvar no banco).
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={testWithImage}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={imageTesting}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition disabled:opacity-50"
+          >
+            <Upload className="h-4 w-4" />
+            {imageTesting ? "Processando..." : "Enviar imagem"}
+          </button>
+        </div>
+        {imageTestError && <p className="text-sm text-red-600">{imageTestError}</p>}
+        {imageTestResult && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">{imageTestResult.message}</p>
+            {imageTestResult.faces.map((f, i) => (
+              <div key={i} className={`p-3 rounded-lg border text-sm ${f.match.person_id ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+                <div className="flex items-center gap-2">
+                  {f.match.person_id
+                    ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                    : <XCircle className="h-4 w-4 text-gray-400 shrink-0" />}
+                  <span className="font-medium">
+                    {f.match.person?.name ?? "Face desconhecida"}
+                  </span>
+                  {f.match.match_confidence !== null && (
+                    <span className="text-xs text-muted-foreground">
+                      {(f.match.match_confidence * 100).toFixed(0)}% confiança
+                    </span>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    bbox {f.bbox.w}×{f.bbox.h}px
+                  </span>
+                </div>
+                {f.match.person?.alert_active && (
+                  <p className="mt-1 text-xs text-amber-700 font-medium">⚠ Alerta ativo para esta pessoa</p>
+                )}
+              </div>
+            ))}
+            {!imageTestResult.found && (
+              <div className="p-3 rounded-lg bg-gray-50 border text-sm text-gray-600">
+                Nenhum rosto detectado pelo YuNet. Tente uma foto com rosto visível e frontal.
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Adicionar / editar motor */}
       <section className="bg-white rounded-xl border shadow-sm p-4 space-y-4">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Plus className="h-4 w-4" /> Configurar motor
@@ -186,7 +541,7 @@ export function FaceConfigManager() {
             value={selected}
             onChange={(e) => {
               setSelected(e.target.value as EngineType);
-              setForm(EMPTY);
+              setForm(EMPTY_FORM);
             }}
             className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
@@ -267,6 +622,24 @@ export function FaceConfigManager() {
           {saving ? "Salvando…" : existing(selected) ? "Atualizar motor" : "Adicionar motor"}
         </button>
       </section>
+
+      {/* Alertas de face por câmera */}
+      {cameras.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Bell className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold text-base">Alertas de face por câmera</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Configure alertas para faces não cadastradas, janela de horário e cooldown separadamente para cada câmera.
+          </p>
+          <div className="space-y-2">
+            {cameras.map((cam) => (
+              <CameraAlertRow key={cam.id} cam={cam} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

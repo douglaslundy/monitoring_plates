@@ -329,6 +329,59 @@ export interface FaceEngineTestResult {
   message: string;
 }
 
+export interface FaceCameraAlertConfig {
+  id: string;
+  camera_id: string;
+  unknown_face_active: boolean;
+  unknown_face_email: string | null;
+  unknown_face_whatsapp: string | null;
+  schedule_start_time: string | null;
+  schedule_duration_minutes: number | null;
+  schedule_days_of_week: string | null;
+  cooldown_minutes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OcrImageTestResult {
+  found: boolean;
+  message: string;
+  results: Array<{
+    category: string;
+    vehicle_type: string;
+    confidence: number;
+    plate: string | null;
+    ocr_confidence: number | null;
+    engine: string | null;
+    alert: {
+      monitored: boolean;
+      description: string | null;
+      has_email: boolean;
+      has_whatsapp: boolean;
+    } | null;
+  }>;
+}
+
+export interface FaceImageTestResult {
+  found: boolean;
+  message: string;
+  faces: Array<{
+    bbox: { x: number; y: number; w: number; h: number };
+    confidence: number;
+    match: {
+      person_id: string | null;
+      match_confidence: number | null;
+      person: {
+        id: string;
+        name: string;
+        alert_active: boolean;
+        has_email: boolean;
+        has_whatsapp: boolean;
+      } | null;
+    };
+  }>;
+}
+
 export interface WhatsAppSettings {
   id: string | null;
   is_active: boolean;
