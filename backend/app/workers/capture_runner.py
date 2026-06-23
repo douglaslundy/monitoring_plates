@@ -56,6 +56,7 @@ class CameraCapture(threading.Thread):
         self._last_motion_at = 0.0  # p/ a rajada do backend bytetrack
         self._backend: str | None = None
         self._backend_checked_at = 0.0
+        self._redis_client = None
 
     def _tracker_backend(self) -> str:
         """Backend de rastreamento atual (cacheado ~10s p/ não bater no Redis por frame)."""
@@ -183,8 +184,37 @@ class CameraCapture(threading.Thread):
         ratio = changed / float(thresh.size)
         return ratio >= settings.MOTION_MIN_AREA_RATIO
 
+    def _ocr_queue_depth(self) -> int:
+        """Profundidade da fila OCR (frames). Usa cliente Redis cacheado."""
+        try:
+            import redis as _redis
+
+            if self._redis_client is None:
+                self._redis_client = _redis.from_url(
+                    settings.REDIS_URL,
+                    decode_responses=True,
+                    socket_connect_timeout=0.3,
+                    socket_timeout=0.3,
+                )
+            for q in ("frames", "celery"):
+                depth = self._redis_client.llen(q)
+                if depth:
+                    return int(depth)
+        except Exception:
+            self._redis_client = None  # força reconexão na próxima vez
+        return 0
+
     def _enqueue(self, cv2, frame, forced: bool = False) -> None:
         import base64
+
+        # Frames não-forçados são descartados quando a fila já está profunda:
+        # o worker não consegue processar rápido o suficiente (YOLO ~1s/frame) e
+        # o acúmulo causa frames antigos sendo salvos (pessoa já de costas).
+        if not forced:
+            depth = self._ocr_queue_depth()
+            if depth > settings.WORKER_DELAY_QUEUE_THRESHOLD:
+                logger.debug("Camera %s: frame descartado (fila=%d)", self.camera_id, depth)
+                return
 
         ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, settings.CAPTURE_JPEG_QUALITY])
         if not ok:

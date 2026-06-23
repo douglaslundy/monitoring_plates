@@ -596,7 +596,10 @@ try:
                         if getattr(_fd, "category", None) != "person":
                             continue
                         _tr = det_to_track.get(_fi)
-                        if _tr is None or not _tr.get("counted") or _tr.get("face_saved"):
+                        # Dispara na 1ª detecção (não aguarda counted=True):
+                        # esperar 2 votos fazia o crop ser do frame em que a pessoa
+                        # já estava virando. O faces-worker descarta se crop for ruim.
+                        if _tr is None or _tr.get("face_saved"):
                             continue
 
                         # Marca imediatamente para não re-enfileirar no próximo frame
