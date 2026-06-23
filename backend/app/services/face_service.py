@@ -218,6 +218,33 @@ class FaceRouter:
             logger.warning("Não foi possível carregar todos embeddings para teste: %s", exc)
         return result
 
+    def identify_by_embedding(
+        self, client_id: Optional[str], embedding: list[float]
+    ) -> Optional[FaceMatch]:
+        """Identifica usando embedding já computado — evita re-executar YuNet+SFace.
+
+        Só funciona para o motor local (opencv). Cloud engines recebem None e
+        o caller deve fazer fallback para identify() com a imagem original.
+        """
+        engine_type = self.resolve_engine_type(client_id)
+        if engine_type != "opencv":
+            return None
+        eff_client_id = client_id or "__none__"
+        candidates = (
+            self._load_client_embeddings(eff_client_id)
+            + self._load_global_embeddings()
+        )
+        best_pid: Optional[str] = None
+        best_sim = 0.0
+        for pid, emb in candidates:
+            sim = cosine_similarity(embedding, emb)
+            if sim > best_sim:
+                best_sim = sim
+                best_pid = pid
+        if best_pid is not None and best_sim >= settings.FACE_MATCH_THRESHOLD:
+            return FaceMatch(person_id=best_pid, confidence=round(best_sim, 4))
+        return None
+
     # ── Motor local (OpenCV) ─────────────────────────────────────────────────
     def _local_identify(self, client_id: str, image_bytes: bytes) -> Optional[FaceMatch]:
         embedding = _local_engine.embed(image_bytes)

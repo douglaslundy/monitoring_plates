@@ -573,9 +573,9 @@ try:
             for _occ_id in pending_alerts:
                 process_alerts(_occ_id, db)
 
-            # Bloco facial: detecta/identifica rostos das pessoas rastreadas e
-            # grava 1 FaceDetection por track; fecha a duração dos tracks expirados.
-            # Só roda quando a câmera e o plano do cliente habilitam faces.
+            # Bloco facial: para cada pessoa rastreada confirmada e ainda sem face
+            # processada, enfileira uma task assíncrona na fila `faces` — YuNet +
+            # SFace rodam num worker dedicado sem bloquear a fila de frames.
             if (
                 getattr(camera, "enable_face", False)
                 and camera.client
@@ -583,12 +583,49 @@ try:
                 and camera.client.plan.face_recognition_enabled
             ):
                 try:
-                    from app.services.face_pipeline_service import (
-                        process_faces,
-                        finalize_expired_faces,
-                    )
+                    from app.workers.face_processor import process_face
+                    from app.services.face_pipeline_service import finalize_expired_faces
+                    from datetime import timedelta
 
-                    process_faces(db, camera, detections, det_to_track, _display_image, now_ts)
+                    plan = camera.client.plan
+                    expires_at_str: str | None = None
+                    if plan and getattr(plan, "retention_days", None):
+                        expires_at_str = (
+                            datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
+                        ).isoformat()
+
+                    # Pré-salva imagem do frame (path compartilhado nos alertas faciais)
+                    _face_img_path = _display_image()
+
+                    for _fi, _fd in enumerate(detections):
+                        if getattr(_fd, "category", None) != "person":
+                            continue
+                        _tr = det_to_track.get(_fi)
+                        if _tr is None or not _tr.get("counted") or _tr.get("face_saved"):
+                            continue
+
+                        # Marca imediatamente para não re-enfileirar no próximo frame
+                        _tr["face_saved"] = True
+
+                        process_face.apply_async(
+                            kwargs={
+                                "camera_id": camera_id,
+                                "client_id": str(camera.client_id) if camera.client_id else None,
+                                "track_id": _tr.get("track_id"),
+                                "person_crop_b64": base64.b64encode(_fd.crop_bytes).decode(),
+                                "bbox": {
+                                    "x": int(_fd.bbox_x),
+                                    "y": int(_fd.bbox_y),
+                                    "w": int(_fd.bbox_w),
+                                    "h": int(_fd.bbox_h),
+                                },
+                                "image_path": _face_img_path,
+                                "expires_at_str": expires_at_str,
+                            },
+                            queue="faces",
+                            expires=30,
+                        )
+
                     finalize_expired_faces(db, expired)
                 except Exception:
                     logger.warning("Bloco facial falhou camera=%s", camera.id, exc_info=True)

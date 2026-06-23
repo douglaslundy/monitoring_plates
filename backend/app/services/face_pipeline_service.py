@@ -118,10 +118,20 @@ def process_faces(
 
 def finalize_expired_faces(db: Session, expired: list[dict]) -> None:
     for e in expired:
+        # Tenta pelo face_detection_id (caminho síncrono legado) e depois pelo
+        # track_id (caminho assíncrono: face_processor pode ainda não ter rodado).
         fdid = e.get("face_detection_id")
-        if not fdid:
-            continue
-        fd = db.query(FaceDetection).filter(FaceDetection.id == uuid.UUID(str(fdid))).first()
+        track_id = e.get("track_id")
+        fd = None
+        if fdid:
+            fd = db.query(FaceDetection).filter(FaceDetection.id == uuid.UUID(str(fdid))).first()
+        if fd is None and track_id:
+            fd = (
+                db.query(FaceDetection)
+                .filter(FaceDetection.track_id == str(track_id))
+                .order_by(FaceDetection.id.desc())
+                .first()
+            )
         if fd is None:
             continue
         try:

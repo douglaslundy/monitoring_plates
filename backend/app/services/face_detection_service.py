@@ -121,6 +121,59 @@ class OpenCVFaceEngine:
         self._get_recognizer()
 
     # ── API pública ────────────────────────────────────────────────────────
+    def detect_and_embed(
+        self, image_bytes: bytes
+    ) -> Optional[tuple["FaceBox", Optional[list[float]]]]:
+        """YuNet + SFace em passagem única — elimina o double-YuNet.
+
+        Retorna (face_box, embedding) para o maior rosto, ou None se não
+        encontrado. Embedding pode ser None se SFace não estiver disponível.
+        """
+        detector = self._get_detector()
+        if detector is None:
+            return None
+        image = self._decode_image(image_bytes)
+        if image is None:
+            return None
+        faces = self._run_detector(detector, image)
+        if not faces or len(faces) == 0:
+            return None
+        try:
+            import numpy as np
+
+            h, w = image.shape[:2]
+            faces_arr = np.asarray(faces, dtype=np.float32)
+            idx = int(np.argmax(faces_arr[:, 2] * faces_arr[:, 3]))
+            face_row = faces_arr[idx]
+
+            x, y, fw, fh = int(face_row[0]), int(face_row[1]), int(face_row[2]), int(face_row[3])
+            score = float(face_row[-1]) if len(face_row) >= 15 else 1.0
+            x0, y0 = max(0, x), max(0, y)
+            x1, y1 = min(w, x + fw), min(h, y + fh)
+            if x1 <= x0 or y1 <= y0:
+                return None
+            crop = self._upscale_to_min(image[y0:y1, x0:x1])
+            crop_bytes = self._encode_jpeg(crop)
+            if not crop_bytes:
+                return None
+            face_box = FaceBox(
+                bbox_x=x0, bbox_y=y0, bbox_w=x1 - x0, bbox_h=y1 - y0,
+                confidence=round(score, 3), crop_bytes=crop_bytes,
+            )
+            embedding: Optional[list[float]] = None
+            recognizer = self._get_recognizer()
+            if recognizer is not None:
+                try:
+                    aligned = recognizer.alignCrop(image, face_row)
+                    feature = recognizer.feature(aligned)
+                    embedding = np.asarray(feature).flatten().astype(float).tolist()
+                except Exception as exc:
+                    logger.warning("SFace embed falhou na passagem única (%s)", exc)
+            return (face_box, embedding)
+        except Exception as exc:
+            logger.warning("detect_and_embed falhou (%s)", exc)
+            return None
+
     def detect(self, image_bytes: bytes) -> list[FaceBox]:
         detector = self._get_detector()
         if detector is None:
