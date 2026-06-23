@@ -127,9 +127,8 @@ def create_camera(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role == UserRole.super_admin:
-        effective_client_id = payload.client_id
-        if not effective_client_id:
-            raise HTTPException(status_code=400, detail="client_id é obrigatório para super_admin")
+        # client_id is optional for super_admin; None = admin-only camera (no tenant)
+        effective_client_id = payload.client_id or None
     else:
         effective_client_id = current_user.client_id
         if not effective_client_id:

@@ -478,16 +478,19 @@ def _send_test_face_alert_email(person: Person, detected_at: str) -> None:
 
 
 def _send_test_face_alert_whatsapp(person: Person, image_bytes: bytes, detected_at: str, db: Session) -> None:
-    from app.services.whatsapp_service import send_whatsapp_alert, build_whatsapp_message
+    from app.services.whatsapp_service import send_whatsapp_alert
     from app.services.whatsapp_settings_service import get_effective_whatsapp_delivery_config
 
     model, cfg = get_effective_whatsapp_delivery_config(db)
     if model is not None and not cfg.is_active:
         return
-    msg = build_whatsapp_message(person.name or "Pessoa", "[TESTE]", "", detected_at)
     send_whatsapp_alert(
-        phone=person.alert_whatsapp,
-        message=msg,
-        delivery_config=cfg,
+        to=person.alert_whatsapp,
+        plate=person.name or "Pessoa",
+        camera_name="[TESTE]",
+        location="Teste manual via painel",
+        detected_at=detected_at,
+        image_url="",
         image_bytes=image_bytes,
+        config=cfg,
     )

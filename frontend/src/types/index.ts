@@ -67,7 +67,7 @@ export interface User {
 
 export interface Camera {
   id: string;
-  client_id: string;
+  client_id: string | null;
   name: string;
   location: string | null;
   connection_type: "rtsp" | "agent";

@@ -23,7 +23,7 @@ class Camera(Base):
     __tablename__ = "cameras"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    client_id = Column(Uuid(as_uuid=True), ForeignKey("clients.id"), nullable=False)
+    client_id = Column(Uuid(as_uuid=True), ForeignKey("clients.id"), nullable=True)
     name = Column(String(255), nullable=False)
     location = Column(String(500), nullable=True)
     connection_type = Column(

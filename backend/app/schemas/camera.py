@@ -5,7 +5,7 @@ from uuid import UUID
 
 
 class CameraBase(BaseModel):
-    client_id: UUID
+    client_id: Optional[UUID] = None
     name: str
     location: Optional[str] = None
     connection_type: str = "rtsp"

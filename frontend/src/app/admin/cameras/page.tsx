@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import api from "@/lib/api";
+import { getMe } from "@/lib/auth";
 import { Camera, Client } from "@/types";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Modal } from "@/components/ui/Modal";
@@ -127,6 +128,7 @@ export default function AdminCamerasPage() {
   const { toast } = useToast();
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -154,12 +156,14 @@ export default function AdminCamerasPage() {
     setLoading(true);
     setError("");
     try {
-      const [camRes, clientRes] = await Promise.all([
+      const [camRes, clientRes, meRes] = await Promise.all([
         api.get<Camera[]>("/api/cameras"),
         api.get<Client[]>("/api/clients"),
+        getMe(),
       ]);
       setCameras(camRes.data);
       setClients(clientRes.data);
+      setIsSuperAdmin(meRes.role === "super_admin");
     } catch {
       setError("Erro ao carregar dados. Verifique sua conexão.");
     } finally {
@@ -195,14 +199,14 @@ export default function AdminCamerasPage() {
     if (key === "client_id") {
       setFormErrors((prev) => ({
         ...prev,
-        client_id: !(value as string) ? "Selecione um cliente" : "",
+        client_id: !isSuperAdmin && !(value as string) ? "Selecione um cliente" : "",
       }));
     }
   }
 
   function validate(): boolean {
     const errs: FormErrors = {};
-    if (!form.client_id) errs.client_id = "Selecione um cliente";
+    if (!isSuperAdmin && !form.client_id) errs.client_id = "Selecione um cliente";
     if (!form.name.trim()) errs.name = "Campo obrigatório";
     if (form.connection_type === "rtsp") {
       const e = validateRtsp(form.rtsp_url);
@@ -221,7 +225,7 @@ export default function AdminCamerasPage() {
     setSubmitError("");
     try {
       const payload = {
-        client_id: form.client_id,
+        client_id: form.client_id || null,
         name: form.name,
         location: form.location || null,
         connection_type: form.connection_type,
@@ -798,7 +802,7 @@ export default function AdminCamerasPage() {
 
             <div>
               <label htmlFor="cam-client" className="block text-sm font-medium mb-1">
-                Cliente *
+                Cliente {isSuperAdmin ? "" : "*"}
               </label>
               <select
                 id="cam-client"
@@ -807,7 +811,11 @@ export default function AdminCamerasPage() {
                 aria-describedby={formErrors.client_id ? "cam-client-err" : undefined}
                 className={inputCls(formErrors.client_id)}
               >
-                <option value="">Selecione o cliente</option>
+                {isSuperAdmin ? (
+                  <option value="">— Minha conta (administrador)</option>
+                ) : (
+                  <option value="">Selecione o cliente</option>
+                )}
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
