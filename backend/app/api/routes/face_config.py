@@ -217,11 +217,13 @@ async def test_image(
     alerts_fired: list[str] = []
 
     for box in face_boxes:
-        match = face_recognizer.identify_all(box.crop_bytes)
+        # Usa imagem COMPLETA para identify_all — embed() re-executaria YuNet
+        # sobre o recorte (face preenchendo o frame), onde o YuNet falha em detectar.
+        match = face_recognizer.identify_all(image_bytes)
         person: Person | None = None
         person_info = None
 
-        if match:
+        if match and match.person_id:
             person = db.query(Person).filter(Person.id == uuid.UUID(match.person_id)).first()
             if person:
                 person_info = {
@@ -297,6 +299,7 @@ async def test_image(
             "match": {
                 "person_id": match.person_id if match else None,
                 "match_confidence": match.confidence if match else None,
+                "best_sim": match.best_sim if match else None,
                 "person": person_info,
             },
         })

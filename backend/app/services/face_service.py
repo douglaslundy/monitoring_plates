@@ -35,6 +35,14 @@ class FaceMatch:
     confidence: float
 
 
+@dataclass
+class FaceMatchWithScore:
+    """Versão de FaceMatch com best_sim exposto — usada no endpoint de teste."""
+    person_id: Optional[str]
+    confidence: Optional[float]
+    best_sim: float
+
+
 class FaceRouter:
     def __init__(self) -> None:
         self._type_cache: dict[str, tuple[str, float]] = {}
@@ -172,9 +180,18 @@ class FaceRouter:
             logger.warning("Identify no motor %s falhou (%s) — caindo p/ local", engine_type, exc)
         return self._local_identify(client_id, image_bytes)
 
-    def identify_all(self, image_bytes: bytes) -> Optional[FaceMatch]:
-        """Identifica rosto buscando em TODOS os clientes — uso exclusivo do super_admin (teste)."""
-        embedding = _local_engine.embed(image_bytes)
+    def identify_all(self, image_bytes: bytes) -> Optional["FaceMatchWithScore"]:
+        """Identifica rosto buscando em TODOS os clientes — uso exclusivo do super_admin (teste).
+
+        Usa detect_and_embed na imagem COMPLETA para evitar double-YuNet em recorte:
+        o embed() clássico re-detecta dentro de um recorte onde a face preenche o frame,
+        fazendo o YuNet falhar. detect_and_embed detecta corretamente na foto original.
+        Retorna também best_sim para debug de threshold.
+        """
+        result = _local_engine.detect_and_embed(image_bytes)
+        if result is None:
+            return None
+        _, embedding = result
         if not embedding:
             return None
         candidates = self._load_all_embeddings()
@@ -185,9 +202,13 @@ class FaceRouter:
             if sim > best_sim:
                 best_sim = sim
                 best_pid = pid
+        logger.info(
+            "identify_all: candidatos=%d best_sim=%.4f threshold=%.2f pid=%s",
+            len(candidates), best_sim, settings.FACE_MATCH_THRESHOLD, best_pid,
+        )
         if best_pid is not None and best_sim >= settings.FACE_MATCH_THRESHOLD:
-            return FaceMatch(person_id=best_pid, confidence=round(best_sim, 4))
-        return None
+            return FaceMatchWithScore(person_id=best_pid, confidence=round(best_sim, 4), best_sim=round(best_sim, 4))
+        return FaceMatchWithScore(person_id=None, confidence=None, best_sim=round(best_sim, 4)) if best_pid else None
 
     def _load_all_embeddings(self) -> list[tuple[str, list[float]]]:
         """Todos os embeddings locais de todas as pessoas ativas (sem filtro de cliente)."""
