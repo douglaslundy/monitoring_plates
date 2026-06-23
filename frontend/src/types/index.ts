@@ -7,7 +7,7 @@ export interface Plan {
   realtime_alerts: boolean;
   price_monthly: number | string;
   is_active: boolean;
-  ocr_engine: "system_default" | "easyocr" | "plate_recognizer";
+  ocr_engine: "system_default" | "fast_alpr" | "easyocr" | "plate_recognizer";
   ocr_enabled: boolean;
   face_recognition_enabled: boolean;
   face_engine: "system_default" | "opencv" | "rekognition" | "luxand" | "facepp";

@@ -27,7 +27,7 @@ interface PlanForm {
   email_alerts: boolean;
   realtime_alerts: boolean;
   price_monthly: string;
-  ocr_engine: "system_default" | "easyocr" | "plate_recognizer";
+  ocr_engine: "system_default" | "fast_alpr" | "plate_recognizer";
   ocr_enabled: boolean;
   face_recognition_enabled: boolean;
   face_engine: "system_default" | "opencv" | "rekognition" | "luxand" | "facepp";
@@ -253,8 +253,8 @@ export default function PlansPage() {
                   <Badge variant={plan.ocr_engine === "plate_recognizer" ? "info" : "secondary"}>
                     {plan.ocr_engine === "plate_recognizer"
                       ? "Plate Recognizer"
-                      : plan.ocr_engine === "easyocr"
-                      ? "EasyOCR"
+                      : plan.ocr_engine === "fast_alpr" || plan.ocr_engine === "easyocr"
+                      ? "Fast-ALPR (local)"
                       : "Padrão do sistema"}
                   </Badge>
                 </div>
@@ -361,7 +361,7 @@ export default function PlansPage() {
               }
             >
               <option value="system_default">Padrão do sistema</option>
-              <option value="easyocr">EasyOCR</option>
+              <option value="fast_alpr">Fast-ALPR (local, gratuito)</option>
               <option value="plate_recognizer">Plate Recognizer</option>
             </select>
           </div>

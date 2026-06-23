@@ -568,12 +568,16 @@ export default function OcrConfigPage() {
                 onChange={(e) => setForm((f) => ({ ...f, engine_type: e.target.value as EngineType }))}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
               >
-                {/* Só Plate Recognizer é adicionável. O Fast-ALPR (local) já vem
-                    embutido e ativo — não se cadastra à mão. O antigo "EasyOCR"
-                    era só um apelido do fast-alpr e foi removido daqui. */}
+                <option value="fast_alpr">Fast-ALPR (local, gratuito)</option>
                 <option value="plate_recognizer">Plate Recognizer</option>
               </select>
             </div>
+          )}
+
+          {form.engine_type === "fast_alpr" && (
+            <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+              Motor local gratuito — roda dentro do Docker, sem credenciais ou API externa. Basta salvar.
+            </p>
           )}
 
           {(form.engine_type === "plate_recognizer") && (

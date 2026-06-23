@@ -565,7 +565,7 @@ export default function AdminSearchPage() {
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Motor OCR</p>
                   <p className="font-medium">
-                    {selected.ocr_engine_used === "plate_recognizer" ? "Plate Recognizer" : "EasyOCR"}
+                    {selected.ocr_engine_used === "plate_recognizer" ? "Plate Recognizer" : "Fast-ALPR (local)"}
                   </p>
                 </div>
               )}
