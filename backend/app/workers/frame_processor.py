@@ -310,8 +310,13 @@ try:
             occ = None
             persistence_seconds: float | None = None
 
+            # OCR só roda quando a câmera tem o toggle habilitado.
+            _ocr_enabled = getattr(camera, "enable_ocr", True)
+
             for v_idx, d in enumerate(detections):
                 if d.category != "vehicle":
+                    continue
+                if not _ocr_enabled:
                     continue
 
                 v_track = det_to_track.get(v_idx)

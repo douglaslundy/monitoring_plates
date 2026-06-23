@@ -51,18 +51,37 @@ def process_faces(
     if plan and plan.retention_days:
         expires_at = datetime.now(timezone.utc) + timedelta(days=plan.retention_days)
 
+    persons_in_frame = sum(1 for d in detections if getattr(d, "category", None) == "person")
+    logger.debug("pipeline facial camera=%s persons_in_frame=%d engine=%s", camera.id, persons_in_frame, engine_type)
+
     for idx, d in enumerate(detections):
         if getattr(d, "category", None) != "person":
             continue
         tr = det_to_track.get(idx)
-        if tr is None or not tr.get("counted") or tr.get("face_saved"):
+        if tr is None:
+            logger.debug("pipeline facial camera=%s idx=%d: track não encontrado", camera.id, idx)
+            continue
+        if not tr.get("counted"):
+            logger.debug("pipeline facial camera=%s idx=%d track_id=%s: não confirmado ainda (counted=False)", camera.id, idx, tr.get("track_id"))
+            continue
+        if tr.get("face_saved"):
             continue
 
         crop = _detect_face_crop(d.crop_bytes)
         if crop is None:
+            logger.debug(
+                "pipeline facial camera=%s idx=%d track_id=%s: YuNet não detectou rosto no recorte da pessoa "
+                "(bbox=%dx%d px) — verifique ângulo/distância da câmera",
+                camera.id, idx, tr.get("track_id"), d.bbox_w, d.bbox_h,
+            )
             continue
 
+        logger.info("pipeline facial camera=%s track_id=%s: rosto detectado, identificando...", camera.id, tr.get("track_id"))
         match = face_recognizer.identify(client_id, crop)
+        if match:
+            logger.info("pipeline facial camera=%s track_id=%s: pessoa reconhecida person_id=%s conf=%.3f", camera.id, tr.get("track_id"), match.person_id, match.confidence)
+        else:
+            logger.info("pipeline facial camera=%s track_id=%s: rosto detectado mas NÃO reconhecido (sem cadastro ou confiança baixa)", camera.id, tr.get("track_id"))
         fd = FaceDetection(
             camera_id=camera.id,
             person_id=uuid.UUID(match.person_id) if match else None,
@@ -87,7 +106,14 @@ def process_faces(
 
                 process_face_alerts(str(fd.id), db)
             except Exception:
-                logger.warning("Falha ao processar alerta de face", exc_info=True)
+                logger.warning("Falha ao processar alerta de face conhecida", exc_info=True)
+        else:
+            try:
+                from app.services.face_alert_service import process_unknown_face_alert
+
+                process_unknown_face_alert(str(fd.id), db)
+            except Exception:
+                logger.warning("Falha ao processar alerta de face desconhecida", exc_info=True)
 
 
 def finalize_expired_faces(db: Session, expired: list[dict]) -> None:
