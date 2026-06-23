@@ -259,13 +259,27 @@ async def test_image(
         # Alerta de face DESCONHECIDA: dispara para todas as câmeras configuradas
         if person is None and alert_cameras:
             from app.services.face_alert_service import process_unknown_face_alert
+            from app.services.storage_service import save_bytes as _save_bytes
+            from app.services.detection_overlay_service import draw_labeled_boxes as _draw
+
+            # Salva a imagem anotada UMA vez e reutiliza o path em todos os alertas
+            _test_img_path: str | None = None
+            try:
+                _annotated = _draw(image_bytes, boxes_for_draw)
+                _test_img_path = _save_bytes(
+                    _annotated or image_bytes,
+                    str(alert_cameras[0].id),
+                )
+            except Exception:
+                pass
+
             for cam in alert_cameras:
                 try:
                     fd = FaceDetection(
                         camera_id=cam.id,
                         person_id=None,
                         confidence=None,
-                        image_path=None,
+                        image_path=_test_img_path,
                         bbox_x=box.bbox_x,
                         bbox_y=box.bbox_y,
                         bbox_w=box.bbox_w,
