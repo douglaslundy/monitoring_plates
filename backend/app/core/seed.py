@@ -41,12 +41,10 @@ def run() -> None:
             db.commit()
             print("[seed] Planos criados.")
 
-        local_cfg = (
-            db.query(OcrEngineConfig)
-            .filter(OcrEngineConfig.engine_type == OcrEngineType.fast_alpr)
-            .first()
-        )
-        if not local_cfg:
+        # Cria o motor local padrão (fast-alpr) só se NÃO houver NENHUM motor OCR.
+        # Antes checava só por fast_alpr e acabava criando um 2º motor local quando
+        # já existia o legado easyocr — poluindo a lista com "outro" motor.
+        if not db.query(OcrEngineConfig).first():
             db.add(OcrEngineConfig(
                 engine_type=OcrEngineType.fast_alpr,
                 mode=OcrEngineMode.onpremise,

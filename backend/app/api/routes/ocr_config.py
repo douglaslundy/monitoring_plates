@@ -94,6 +94,13 @@ def toggle_activate(
         raise HTTPException(status_code=404, detail="Configuração não encontrada")
 
     config.is_active = not config.is_active
+    # Ativação EXCLUSIVA: só um motor OCR ativo por vez. Ao ativar este, desativa
+    # os demais — antes podiam ficar dois "ativos" (ex.: o local + o cadastrado),
+    # parecendo um motor a mais além do que o usuário ativou.
+    if config.is_active:
+        db.query(OcrEngineConfig).filter(OcrEngineConfig.id != config.id).update(
+            {OcrEngineConfig.is_active: False}, synchronize_session=False
+        )
     db.commit()
     db.refresh(config)
     return config

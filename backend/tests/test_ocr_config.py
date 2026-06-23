@@ -139,6 +139,21 @@ def test_toggle_activate(client, super_admin_user, easyocr_config):
     assert r.json()["is_active"] is True
 
 
+def test_activate_is_exclusive(client, super_admin_user, easyocr_config, pr_config):
+    """Tarefa 1: ativar um motor desativa os demais (só 1 ativo por vez)."""
+    assert easyocr_config.is_active is True  # começa ativo
+    r = client.post(
+        f"/api/ocr-config/{pr_config.id}/activate",
+        headers=_auth_header(super_admin_user),
+    )
+    assert r.status_code == 200
+    assert r.json()["is_active"] is True
+    lst = client.get("/api/ocr-config", headers=_auth_header(super_admin_user)).json()
+    actives = [c for c in lst if c["is_active"]]
+    assert len(actives) == 1
+    assert actives[0]["engine_type"] == "plate_recognizer"
+
+
 # ── Test connection ───────────────────────────────────────────────────────────
 
 def test_test_easyocr_always_succeeds(client, super_admin_user, easyocr_config):
