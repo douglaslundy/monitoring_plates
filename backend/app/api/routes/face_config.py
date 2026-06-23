@@ -130,21 +130,23 @@ def test_config(
             return FaceEngineTestResult(success=False, engine_type=config.engine_type, message=f"Erro: {e}")
 
     if config.engine_type == FaceEngineType.deepface.value:
-        try:
-            from app.services.face_detection_service import DeepFaceEngine
-            eng = DeepFaceEngine()
-            ok = eng._ensure_ready()
-            if ok:
-                return FaceEngineTestResult(
-                    success=True, engine_type=config.engine_type,
-                    message="DeepFace (ArcFace) disponível. Pronto para uso.",
-                )
+        import subprocess, sys
+        r = subprocess.run(
+            [sys.executable, "-c", "import deepface; deepface.DeepFace.build_model('ArcFace'); print('ok')"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode == 0 and "ok" in r.stdout:
+            return FaceEngineTestResult(success=True, engine_type=config.engine_type, message="DeepFace (ArcFace) disponível. Pronto para uso.")
+        stderr_snippet = (r.stderr or "")[-300:].strip()
+        if r.returncode == 132 or "Illegal instruction" in stderr_snippet:
             return FaceEngineTestResult(
                 success=False, engine_type=config.engine_type,
-                message="DeepFace não inicializou. Verifique se o pacote deepface está instalado.",
+                message="Este servidor não suporta AVX2, instrução exigida pelo TensorFlow/DeepFace. Use InsightFace como alternativa gratuita (ONNX, sem requisito de AVX2).",
             )
-        except Exception as e:
-            return FaceEngineTestResult(success=False, engine_type=config.engine_type, message=f"Erro: {e}")
+        return FaceEngineTestResult(
+            success=False, engine_type=config.engine_type,
+            message=f"DeepFace não inicializou: {stderr_snippet or 'erro desconhecido'}",
+        )
 
     try:
         if config.engine_type == FaceEngineType.rekognition.value:

@@ -71,9 +71,6 @@ RUN python -c "from fast_alpr import ALPR; ALPR()" || echo "[build] aviso: warm 
 # Comando numa linha para não confundir o parser do Dockerfile (evita "from X" no inicio de linha).
 RUN python -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640, 640)); print('[build] InsightFace buffalo_sc pronto')" || echo "[build] aviso: insightface warmup falhou (modelos serao baixados no 1o uso)"
 
-# Pré-baixa modelo ArcFace do DeepFace (~170 MB) — motor gratuito alternativo.
-RUN python -c "import deepface; deepface.DeepFace.build_model('ArcFace'); print('[build] DeepFace ArcFace pronto')" || echo "[build] aviso: deepface warmup falhou (modelo sera baixado no 1o uso)"
-
 COPY . .
 
 EXPOSE 8000
