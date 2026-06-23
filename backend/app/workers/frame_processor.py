@@ -576,12 +576,7 @@ try:
             # Bloco facial: para cada pessoa rastreada confirmada e ainda sem face
             # processada, enfileira uma task assíncrona na fila `faces` — YuNet +
             # SFace rodam num worker dedicado sem bloquear a fila de frames.
-            if (
-                getattr(camera, "enable_face", False)
-                and camera.client
-                and camera.client.plan
-                and camera.client.plan.face_recognition_enabled
-            ):
+            if getattr(camera, "enable_face", False):
                 try:
                     from app.workers.face_processor import process_face
                     from app.services.face_pipeline_service import finalize_expired_faces
