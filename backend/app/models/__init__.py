@@ -12,6 +12,7 @@ from app.models.person import Person
 from app.models.person_face import PersonFace
 from app.models.face_detection import FaceDetection
 from app.models.face_engine_config import FaceEngineConfig
+from app.models.face_camera_alert_config import FaceCameraAlertConfig
 
 __all__ = [
     "Plan",
@@ -28,4 +29,5 @@ __all__ = [
     "PersonFace",
     "FaceDetection",
     "FaceEngineConfig",
+    "FaceCameraAlertConfig",
 ]
