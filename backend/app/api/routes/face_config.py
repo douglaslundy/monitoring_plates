@@ -2,7 +2,7 @@ import uuid
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_super_admin
@@ -159,15 +159,22 @@ def test_config(
 @router.post("/test-image")
 async def test_image(
     file: UploadFile = File(...),
+    camera_id: str | None = Form(default=None),
     db: Session = Depends(get_db),
     _=Depends(require_super_admin),
 ):
-    """Detecta e identifica rostos, retorna imagem anotada com bboxes e dispara alertas reais para pessoas cadastradas."""
+    """Detecta e identifica rostos, retorna imagem anotada com bboxes e dispara alertas reais.
+
+    Passa `camera_id` (UUID) para também disparar alerta de face desconhecida
+    quando configurado nessa câmera.
+    """
     from datetime import datetime, timezone
     from app.services.face_detection_service import face_engine
     from app.services.face_service import face_recognizer
     from app.services.detection_overlay_service import draw_labeled_boxes
     from app.models.person import Person
+    from app.models.camera import Camera
+    from app.models.face_detection import FaceDetection
 
     image_bytes = await file.read()
     if not image_bytes:
@@ -183,6 +190,15 @@ async def test_image(
             "alerts_fired": [],
         }
 
+    # Câmera opcional: usada para disparar alerta de face desconhecida
+    camera = None
+    if camera_id:
+        try:
+            camera = db.query(Camera).filter(Camera.id == uuid.UUID(camera_id)).first()
+        except Exception:
+            pass
+
+    now_str = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S")
     faces = []
     boxes_for_draw: list[dict] = []
     alerts_fired: list[str] = []
@@ -210,23 +226,45 @@ async def test_image(
             "highlight": bool(person and person.alert_active),
         })
 
-        # Dispara alertas reais para pessoas com alerta ativo
+        # Alerta para pessoa CONHECIDA com alerta ativo
         if person and person.alert_active:
-            detected_at = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S")
             if person.alert_email:
                 try:
                     from app.services.face_alert_service import _send_test_face_alert_email
-                    _send_test_face_alert_email(person, detected_at)
+                    _send_test_face_alert_email(person, now_str)
                     alerts_fired.append(f"email:{person.alert_email}")
                 except Exception:
                     pass
             if person.alert_whatsapp:
                 try:
                     from app.services.face_alert_service import _send_test_face_alert_whatsapp
-                    _send_test_face_alert_whatsapp(person, image_bytes, detected_at, db)
+                    _send_test_face_alert_whatsapp(person, image_bytes, now_str, db)
                     alerts_fired.append(f"whatsapp:{person.alert_whatsapp}")
                 except Exception:
                     pass
+
+        # Alerta de face DESCONHECIDA: cria FaceDetection e dispara via pipeline normal
+        if person is None and camera is not None:
+            try:
+                from app.services.face_alert_service import process_unknown_face_alert
+                fd = FaceDetection(
+                    camera_id=camera.id,
+                    person_id=None,
+                    confidence=None,
+                    image_path=None,
+                    bbox_x=box.bbox_x,
+                    bbox_y=box.bbox_y,
+                    bbox_w=box.bbox_w,
+                    bbox_h=box.bbox_h,
+                    track_id="test",
+                    face_engine_used="opencv",
+                )
+                db.add(fd)
+                db.flush()
+                process_unknown_face_alert(str(fd.id), db)
+                alerts_fired.append(f"unknown_face:camera={camera.name}")
+            except Exception:
+                pass
 
         faces.append({
             "bbox": {"x": box.bbox_x, "y": box.bbox_y, "w": box.bbox_w, "h": box.bbox_h},
@@ -238,6 +276,7 @@ async def test_image(
             },
         })
 
+    db.commit()
     recognized = [f for f in faces if f["match"]["person_id"]]
     annotated_image = draw_labeled_boxes(image_bytes, boxes_for_draw)
 

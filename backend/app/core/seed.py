@@ -19,6 +19,7 @@ def run() -> None:
                     email_alerts=False,
                     realtime_alerts=True,
                     price_monthly=Decimal("49.00"),
+                    face_recognition_enabled=False,
                 ),
                 Plan(
                     name="Profissional",
@@ -27,6 +28,7 @@ def run() -> None:
                     email_alerts=True,
                     realtime_alerts=True,
                     price_monthly=Decimal("149.00"),
+                    face_recognition_enabled=True,
                 ),
                 Plan(
                     name="Enterprise",
@@ -35,11 +37,19 @@ def run() -> None:
                     email_alerts=True,
                     realtime_alerts=True,
                     price_monthly=Decimal("399.00"),
+                    face_recognition_enabled=True,
                 ),
             ]
             db.add_all(plans)
             db.commit()
             print("[seed] Planos criados.")
+        else:
+            # Garante que planos Profissional e Enterprise têm face_recognition habilitado.
+            for plan_name in ("Profissional", "Enterprise"):
+                p = db.query(Plan).filter(Plan.name == plan_name).first()
+                if p and not p.face_recognition_enabled:
+                    p.face_recognition_enabled = True
+            db.commit()
 
         # Cria o motor local padrão (fast-alpr) só se NÃO houver NENHUM motor OCR.
         # Antes checava só por fast_alpr e acabava criando um 2º motor local quando
