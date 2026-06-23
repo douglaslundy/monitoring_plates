@@ -192,7 +192,10 @@ class CameraCapture(threading.Thread):
         try:
             from app.workers.frame_processor import process_frame
 
-            process_frame.delay(self.camera_id, base64.b64encode(buf.tobytes()).decode(), forced)
+            process_frame.apply_async(
+                args=[self.camera_id, base64.b64encode(buf.tobytes()).decode(), forced],
+                expires=10,
+            )
         except Exception as exc:
             logger.warning("Camera %s: falha ao enfileirar (%s)", self.camera_id, exc)
 

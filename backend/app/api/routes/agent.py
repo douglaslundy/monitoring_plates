@@ -91,6 +91,9 @@ async def receive_frame(
     maybe_publish_camera_health_alert(camera)
 
     from app.workers.frame_processor import process_frame
-    process_frame.delay(str(camera.id), base64.b64encode(frame_bytes).decode())
+    process_frame.apply_async(
+        args=[str(camera.id), base64.b64encode(frame_bytes).decode()],
+        expires=10,
+    )
 
     return {"received": True, "camera_id": str(camera.id)}
