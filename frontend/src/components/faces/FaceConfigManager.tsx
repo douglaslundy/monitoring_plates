@@ -22,6 +22,8 @@ import {
   ChevronDown,
   ChevronUp,
   Save,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 
 type EngineType = "opencv" | "rekognition" | "luxand" | "facepp";
@@ -298,6 +300,9 @@ export function FaceConfigManager() {
   const [form, setForm] = useState<EngineForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<Record<string, FaceEngineTestResult>>({});
+  const [editing, setEditing] = useState<FaceEngineConfig | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<FaceEngineConfig | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Câmeras (para alertas por câmera)
   const [cameras, setCameras] = useState<CameraBasic[]>([]);
@@ -335,7 +340,6 @@ export function FaceConfigManager() {
     setSaving(true);
     setError("");
     try {
-      const current = existing(selected);
       const payload: Record<string, string | number | null> = {
         api_token: form.api_token.trim() || null,
         api_secret: form.api_secret.trim() || null,
@@ -343,10 +347,16 @@ export function FaceConfigManager() {
         region: form.region.trim() || null,
         threshold: Number(form.threshold) || 0.8,
       };
-      if (current) {
-        await api.patch(`/api/face-config/${current.id}`, payload);
+      if (editing) {
+        await api.patch(`/api/face-config/${editing.id}`, payload);
+        setEditing(null);
       } else {
-        await api.post("/api/face-config", { engine_type: selected, ...payload });
+        const current = existing(selected);
+        if (current) {
+          await api.patch(`/api/face-config/${current.id}`, payload);
+        } else {
+          await api.post("/api/face-config", { engine_type: selected, ...payload });
+        }
       }
       setForm(EMPTY_FORM);
       await load();
@@ -354,6 +364,34 @@ export function FaceConfigManager() {
       setError(extractErrorMessage(e, "Erro ao salvar configuração."));
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openEdit(c: FaceEngineConfig) {
+    setEditing(c);
+    setSelected(c.engine_type as EngineType);
+    setForm({
+      api_token: "",
+      api_secret: "",
+      api_url: c.api_url ?? "",
+      region: c.region ?? "",
+      threshold: String(c.threshold ?? 0.8),
+    });
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  }
+
+  async function deleteEngine() {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api/face-config/${deleteConfirm.id}`);
+      setDeleteConfirm(null);
+      await load();
+    } catch (e: unknown) {
+      setError(extractErrorMessage(e, "Erro ao remover motor."));
+      setDeleteConfirm(null);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -439,6 +477,20 @@ export function FaceConfigManager() {
                       className="px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50 transition"
                     >
                       Testar
+                    </button>
+                    <button
+                      onClick={() => openEdit(c)}
+                      className="p-1.5 border rounded-lg hover:bg-gray-50 transition"
+                      title="Editar"
+                    >
+                      <Pencil className="h-4 w-4 text-gray-500" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirm(c)}
+                      className="p-1.5 border rounded-lg hover:bg-red-50 transition"
+                      title="Excluir"
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
                     </button>
                     <button
                       onClick={() => activate(c)}
@@ -529,21 +581,60 @@ export function FaceConfigManager() {
         )}
       </section>
 
+      {/* Modal de confirmação de exclusão */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full space-y-4">
+            <h3 className="font-semibold text-base">Remover motor</h3>
+            <p className="text-sm text-muted-foreground">
+              Tem certeza que deseja remover o motor <strong className="capitalize">{deleteConfirm.engine_type}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={deleteEngine}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {deleting ? "Removendo…" : "Remover"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Adicionar / editar motor */}
       <section className="bg-white rounded-xl border shadow-sm p-4 space-y-4">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Plus className="h-4 w-4" /> Configurar motor
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            {editing ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {editing ? `Editar motor: ${editing.engine_type}` : "Configurar motor"}
+          </div>
+          {editing && (
+            <button
+              onClick={() => { setEditing(null); setForm(EMPTY_FORM); }}
+              className="text-xs text-muted-foreground hover:text-foreground transition"
+            >
+              Cancelar edição
+            </button>
+          )}
         </div>
 
         <div>
           <label className="block text-xs font-medium mb-1.5">Motor</label>
           <select
             value={selected}
+            disabled={!!editing}
             onChange={(e) => {
               setSelected(e.target.value as EngineType);
               setForm(EMPTY_FORM);
             }}
-            className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {ENGINES.map((eng) => (
               <option key={eng.value} value={eng.value}>
@@ -619,7 +710,7 @@ export function FaceConfigManager() {
           disabled={saving}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition disabled:opacity-50"
         >
-          {saving ? "Salvando…" : existing(selected) ? "Atualizar motor" : "Adicionar motor"}
+          {saving ? "Salvando…" : editing ? "Salvar alterações" : existing(selected) ? "Atualizar motor" : "Adicionar motor"}
         </button>
       </section>
 
