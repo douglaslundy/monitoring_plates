@@ -28,7 +28,7 @@ import {
 
 type EngineType = "opencv" | "insightface" | "rekognition" | "luxand" | "facepp";
 
-const LOCAL_ENGINES: EngineType[] = ["opencv", "insightface", "deepface"];
+const LOCAL_ENGINES: EngineType[] = ["opencv", "insightface"];
 
 interface EngineInfo { value: EngineType; label: string; desc: string; free: boolean; recommended?: boolean }
 
