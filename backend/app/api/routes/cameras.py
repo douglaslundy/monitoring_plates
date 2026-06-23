@@ -260,6 +260,36 @@ def test_camera_connection(
     }
 
 
+@router.get("/{camera_id}/snapshot")
+def camera_snapshot(
+    camera_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Retorna um JPEG do frame atual da câmera.
+    Tenta latest.jpg primeiro; se não existir e for RTSP, captura ao vivo."""
+    camera = _get_camera_or_403(camera_id, current_user, db)
+    latest_path = f"cameras/{camera_id}/latest.jpg"
+
+    frame = read_file_bytes(latest_path)
+    if frame is None and camera.connection_type == "rtsp" and camera.rtsp_url:
+        import os
+        os.environ.setdefault(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;5000000"
+        )
+        frame = capture_rtsp_frame(camera.rtsp_url)
+        if frame:
+            if camera.dual_lens and camera.lens_side in ("upper", "lower"):
+                frame = crop_half_frame(frame, camera.lens_side)
+            save_latest_frame(frame, str(camera.id))
+            record_preview_frame(str(camera.id))
+
+    if frame is None:
+        raise HTTPException(status_code=503, detail="Nenhum frame disponível para esta câmera.")
+
+    return Response(content=frame, media_type="image/jpeg")
+
+
 @router.get("/{camera_id}/token")
 def get_camera_token(
     camera_id: UUID,

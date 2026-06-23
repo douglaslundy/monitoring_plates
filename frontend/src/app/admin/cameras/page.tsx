@@ -19,6 +19,7 @@ import {
   Pencil,
   Eye,
   RefreshCw,
+  Crop,
 } from "lucide-react";
 
 type WizardStep = 1 | 2;
@@ -145,6 +146,7 @@ export default function AdminCamerasPage() {
   const [editError, setEditError] = useState("");
   const [previewCamera, setPreviewCamera] = useState<Camera | null>(null);
   const [previewImg, setPreviewImg] = useState<string | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [reconnectingId, setReconnectingId] = useState<string | null>(null);
 
@@ -381,15 +383,31 @@ export default function AdminCamerasPage() {
   async function openPreview(cam: Camera) {
     setPreviewCamera(cam);
     setPreviewImg(null);
+    setPreviewBlobUrl(null);
     setPreviewLoading(true);
     try {
-      const res = await api.get<{ image_url: string | null }>(`/api/cameras/${cam.id}/last-frame`);
-      setPreviewImg(res.data.image_url);
+      // Tenta snapshot ao vivo (captura RTSP se latest.jpg não existir)
+      const res = await api.get(`/api/cameras/${cam.id}/snapshot`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data as Blob);
+      setPreviewBlobUrl(url);
     } catch {
-      setPreviewImg(null);
+      // Fallback: última ocorrência
+      try {
+        const res = await api.get<{ image_url: string | null }>(`/api/cameras/${cam.id}/last-frame`);
+        setPreviewImg(res.data.image_url);
+      } catch {
+        setPreviewImg(null);
+      }
     } finally {
       setPreviewLoading(false);
     }
+  }
+
+  function closePreview() {
+    if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+    setPreviewCamera(null);
+    setPreviewImg(null);
+    setPreviewBlobUrl(null);
   }
 
   async function handleReconnect(cam: Camera) {
@@ -528,16 +546,41 @@ export default function AdminCamerasPage() {
       {/* ── Preview modal ── */}
       <Modal
         open={!!previewCamera}
-        onOpenChange={(o) => { if (!o) { setPreviewCamera(null); setPreviewImg(null); } }}
+        onOpenChange={(o) => { if (!o) closePreview(); }}
         title={previewCamera ? `Preview — ${previewCamera.name}` : "Preview"}
       >
-        <div className="flex items-center justify-center min-h-[200px]">
-          {previewLoading ? (
-            <p className="text-sm text-muted-foreground">Carregando…</p>
-          ) : previewImg ? (
-            <img src={previewImg} alt="Último frame capturado" className="rounded-md max-w-full max-h-[60vh] object-contain" />
-          ) : (
-            <p className="text-sm text-muted-foreground">Nenhum frame disponível ainda.</p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-center min-h-[200px] bg-black/5 rounded-lg overflow-hidden">
+            {previewLoading ? (
+              <p className="text-sm text-muted-foreground">Capturando frame…</p>
+            ) : (previewBlobUrl || previewImg) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={previewBlobUrl ?? previewImg ?? ""}
+                alt="Frame da câmera"
+                className="rounded-md max-w-full max-h-[60vh] object-contain"
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Nenhum frame disponível. Verifique a conexão da câmera.</p>
+            )}
+          </div>
+          {(previewBlobUrl || previewImg) && previewCamera && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  const cam = previewCamera;
+                  closePreview();
+                  if (cam) {
+                    openEdit(cam);
+                    setTimeout(() => setRoiModal("edit"), 50);
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition"
+              >
+                <Crop className="h-4 w-4" />
+                Configurar ROI
+              </button>
+            </div>
           )}
         </div>
       </Modal>

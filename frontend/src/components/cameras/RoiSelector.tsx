@@ -64,14 +64,22 @@ export function RoiSelector({ cameraId, rtspUrl, dualLens, lensSide, initial, on
     setLoaded(false);
     setError(false);
     revokeBlob();
+    setCapturing(true);
     if (cameraId) {
-      // Câmera existente: usa o último frame salvo.
-      setSrc(`/api/images/cameras/${cameraId}/latest.jpg?ts=${Date.now()}`);
+      // Câmera existente: busca snapshot autenticado (latest.jpg ou captura ao vivo).
+      api
+        .get(`/api/cameras/${cameraId}/snapshot`, { responseType: "blob" })
+        .then((r) => {
+          const url = URL.createObjectURL(r.data as Blob);
+          blobUrlRef.current = url;
+          setSrc(url);
+        })
+        .catch(() => setError(true))
+        .finally(() => setCapturing(false));
       return;
     }
     if (rtspUrl && rtspUrl.trim()) {
       // Cadastro: captura um frame da RTSP digitada via backend.
-      setCapturing(true);
       api
         .post(
           "/api/cameras/preview-frame",
@@ -85,6 +93,8 @@ export function RoiSelector({ cameraId, rtspUrl, dualLens, lensSide, initial, on
         })
         .catch(() => setError(true))
         .finally(() => setCapturing(false));
+    } else {
+      setCapturing(false);
     }
   }, [cameraId, rtspUrl, dualLens, lensSide]);
 
