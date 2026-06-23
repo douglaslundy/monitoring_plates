@@ -50,7 +50,9 @@ const BR_STATES = [
 
 const ENGINE_LABELS: Record<EngineType, string> = {
   fast_alpr: "Fast-ALPR (local)",
-  easyocr: "EasyOCR (local)",
+  // 'easyocr' é apenas um nome legado de dados antigos: por baixo SEMPRE roda o
+  // fast-alpr. Exibe o nome real para não confundir.
+  easyocr: "Fast-ALPR (local)",
   plate_recognizer: "Plate Recognizer",
 };
 
@@ -446,8 +448,10 @@ export default function OcrConfigPage() {
                 onChange={(e) => setForm((f) => ({ ...f, engine_type: e.target.value as EngineType }))}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
               >
+                {/* Só Plate Recognizer é adicionável. O Fast-ALPR (local) já vem
+                    embutido e ativo — não se cadastra à mão. O antigo "EasyOCR"
+                    era só um apelido do fast-alpr e foi removido daqui. */}
                 <option value="plate_recognizer">Plate Recognizer</option>
-                <option value="easyocr">EasyOCR</option>
               </select>
             </div>
           )}
