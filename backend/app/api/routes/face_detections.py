@@ -9,6 +9,7 @@ from app.api.deps import get_db, get_current_user
 from app.models.face_detection import FaceDetection
 from app.models.camera import Camera
 from app.models.person import Person
+from app.models.alert_sent import AlertSent
 from app.models.user import User, UserRole
 from app.schemas.face_detection import FaceDetectionRead
 from app.services.storage_service import get_url, delete_file
@@ -106,18 +107,25 @@ def bulk_delete_face_detections(
         query = query.filter(FaceDetection.camera_id.in_(cam_ids))
 
     detections = query.all()
+    ids = [fd.id for fd in detections]
     seen_images: set[str] = set()
+    image_paths: list[str] = []
     deleted = 0
+
+    if ids:
+        db.query(AlertSent).filter(AlertSent.face_detection_id.in_(ids)).delete(synchronize_session=False)
 
     for fd in detections:
         if fd.image_path and fd.image_path not in seen_images:
             seen_images.add(fd.image_path)
-            try:
-                delete_file(fd.image_path)
-            except Exception:
-                pass
+            image_paths.append(fd.image_path)
         db.delete(fd)
         deleted += 1
 
     db.commit()
+    for image_path in image_paths:
+        try:
+            delete_file(image_path)
+        except Exception:
+            pass
     return {"deleted": deleted}

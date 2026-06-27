@@ -72,6 +72,11 @@ if ! grep -qE '^COMPOSE_PROJECT_NAME=' ".env.prod"; then
   set_env_value "COMPOSE_PROJECT_NAME" "$(resolve_compose_project)"
 fi
 
+if grep -qE '^STORAGE_TYPE=s3$' ".env.prod" && grep -q 'SEU_ACCOUNT_ID' ".env.prod"; then
+  set_env_value "STORAGE_TYPE" "local"
+  set_env_value "STORAGE_PATH" "./storage"
+fi
+
 echo "[deploy] subindo a stack ($COMPOSE_FILE)..."
 docker compose --env-file .env.prod -f "$COMPOSE_FILE" up -d $BUILD_FLAG
 echo "[deploy] status:"
