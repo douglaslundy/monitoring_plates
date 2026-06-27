@@ -77,6 +77,23 @@ services:
     networks:
       - monitoramento_net
 
+  faces-worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://user:pass@postgres:5432/monitoramento
+      REDIS_URL: redis://redis:6379
+    command: celery -A app.workers.face_processor worker --loglevel=info -Q faces --pool=solo --concurrency=1
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoramento_net
+
   retention-worker:
     build: ./backend
     env_file: .env

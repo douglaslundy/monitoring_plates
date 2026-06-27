@@ -243,7 +243,10 @@ def update_tracks(
             if not confirmed:
                 return
             if tr["category"] == "vehicle":
-                ready = _fully_in_frame(bbox, frame_w, frame_h) or tr["hits"] >= force_hits
+                # Fallback degradado do detector de veículos ("unknown") precisa
+                # virar registro cedo; senão, a caixa inteira do frame fica
+                # presa no gate de "objeto inteiro" e parece que nada foi salvo.
+                ready = tr["label"] == "unknown" or _fully_in_frame(bbox, frame_w, frame_h) or tr["hits"] >= force_hits
             else:
                 ready = tr.get("votes", {}).get(current_class, 0) >= settings.TRACK_MIN_REGISTER_VOTES
             if ready:

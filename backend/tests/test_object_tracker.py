@@ -204,6 +204,13 @@ def test_force_save_apos_n_hits_mesmo_cortado():
     assert total == 1
 
 
+def test_fallback_unknown_veiculo_registra_rapido():
+    state: list = []
+    det = _box(0, 100, category="vehicle", label="unknown")
+    state, newly, _, _ = update_tracks(state, [det], now=8050.0, frame_w=640, frame_h=480)
+    assert _count_new(newly) == 1
+
+
 def test_resave_so_quando_classe_muda_de_forma_estavel():
     # Conta como car; só re-salva quando truck vira maioria com MARGEM (>=3 votos),
     # nao a cada flicker. car:1 fixo; truck precisa chegar a 4 (margem 3).
