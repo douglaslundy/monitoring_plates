@@ -270,8 +270,12 @@ try:
                 if "path" not in _display_cache:
                     from app.services.detection_overlay_service import draw_detections
 
-                    drawn = draw_detections(analysis_bytes, detections)
-                    _display_cache["path"] = save_bytes(drawn, camera_id)
+                    try:
+                        drawn = draw_detections(analysis_bytes, detections)
+                        _display_cache["path"] = save_bytes(drawn, camera_id)
+                    except Exception:
+                        logger.warning("Falha ao salvar imagem de exibicao camera=%s", camera.id, exc_info=True)
+                        _display_cache["path"] = None
                 return _display_cache["path"]
 
             # ── Imagem ÚNICA por frame ────────────────────────────────────────
@@ -289,11 +293,20 @@ try:
                 """Refino: imagem com a caixa só do veículo refinado (com a placa)."""
                 from app.services.detection_overlay_service import draw_detections
 
-                drawn = draw_detections(
-                    analysis_bytes, detections,
-                    annotations={v_idx: {"label": plate, "highlight": True}},
-                )
-                return save_bytes(drawn, camera_id)
+                try:
+                    drawn = draw_detections(
+                        analysis_bytes, detections,
+                        annotations={v_idx: {"label": plate, "highlight": True}},
+                    )
+                    return save_bytes(drawn, camera_id)
+                except Exception:
+                    logger.warning(
+                        "Falha ao salvar imagem refinada de ocorrencia camera=%s plate=%s",
+                        camera.id,
+                        plate,
+                        exc_info=True,
+                    )
+                    return None
 
             # OCR centrado no TRACK com seleção de melhor frame (política híbrida):
             #   - pending: roda OCR no 1º frame com qualidade >= OCR_MIN_QUALITY
@@ -561,12 +574,17 @@ try:
             if frame_records and frame_annotations:
                 from app.services.detection_overlay_service import draw_detections
 
-                _shared_path = save_bytes(
-                    draw_detections(analysis_bytes, detections, annotations=frame_annotations),
-                    camera_id,
-                )
-                for _rec in frame_records:
-                    _rec.image_path = _shared_path
+                try:
+                    _shared_path = save_bytes(
+                        draw_detections(analysis_bytes, detections, annotations=frame_annotations),
+                        camera_id,
+                    )
+                except Exception:
+                    logger.warning("Falha ao salvar imagem compartilhada camera=%s", camera.id, exc_info=True)
+                    _shared_path = None
+                if _shared_path is not None:
+                    for _rec in frame_records:
+                        _rec.image_path = _shared_path
 
             # Alertas das novas ocorrências — depois da imagem pronta, p/ o alerta
             # (e-mail/WhatsApp) carregar a imagem do frame.

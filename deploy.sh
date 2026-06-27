@@ -78,6 +78,6 @@ if grep -qE '^STORAGE_TYPE=s3$' ".env.prod" && grep -q 'SEU_ACCOUNT_ID' ".env.pr
 fi
 
 echo "[deploy] subindo a stack ($COMPOSE_FILE)..."
-docker compose --env-file .env.prod -f "$COMPOSE_FILE" up -d $BUILD_FLAG
+docker compose --env-file .env.prod -f "$COMPOSE_FILE" up -d --force-recreate --remove-orphans $BUILD_FLAG
 echo "[deploy] status:"
 docker compose --env-file .env.prod -f "$COMPOSE_FILE" ps
