@@ -63,13 +63,7 @@ RUN set -eux; \
         || echo "[build] AVISO: nao baixou $name — motor de faces local degradado ate o arquivo existir em /app/models"; \
     done
 
-# Pré-baixa os modelos do fast-alpr durante o build (build tem internet) para
-# que o container rode 100% OFFLINE na VPS. O cache fica embutido na imagem.
-RUN python -c "from fast_alpr import ALPR; ALPR()" || echo "[build] aviso: warm do fast-alpr falhou (sera baixado no 1o uso)"
-
-# Pré-baixa modelos InsightFace buffalo_sc (~190 MB) — motor gratuito de alta precisão.
-# Comando numa linha para não confundir o parser do Dockerfile (evita "from X" no inicio de linha).
-RUN python -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640, 640)); print('[build] InsightFace buffalo_sc pronto')" || echo "[build] aviso: insightface warmup falhou (modelos serao baixados no 1o uso)"
+# Modelos adicionais (fast-alpr / insightface) são baixados no 1o uso quando necessário.
 
 COPY . .
 
