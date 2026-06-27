@@ -263,6 +263,7 @@ export interface AlertLog {
   id: string;
   occurrence_id: string | null;
   monitored_plate_id: string | null;
+  event_type: "vehicle" | "face";
   plate: string;
   camera_name: string;
   location: string | null;

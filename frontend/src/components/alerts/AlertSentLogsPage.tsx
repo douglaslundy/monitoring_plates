@@ -22,6 +22,12 @@ const CHANNEL_OPTIONS = [
   { label: "WebSocket", value: "websocket" },
 ] as const;
 
+const EVENT_TYPE_OPTIONS = [
+  { label: "Todos", value: "" },
+  { label: "Veículos", value: "vehicle" },
+  { label: "Faces", value: "face" },
+] as const;
+
 function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -44,6 +50,7 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({
     channel: "",
+    eventType: "",
     message: "",
     sentFrom: "",
     sentTo: "",
@@ -54,6 +61,7 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
     if (appliedFilters.channel) params.set("channel", appliedFilters.channel);
+    if (appliedFilters.eventType) params.set("event_type", appliedFilters.eventType);
     if (appliedFilters.message.trim()) params.set("message", appliedFilters.message.trim());
     const sentFrom = localDateTimeToIso(appliedFilters.sentFrom);
     const sentTo = localDateTimeToIso(appliedFilters.sentTo);
@@ -85,7 +93,7 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
   }
 
   function clearFilters() {
-    const empty = { channel: "", message: "", sentFrom: "", sentTo: "" };
+    const empty = { channel: "", eventType: "", message: "", sentFrom: "", sentTo: "" };
     setFilters(empty);
     setAppliedFilters(empty);
   }
@@ -100,7 +108,7 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
           Filtros
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1.5">Tipo de evento</label>
             <select
@@ -109,6 +117,21 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
             >
               {CHANNEL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1.5">Origem</label>
+            <select
+              value={filters.eventType}
+              onChange={(e) => setFilters((prev) => ({ ...prev, eventType: e.target.value }))}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
+            >
+              {EVENT_TYPE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
@@ -194,7 +217,7 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
                   <th className="px-4 py-3 font-medium">Imagem</th>
                   <th className="px-4 py-3 font-medium">Data/hora</th>
                   <th className="px-4 py-3 font-medium">Tipo</th>
-                  <th className="px-4 py-3 font-medium">Placa</th>
+                  <th className="px-4 py-3 font-medium">Placa / Pessoa</th>
                   <th className="px-4 py-3 font-medium">Câmera</th>
                   <th className="px-4 py-3 font-medium">Mensagem</th>
                   <th className="px-4 py-3 font-medium">Status</th>
@@ -258,7 +281,7 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
         open={selected !== null}
         onOpenChange={(open) => !open && setSelected(null)}
         title="Detalhes do alerta"
-        description={selected ? `Placa ${selected.plate}` : undefined}
+        description={selected ? `Evento ${selected.plate}` : undefined}
       >
         {selected && (
           <div className="space-y-4">
@@ -276,7 +299,7 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
             )}
 
             <dl className="grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">Placa</dt>
+              <dt className="text-muted-foreground">Placa / Pessoa</dt>
               <dd className="col-span-2 font-mono font-semibold">{selected.plate}</dd>
 
               <dt className="text-muted-foreground">Data/hora</dt>

@@ -13,6 +13,8 @@ from app.models.camera import Camera, ConnectionType
 from app.models.client import Client
 from app.models.monitored_plate import MonitoredPlate
 from app.models.occurrence import Occurrence
+from app.models.face_detection import FaceDetection
+from app.models.person import Person
 from app.models.plan import Plan
 from app.models.user import User, UserRole
 
@@ -389,3 +391,96 @@ def test_alert_logs_endpoint_filters_and_returns_message(client, db, super_admin
     assert data[0]["plate"] == "ABC1234"
     assert data[0]["camera_name"] == "Camera"
     assert data[0]["message"] is not None
+
+
+def test_alert_logs_endpoint_inclui_alerta_facial(client, db, super_admin_user):
+    _plan, tenant, camera = _make_tenant(db, email_alerts=True, realtime_alerts=True)
+    person = Person(client_id=tenant.id, name="Douglas Lundy Santos", is_active=True, alert_active=True)
+    db.add(person)
+    db.flush()
+    fd = FaceDetection(
+        camera_id=camera.id,
+        person_id=person.id,
+        confidence=0.93,
+        image_path="cameras/faces/douglas.jpg",
+        detected_at=datetime.now(timezone.utc),
+        face_engine_used="opencv",
+    )
+    db.add(fd)
+    db.flush()
+    db.add(
+        AlertSent(
+            face_detection_id=fd.id,
+            person_id=person.id,
+            channel=AlertChannel.websocket,
+            status="sent",
+            message="Douglas Lundy Santos reconhecido(a)",
+        )
+    )
+    db.commit()
+
+    token = create_access_token({"sub": str(super_admin_user.id), "role": super_admin_user.role})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res = client.get("/api/alerts/sent?channel=websocket&message=Douglas", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["plate"] == "Douglas Lundy Santos"
+    assert data[0]["camera_name"] == "Camera"
+    assert data[0]["occurrence_id"] is None
+    assert data[0]["monitored_plate_id"] is None
+
+
+def test_alert_logs_endpoint_filtra_por_tipo_evento(client, db, super_admin_user):
+    _plan, tenant, camera = _make_tenant(db, email_alerts=True, realtime_alerts=True)
+    _monitored(db, tenant, "ABC1234")
+    occ = _occ(db, camera, "ABC1234")
+    db.add(
+        AlertSent(
+            occurrence_id=occ.id,
+            monitored_plate_id=db.query(MonitoredPlate).first().id,
+            channel=AlertChannel.email,
+            status="sent",
+            message="Placa ABC1234 detectada",
+        )
+    )
+
+    person = Person(client_id=tenant.id, name="Douglas Lundy Santos", is_active=True, alert_active=True)
+    db.add(person)
+    db.flush()
+    fd = FaceDetection(
+        camera_id=camera.id,
+        person_id=person.id,
+        confidence=0.93,
+        image_path="cameras/faces/douglas.jpg",
+        detected_at=datetime.now(timezone.utc),
+        face_engine_used="opencv",
+    )
+    db.add(fd)
+    db.flush()
+    db.add(
+        AlertSent(
+            face_detection_id=fd.id,
+            person_id=person.id,
+            channel=AlertChannel.websocket,
+            status="sent",
+            message="Douglas Lundy Santos reconhecido(a)",
+        )
+    )
+    db.commit()
+
+    token = create_access_token({"sub": str(super_admin_user.id), "role": super_admin_user.role})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res_vehicle = client.get("/api/alerts/sent?event_type=vehicle", headers=headers)
+    assert res_vehicle.status_code == 200
+    data_vehicle = res_vehicle.json()
+    assert len(data_vehicle) == 1
+    assert data_vehicle[0]["event_type"] == "vehicle"
+
+    res_face = client.get("/api/alerts/sent?event_type=face", headers=headers)
+    assert res_face.status_code == 200
+    data_face = res_face.json()
+    assert len(data_face) == 1
+    assert data_face[0]["event_type"] == "face"

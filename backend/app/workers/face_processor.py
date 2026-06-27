@@ -98,11 +98,44 @@ try:
 
         db = SessionLocal()
         try:
+            person = None
+            if match and match.person_id:
+                from app.models.person import Person
+
+                try:
+                    person = db.query(Person).filter(Person.id == uuid.UUID(match.person_id)).first()
+                except Exception:
+                    person = None
+
+            annotated_image_path = image_path
+            if image_path:
+                try:
+                    from app.services.storage_service import read_file_bytes, save_bytes
+                    from app.services.detection_overlay_service import draw_labeled_boxes
+
+                    original_bytes = read_file_bytes(image_path)
+                    if original_bytes:
+                        annotated_b64 = draw_labeled_boxes(
+                            original_bytes,
+                            [{
+                                "x": bbox.get("x", 0),
+                                "y": bbox.get("y", 0),
+                                "w": bbox.get("w", 0),
+                                "h": bbox.get("h", 0),
+                                "label": person.name if person else "Desconhecido",
+                                "highlight": bool(person and getattr(person, "alert_active", False)),
+                            }],
+                        )
+                        if annotated_b64:
+                            annotated_image_path = save_bytes(base64.b64decode(annotated_b64), camera_id)
+                except Exception:
+                    logger.warning("Falha ao anotar imagem da face camera=%s track=%s", camera_id, track_id, exc_info=True)
+
             fd = FaceDetection(
                 camera_id=uuid.UUID(camera_id),
                 person_id=uuid.UUID(match.person_id) if match else None,
                 confidence=match.confidence if match else None,
-                image_path=image_path,
+                image_path=annotated_image_path,
                 bbox_x=bbox.get("x", 0),
                 bbox_y=bbox.get("y", 0),
                 bbox_w=bbox.get("w", 0),

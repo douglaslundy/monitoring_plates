@@ -17,8 +17,9 @@ class AlertSentRead(BaseModel):
 
 class AlertSentLogRead(BaseModel):
     id: UUID
-    occurrence_id: UUID
-    monitored_plate_id: UUID
+    occurrence_id: Optional[UUID] = None
+    monitored_plate_id: Optional[UUID] = None
+    event_type: str
     plate: str
     camera_name: str
     location: Optional[str] = None
