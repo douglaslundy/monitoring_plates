@@ -3,7 +3,7 @@
 # em runtime qual modelo usar (yolov8n/s/m/l/x) — todos são embutidos aqui.
 FROM python:3.11-slim AS model-export
 # Modelos a exportar. n/s vêm dos .pt no repo (offline); m/l/x são baixados no build.
-ARG YOLO_MODELS="yolov8n yolov8s yolov8m yolov8l yolov8x"
+ARG YOLO_MODELS="yolov8n yolov8s"
 ENV YOLO_MODELS=${YOLO_MODELS}
 # Torch CPU 2.4.1: usa o exportador ONNX legado (sem onnxscript) e evita ~2GB de
 # wheels CUDA. Instalado antes do ultralytics p/ ele não puxar a versão CUDA.

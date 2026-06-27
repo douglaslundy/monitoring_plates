@@ -1,57 +1,60 @@
 <#
-  Deploy local -> VPS de producao (192.168.0.115, nao e git).
-  Sincroniza os fontes alterados via pscp e reconstroi a stack via plink.
+  Deploy via Git na VPS de producao (192.168.0.115).
+  Garante checkout/clonagem do repo na VPS e publica via git pull + deploy remoto.
 
   Uso:
     powershell -ExecutionPolicy Bypass -File scripts\deploy_to_vps.ps1 -Password 'SENHA_DA_VPS'
 
   - Migration (011) aplica sozinha: o servico backend roda `alembic upgrade head`
     no start. Rebuildar o backend ja migra.
-  - NAO toca em infra/go2rtc.local.yaml na VPS (mantem o stream recortado da
-    camera dual-lens que ja funciona). go2rtc e reiniciado para carregar os
-    novos templates lens_lower/lens_upper do go2rtc.yaml.
+  - Preserva .env.prod e infra/go2rtc.local.yaml ao converter um diretorio legado
+    sem .git para um checkout do repositorio.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Password,
   [string]$VpsHost = "192.168.0.115",
   [string]$User = "lundy",
   [string]$HostKey = "SHA256:AcKGZMXhBZ0+sV8wW371/wJHmES3JC58Ka8A1aPGC38",
-  [string]$RemoteDir = "/home/lundy/monitoramento"
+  [string]$RemoteDir = "/home/lundy/monitoramento",
+  [string]$RepoUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
-$pscp = "pscp"
 $plink = "plink"
 $target = "$User@$VpsHost"
 
-function Copy-Path($localRelative, $remoteParent) {
-  Write-Host "[deploy] pscp -> $remoteParent  ($localRelative)"
-  & $pscp -batch -hostkey $HostKey -pw $Password -r $localRelative "${target}:$remoteParent"
-  if ($LASTEXITCODE -ne 0) { throw "pscp falhou em $localRelative (exit $LASTEXITCODE)" }
+if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+  $RepoUrl = (git config --get remote.origin.url).Trim()
+}
+if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+  throw "Nao foi possivel descobrir o remote.origin.url para deploy via git."
 }
 
-Write-Host "[deploy] criando diretorios remotos..."
-& $plink -batch -hostkey $HostKey -pw $Password $target "mkdir -p $RemoteDir/backend $RemoteDir/frontend $RemoteDir/infra"
-if ($LASTEXITCODE -ne 0) { throw "plink mkdir remoto falhou (exit $LASTEXITCODE)" }
+function Invoke-Remote([string]$command) {
+  & $plink -batch -hostkey $HostKey -pw $Password $target $command
+  if ($LASTEXITCODE -ne 0) { throw "plink falhou (exit $LASTEXITCODE): $command" }
+}
 
-# 1) Sincroniza os diretórios/arquivos necessários + o script remoto.
-Copy-Path "backend"                 "$RemoteDir/"
-Copy-Path "frontend"                "$RemoteDir/"
-Copy-Path "infra"                   "$RemoteDir/"
-Copy-Path ".env.prod.example"       "$RemoteDir/"
-Copy-Path "docker-compose.prod.yml" "$RemoteDir/"
-Copy-Path "deploy.sh"               "$RemoteDir/"
-Copy-Path "scripts/remote_deploy.sh" "$RemoteDir/"
+$legacyDir = "$RemoteDir-legacy-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
-# 2) Rebuild + restart na VPS rodando o script remoto (backend roda
-#    `alembic upgrade head` no start -> migra). Executar um ARQUIVO via bash evita
-#    o mangling de aspas/linhas que ocorre ao passar comando multi-linha por
-#    PowerShell -> plink.
-Write-Host "[deploy] executando rebuild remoto via plink..."
-& $plink -batch -hostkey $HostKey -pw $Password $target "bash $RemoteDir/remote_deploy.sh"
-if ($LASTEXITCODE -ne 0) { throw "plink/rebuild remoto falhou (exit $LASTEXITCODE)" }
+& $plink -batch -hostkey $HostKey -pw $Password $target "test -d '$RemoteDir/.git'"
+$repoExists = ($LASTEXITCODE -eq 0)
+
+if (-not $repoExists) {
+  Write-Host "[deploy] preparando checkout git na VPS..."
+  Invoke-Remote "if [ -f '$RemoteDir/.env.prod' ]; then cp '$RemoteDir/.env.prod' /tmp/monitoramento.env.prod; fi"
+  Invoke-Remote "if [ -f '$RemoteDir/infra/go2rtc.local.yaml' ]; then cp '$RemoteDir/infra/go2rtc.local.yaml' /tmp/monitoramento.go2rtc.local.yaml; fi"
+  Invoke-Remote "if [ -d '$RemoteDir' ]; then mv '$RemoteDir' '$legacyDir'; fi"
+  Invoke-Remote "git clone '$RepoUrl' '$RemoteDir'"
+  Invoke-Remote "if [ -f /tmp/monitoramento.env.prod ]; then cp /tmp/monitoramento.env.prod '$RemoteDir/.env.prod'; fi"
+  Invoke-Remote "if [ -f /tmp/monitoramento.go2rtc.local.yaml ]; then mkdir -p '$RemoteDir/infra' && cp /tmp/monitoramento.go2rtc.local.yaml '$RemoteDir/infra/go2rtc.local.yaml'; fi"
+  Invoke-Remote "rm -f /tmp/monitoramento.env.prod /tmp/monitoramento.go2rtc.local.yaml"
+}
+
+Write-Host "[deploy] executando deploy remoto via git pull..."
+Invoke-Remote "bash '$RemoteDir/scripts/remote_deploy.sh'"
 
 Write-Host "[deploy] concluido."

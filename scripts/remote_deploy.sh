@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Executado NA VPS pelo deploy_to_vps.ps1 (via plink). Mantido como arquivo
-# proprio para evitar mangling de aspas/linhas ao passar comando multi-linha
-# pelo PowerShell -> plink.
+# Executado na VPS a partir de um checkout Git do projeto.
 set -e
-cd /home/lundy/monitoramento
 
-echo "== remove legacy monitoramento-git stack if present =="
-old_ids="$(docker ps -aq --filter name='monitoramento-git-')"
-if [ -n "$old_ids" ]; then
-  docker rm -f $old_ids
-fi
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_DIR"
+
+echo "== git pull =="
+git fetch --all --prune
+git checkout main
+git pull --ff-only origin main
 
 echo "== bootstrap/deploy =="
 bash ./deploy.sh --build
