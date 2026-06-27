@@ -14,16 +14,16 @@ echo "== bootstrap/deploy =="
 bash ./deploy.sh --build
 
 echo "== restart go2rtc (carrega templates lens_lower/lens_upper do go2rtc.yaml) =="
-docker compose -f docker-compose.prod.yml restart go2rtc
+docker compose --env-file .env.prod -f docker-compose.prod.yml restart go2rtc
 
 echo "== ps =="
-docker compose -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 
 echo "== migracao atual (deve ser head) =="
-docker compose -f docker-compose.prod.yml exec -T backend alembic current || true
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend alembic current || true
 
 echo "== health backend (dentro do container) =="
-docker compose -f docker-compose.prod.yml exec -T backend curl -s -o /dev/null -w 'health=%{http_code}\n' http://localhost:8000/health || true
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend curl -s -o /dev/null -w 'health=%{http_code}\n' http://localhost:8000/health || true
 
 echo "== streams go2rtc =="
 sleep 4

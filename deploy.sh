@@ -17,6 +17,27 @@ BUILD_FLAG="--build"
 
 missing_config=0
 
+set_env_value() {
+  local key="$1" value="$2"
+  if grep -qE "^${key}=" ".env.prod"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" ".env.prod"
+  else
+    printf '%s=%s\n' "$key" "$value" >> ".env.prod"
+  fi
+}
+
+resolve_compose_project() {
+  if docker volume inspect monitoramento-git_postgres_data >/dev/null 2>&1 || docker ps -a --format '{{.Names}}' | grep -q '^monitoramento-git-'; then
+    echo "monitoramento-git"
+    return
+  fi
+  if docker volume inspect monitoramento_postgres_data >/dev/null 2>&1 || docker ps -a --format '{{.Names}}' | grep -q '^monitoramento-'; then
+    echo "monitoramento"
+    return
+  fi
+  echo "monitoramento-git"
+}
+
 ensure_from_example() {
   local target="$1" example="$2"
   if [[ ! -f "$target" ]]; then
@@ -37,15 +58,6 @@ ensure_from_example "infra/go2rtc.local.yaml" "infra/go2rtc.local.yaml.example"
 if [[ "$missing_config" == "1" ]]; then
   secret_key="$(python3 -c "import secrets; print(secrets.token_hex(32))")"
 
-  set_env_value() {
-    local key="$1" value="$2"
-    if grep -qE "^${key}=" ".env.prod"; then
-      sed -i "s|^${key}=.*|${key}=${value}|" ".env.prod"
-    else
-      printf '%s=%s\n' "$key" "$value" >> ".env.prod"
-    fi
-  }
-
   set_env_value "SECRET_KEY" "$secret_key"
   set_env_value "STORAGE_TYPE" "local"
   set_env_value "STORAGE_PATH" "./storage"
@@ -54,6 +66,10 @@ if [[ "$missing_config" == "1" ]]; then
   set_env_value "GO2RTC_PUBLIC_URL" "http://192.168.0.115:1984"
 
   echo "[deploy] .env.prod criado com defaults locais para esta VPS. Revise os segredos quando quiser."
+fi
+
+if ! grep -qE '^COMPOSE_PROJECT_NAME=' ".env.prod"; then
+  set_env_value "COMPOSE_PROJECT_NAME" "$(resolve_compose_project)"
 fi
 
 echo "[deploy] subindo a stack ($COMPOSE_FILE)..."
