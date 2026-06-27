@@ -9,7 +9,7 @@ import os
 
 from ultralytics import YOLO
 
-models = os.environ.get("YOLO_MODELS", "yolov8n yolov8s yolov8m").split()
+models = os.environ.get("YOLO_MODELS", "yolov8n yolov8s yolov8m yolov8l yolov8x").split()
 for name in models:
     try:
         YOLO(f"{name}.pt").export(format="onnx", imgsz=640, opset=12, simplify=True)

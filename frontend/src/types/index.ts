@@ -10,7 +10,7 @@ export interface Plan {
   ocr_engine: "system_default" | "fast_alpr" | "easyocr" | "plate_recognizer";
   ocr_enabled: boolean;
   face_recognition_enabled: boolean;
-  face_engine: "system_default" | "opencv" | "rekognition" | "luxand" | "facepp";
+  face_engine: "system_default" | "opencv" | "insightface" | "deepface" | "rekognition" | "luxand" | "facepp";
   created_at: string;
   client_count?: number;
 }
@@ -312,7 +312,7 @@ export interface FaceDetection {
 
 export interface FaceEngineConfig {
   id: string;
-  engine_type: "opencv" | "rekognition" | "luxand" | "facepp";
+  engine_type: "opencv" | "insightface" | "deepface" | "rekognition" | "luxand" | "facepp";
   mode: string;
   is_active: boolean;
   api_token: string | null;
@@ -326,7 +326,7 @@ export interface FaceEngineConfig {
 
 export interface FaceEngineTestResult {
   success: boolean;
-  engine_type: "opencv" | "rekognition" | "luxand" | "facepp";
+  engine_type: "opencv" | "insightface" | "deepface" | "rekognition" | "luxand" | "facepp";
   message: string;
 }
 

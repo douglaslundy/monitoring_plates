@@ -30,7 +30,7 @@ interface PlanForm {
   ocr_engine: "system_default" | "fast_alpr" | "plate_recognizer";
   ocr_enabled: boolean;
   face_recognition_enabled: boolean;
-  face_engine: "system_default" | "opencv" | "rekognition" | "luxand" | "facepp";
+  face_engine: "system_default" | "opencv" | "insightface" | "deepface" | "rekognition" | "luxand" | "facepp";
   is_active: boolean;
 }
 
@@ -378,6 +378,7 @@ export default function PlansPage() {
             >
               <option value="system_default">Padrão do sistema</option>
               <option value="insightface">InsightFace / ArcFace (local, gratuito)</option>
+              <option value="deepface">DeepFace / ArcFace (local, gratuito)</option>
               <option value="opencv">OpenCV / SFace (local, básico)</option>
               <option value="rekognition">AWS Rekognition (pago)</option>
               <option value="luxand">Luxand Cloud (pago)</option>

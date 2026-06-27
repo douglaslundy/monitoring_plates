@@ -26,9 +26,9 @@ import {
   Trash2,
 } from "lucide-react";
 
-type EngineType = "opencv" | "insightface" | "rekognition" | "luxand" | "facepp";
+type EngineType = "opencv" | "insightface" | "deepface" | "rekognition" | "luxand" | "facepp";
 
-const LOCAL_ENGINES: EngineType[] = ["opencv", "insightface"];
+const LOCAL_ENGINES: EngineType[] = ["opencv", "insightface", "deepface"];
 
 interface EngineInfo { value: EngineType; label: string; desc: string; free: boolean; recommended?: boolean }
 
@@ -39,6 +39,12 @@ const ENGINES: EngineInfo[] = [
     desc: "Motor local de alta precisão — ArcFace via ONNX, sem requisito de AVX2. Recomendado.",
     free: true,
     recommended: true,
+  },
+  {
+    value: "deepface",
+    label: "DeepFace / ArcFace",
+    desc: "Motor local via DeepFace com backend ArcFace. Alta precisÃ£o, modelos baixados no primeiro uso (~170 MB).",
+    free: true,
   },
   {
     value: "opencv",
@@ -79,6 +85,7 @@ interface AlertForm {
 
 const DEFAULT_THRESHOLDS: Partial<Record<EngineType, string>> = {
   insightface: "0.40",
+  deepface: "0.40",
   opencv: "0.36",
   rekognition: "0.80",
   luxand: "0.80",
