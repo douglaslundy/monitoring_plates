@@ -341,6 +341,7 @@ export function FaceConfigManager() {
   const [form, setForm] = useState<EngineForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [selectedConfigId, setSelectedConfigId] = useState("");
   const [testResult, setTestResult] = useState<Record<string, FaceEngineTestResult>>({});
   const [editing, setEditing] = useState<FaceEngineConfig | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<FaceEngineConfig | null>(null);
@@ -364,6 +365,11 @@ export function FaceConfigManager() {
         api.get<CameraBasic[]>("/api/cameras"),
       ]);
       setConfigs(cfgRes.data);
+      setSelectedConfigId((prev) => {
+        if (prev && cfgRes.data.some((c) => c.id === prev)) return prev;
+        const active = cfgRes.data.find((c) => c.is_active);
+        return active?.id ?? cfgRes.data[0]?.id ?? "";
+      });
       setCameras(camRes.data.filter((c: CameraBasic & { enable_face?: boolean }) => true));
     } catch (e: unknown) {
       setError(extractErrorMessage(e, "Não foi possível carregar configurações."));
@@ -377,6 +383,8 @@ export function FaceConfigManager() {
   function existing(engine: EngineType): FaceEngineConfig | undefined {
     return configs.find((c) => c.engine_type === engine);
   }
+
+  const selectedConfig = configs.find((c) => c.id === selectedConfigId) ?? null;
 
   function openCreate() {
     setEditing(null);
@@ -499,6 +507,7 @@ export function FaceConfigManager() {
       {error && <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">{error}</div>}
 
       {/* Motores configurados */}
+      <div className="hidden">
       {loading ? (
         <div className="space-y-4">
           {[1, 2].map((i) => (
@@ -582,6 +591,94 @@ export function FaceConfigManager() {
           )}
         </div>
       )}
+      </div>
+
+      {loading ? (
+        <div className="space-y-4">
+          {[1, 2].map((i) => (
+            <div key={`selector-${i}`} className="bg-white border rounded-xl p-6 animate-pulse h-32" />
+          ))}
+        </div>
+      ) : configs.length === 0 ? (
+        <div className="bg-white border rounded-xl p-12 text-center text-muted-foreground">
+          <ScanFace className="h-10 w-10 mx-auto mb-3 opacity-30" />
+          <p>Nenhum motor configurado</p>
+        </div>
+      ) : selectedConfig ? (
+        <div className="bg-white border rounded-xl p-6 space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[260px] flex-1">
+              <label className="block text-sm font-medium mb-1">Motor configurado</label>
+              <select
+                value={selectedConfigId}
+                onChange={(e) => setSelectedConfigId(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                {configs.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {ENGINE_LABELS[c.engine_type as EngineType] ?? c.engine_type}
+                    {c.is_active ? " (ativo)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => runTest(selectedConfig)}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <ScanFace className="h-3.5 w-3.5" />
+              Testar
+            </button>
+            <button
+              onClick={() => activate(selectedConfig)}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              {selectedConfig.is_active ? "Desativar" : "Ativar"}
+            </button>
+            <button
+              onClick={() => openEdit(selectedConfig)}
+              className="p-2 border rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setDeleteConfirm(selectedConfig)}
+              className="p-2 border rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full ${selectedConfig.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+              {selectedConfig.is_active ? "Ativo" : "Inativo"}
+            </span>
+            {ENGINES.find((e) => e.value === selectedConfig.engine_type)?.free ? (
+              <span className="text-xs bg-green-50 text-green-600 px-1.5 py-0.5 rounded border border-green-200">Gratuito</span>
+            ) : (
+              <span className="text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-200">Pago</span>
+            )}
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            {LOCAL_ENGINES.includes(selectedConfig.engine_type as EngineType)
+              ? "Motor local, sem custos externos"
+              : selectedConfig.api_token
+              ? "Credenciais configuradas"
+              : "Credenciais nao configuradas"}
+            {` - Threshold: ${selectedConfig.threshold}`}
+            {selectedConfig.region ? ` - Regiao: ${selectedConfig.region}` : ""}
+          </p>
+
+          {testResult[selectedConfig.id] && (
+            <div className={`p-3 rounded-lg flex items-start gap-2 text-sm ${testResult[selectedConfig.id].success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+              {testResult[selectedConfig.id].success ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 shrink-0 mt-0.5" />}
+              {testResult[selectedConfig.id].message}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {/* Testar com imagem */}
       <section className="bg-white rounded-xl border shadow-sm p-4 space-y-3">

@@ -131,13 +131,20 @@ def test_config(
 
     if config.engine_type == FaceEngineType.deepface.value:
         import subprocess, sys
-        r = subprocess.run(
-            [sys.executable, "-c", "from deepface import DeepFace; DeepFace.build_model('ArcFace'); print('ok')"],
-            capture_output=True, text=True, timeout=60,
-        )
+        try:
+            r = subprocess.run(
+                [sys.executable, "-c", "from deepface import DeepFace; DeepFace.build_model('ArcFace'); print('ok')"],
+                capture_output=True, text=True, timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            return FaceEngineTestResult(
+                success=False, engine_type=config.engine_type,
+                message="DeepFace não inicializou: timeout ao carregar o modelo ArcFace.",
+            )
         if r.returncode == 0 and "ok" in r.stdout:
             return FaceEngineTestResult(success=True, engine_type=config.engine_type, message="DeepFace (ArcFace) disponível. Pronto para uso.")
         stderr_snippet = (r.stderr or "")[-300:].strip()
+        stdout_snippet = (r.stdout or "")[-300:].strip()
         if r.returncode == 132 or "Illegal instruction" in stderr_snippet:
             return FaceEngineTestResult(
                 success=False, engine_type=config.engine_type,
@@ -145,7 +152,7 @@ def test_config(
             )
         return FaceEngineTestResult(
             success=False, engine_type=config.engine_type,
-            message=f"DeepFace não inicializou: {stderr_snippet or 'erro desconhecido'}",
+            message=f"DeepFace não inicializou: {stderr_snippet or stdout_snippet or f'código de saída {r.returncode} sem detalhes'}",
         )
 
     try:
