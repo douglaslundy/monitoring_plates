@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Modal } from "@/components/ui/Modal";
 import type {
   FaceEngineConfig,
   FaceEngineTestResult,
@@ -101,6 +102,15 @@ const EMPTY_ALERT: AlertForm = {
   schedule_duration_minutes: "",
   schedule_days_of_week: [0, 1, 2, 3, 4, 5, 6],
   cooldown_minutes: "0",
+};
+
+const ENGINE_LABELS: Record<EngineType, string> = {
+  insightface: "InsightFace / ArcFace",
+  deepface: "DeepFace / ArcFace",
+  opencv: "OpenCV (YuNet + SFace)",
+  rekognition: "AWS Rekognition",
+  luxand: "Luxand Cloud",
+  facepp: "Face++",
 };
 
 // ── Sub-componente: config de alertas por câmera ─────────────────────────────
@@ -330,6 +340,7 @@ export function FaceConfigManager() {
   const [selected, setSelected] = useState<EngineType>("insightface");
   const [form, setForm] = useState<EngineForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   const [testResult, setTestResult] = useState<Record<string, FaceEngineTestResult>>({});
   const [editing, setEditing] = useState<FaceEngineConfig | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<FaceEngineConfig | null>(null);
@@ -367,6 +378,13 @@ export function FaceConfigManager() {
     return configs.find((c) => c.engine_type === engine);
   }
 
+  function openCreate() {
+    setEditing(null);
+    setSelected("insightface");
+    setForm({ ...EMPTY_FORM, threshold: DEFAULT_THRESHOLDS.insightface ?? "0.40" });
+    setShowModal(true);
+  }
+
   async function save() {
     setSaving(true);
     setError("");
@@ -392,6 +410,7 @@ export function FaceConfigManager() {
         }
       }
       setForm(EMPTY_FORM);
+      setShowModal(false);
       await load();
     } catch (e: unknown) {
       setError(extractErrorMessage(e, "Erro ao salvar configuração."));
@@ -410,7 +429,7 @@ export function FaceConfigManager() {
       region: c.region ?? "",
       threshold: String(c.threshold ?? 0.8),
     });
-    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    setShowModal(true);
   }
 
   async function deleteEngine() {
@@ -471,87 +490,90 @@ export function FaceConfigManager() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="Motores de Reconhecimento Facial" description="Configure e ative o motor de faces do sistema" />
+      <PageHeader
+        title="Motores de Reconhecimento Facial"
+        description="Configure e gerencie os motores de reconhecimento facial"
+        action={{ label: "Adicionar motor", icon: Plus, onClick: openCreate }}
+      />
 
       {error && <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">{error}</div>}
 
       {/* Motores configurados */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {[1, 2].map((i) => (
-            <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
+            <div key={i} className="bg-white border rounded-xl p-6 animate-pulse h-32" />
           ))}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {configs.length === 0 ? (
-            <div className="bg-white rounded-xl border shadow-sm p-8 text-center text-muted-foreground">
-              <ScanFace className="h-12 w-12 mx-auto mb-3 opacity-15" />
-              <p className="text-sm">Nenhum motor configurado. Adicione abaixo.</p>
+            <div className="bg-white border rounded-xl p-12 text-center text-muted-foreground">
+              <ScanFace className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p>Nenhum motor configurado</p>
             </div>
           ) : (
             configs.map((c) => (
-              <div key={c.id} className="bg-white rounded-xl border shadow-sm p-4">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold">
-                        {ENGINES.find((e) => e.value === c.engine_type)?.label ?? c.engine_type}
+              <div key={c.id} className="bg-white border rounded-xl p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center ${c.is_active ? "bg-green-100" : "bg-gray-100"}`}>
+                      <ScanFace className={`h-5 w-5 ${c.is_active ? "text-green-600" : "text-gray-400"}`} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                      <h3 className="font-semibold">{ENGINE_LABELS[c.engine_type as EngineType] ?? c.engine_type}</h3>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${c.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                        {c.is_active ? "Ativo" : "Inativo"}
                       </span>
-                      {c.is_active && (
-                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">ativo</span>
-                      )}
                       {ENGINES.find((e) => e.value === c.engine_type)?.free ? (
                         <span className="text-xs bg-green-50 text-green-600 px-1.5 py-0.5 rounded border border-green-200">Gratuito</span>
                       ) : (
                         <span className="text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-200">Pago</span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Threshold: {c.threshold}
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {LOCAL_ENGINES.includes(c.engine_type as EngineType)
+                        ? "Motor local, sem custos externos"
+                        : c.api_token
+                        ? "Credenciais configuradas"
+                        : "Credenciais não configuradas"}
+                      {` · Threshold: ${c.threshold}`}
                       {c.region ? ` · região: ${c.region}` : ""}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <button
                       onClick={() => runTest(c)}
-                      className="px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50 transition"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg hover:bg-gray-50 transition-colors"
                     >
+                      <ScanFace className="h-3.5 w-3.5" />
                       Testar
                     </button>
                     <button
                       onClick={() => openEdit(c)}
-                      className="p-1.5 border rounded-lg hover:bg-gray-50 transition"
-                      title="Editar"
+                      className="p-1.5 border rounded-lg hover:bg-gray-50 transition-colors"
                     >
-                      <Pencil className="h-4 w-4 text-gray-500" />
+                      <Pencil className="h-3.5 w-3.5" />
                     </button>
                     <button
                       onClick={() => setDeleteConfirm(c)}
-                      className="p-1.5 border rounded-lg hover:bg-red-50 transition"
-                      title="Excluir"
+                      className="p-1.5 border rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"
                     >
-                      <Trash2 className="h-4 w-4 text-red-500" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                     <button
                       onClick={() => activate(c)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                        c.is_active
-                          ? "border hover:bg-gray-50"
-                          : "bg-primary text-primary-foreground hover:bg-primary/90"
-                      }`}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       {c.is_active ? "Desativar" : "Ativar"}
                     </button>
                   </div>
                 </div>
                 {testResult[c.id] && (
-                  <div
-                    className={`mt-3 flex items-center gap-2 text-sm ${
-                      testResult[c.id].success ? "text-green-700" : "text-red-700"
-                    }`}
-                  >
-                    {testResult[c.id].success ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                  <div className={`mt-4 p-3 rounded-lg flex items-start gap-2 text-sm ${testResult[c.id].success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                    {testResult[c.id].success ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 shrink-0 mt-0.5" />}
                     {testResult[c.id].message}
                   </div>
                 )}
@@ -650,12 +672,12 @@ export function FaceConfigManager() {
       </section>
 
       {/* Modal de confirmação de exclusão */}
-      {deleteConfirm && (
+      {false && deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full space-y-4">
             <h3 className="font-semibold text-base">Remover motor</h3>
             <p className="text-sm text-muted-foreground">
-              Tem certeza que deseja remover o motor <strong className="capitalize">{deleteConfirm.engine_type}</strong>? Esta ação não pode ser desfeita.
+              Tem certeza que deseja remover o motor <strong className="capitalize">{deleteConfirm?.engine_type}</strong>? Esta ação não pode ser desfeita.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -676,8 +698,152 @@ export function FaceConfigManager() {
         </div>
       )}
 
+      <Modal
+        open={deleteConfirm !== null}
+        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+        title="Remover motor facial"
+        description={
+          deleteConfirm
+            ? `Tem certeza que deseja remover a configuração de ${ENGINE_LABELS[deleteConfirm.engine_type as EngineType] ?? deleteConfirm.engine_type}? Esta ação não pode ser desfeita.`
+            : undefined
+        }
+      >
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={() => setDeleteConfirm(null)}
+            className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={deleteEngine}
+            disabled={deleting}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+          >
+            {deleting ? "Removendo..." : "Remover"}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showModal}
+        onOpenChange={setShowModal}
+        title={editing ? `Editar ${ENGINE_LABELS[editing.engine_type as EngineType] ?? editing.engine_type}` : "Adicionar motor facial"}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Motor</label>
+            <select
+              value={selected}
+              disabled={!!editing}
+              onChange={(e) => {
+                if (!editing) {
+                  const v = e.target.value as EngineType;
+                  setSelected(v);
+                  setForm({ ...EMPTY_FORM, threshold: DEFAULT_THRESHOLDS[v] ?? "0.80" });
+                }
+              }}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+            >
+              <optgroup label="— Gratuito (local) —">
+                {ENGINES.filter((e) => e.free).map((eng) => (
+                  <option key={eng.value} value={eng.value}>
+                    {eng.label}{eng.recommended ? " ★ Recomendado" : ""}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="— Pago (nuvem) —">
+                {ENGINES.filter((e) => !e.free).map((eng) => (
+                  <option key={eng.value} value={eng.value}>{eng.label}</option>
+                ))}
+              </optgroup>
+            </select>
+            {(() => {
+              const eng = ENGINES.find((e) => e.value === selected);
+              return eng ? <p className="text-xs text-muted-foreground mt-1.5">{eng.desc}</p> : null;
+            })()}
+          </div>
+
+          {!LOCAL_ENGINES.includes(selected) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  {selected === "rekognition" ? "Access Key" : selected === "luxand" ? "Token" : "API Key"}
+                </label>
+                <input
+                  value={form.api_token}
+                  onChange={(e) => setForm((p) => ({ ...p, api_token: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              {(selected === "rekognition" || selected === "facepp") && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Secret</label>
+                  <input
+                    type="password"
+                    value={form.api_secret}
+                    onChange={(e) => setForm((p) => ({ ...p, api_secret: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              )}
+              {selected === "rekognition" && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Região</label>
+                  <input
+                    value={form.region}
+                    onChange={(e) => setForm((p) => ({ ...p, region: e.target.value }))}
+                    placeholder="us-east-1"
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              )}
+              {(selected === "luxand" || selected === "facepp") && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">URL da API (opcional)</label>
+                  <input
+                    value={form.api_url}
+                    onChange={(e) => setForm((p) => ({ ...p, api_url: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="max-w-[200px]">
+            <label className="block text-sm font-medium mb-1">Threshold (0–1)</label>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
+              value={form.threshold}
+              onChange={(e) => setForm((p) => ({ ...p, threshold: e.target.value }))}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              onClick={() => setShowModal(false)}
+              className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Adicionar / editar motor */}
-      <section className="bg-white rounded-xl border shadow-sm p-4 space-y-4">
+      <section className="hidden bg-white rounded-xl border shadow-sm p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-medium">
             {editing ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}

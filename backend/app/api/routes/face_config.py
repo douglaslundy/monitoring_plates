@@ -132,7 +132,7 @@ def test_config(
     if config.engine_type == FaceEngineType.deepface.value:
         import subprocess, sys
         r = subprocess.run(
-            [sys.executable, "-c", "import deepface; deepface.DeepFace.build_model('ArcFace'); print('ok')"],
+            [sys.executable, "-c", "from deepface import DeepFace; DeepFace.build_model('ArcFace'); print('ok')"],
             capture_output=True, text=True, timeout=60,
         )
         if r.returncode == 0 and "ok" in r.stdout:
