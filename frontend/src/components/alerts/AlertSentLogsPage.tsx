@@ -5,6 +5,8 @@ import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Modal } from "@/components/ui/Modal";
+import { ViewToggle } from "@/components/ui/ViewToggle";
+import { useViewMode } from "@/hooks/useViewMode";
 import type { AlertLog } from "@/types";
 import { BellRing, Filter, ImageOff, Search, Trash2 } from "lucide-react";
 
@@ -48,10 +50,12 @@ export function AlertSentLogsPage({
   title,
   description,
   displayMode = "table",
+  viewStorageKey = "alert-sent-logs-view",
 }: {
   title: string;
   description: string;
   displayMode?: "table" | "cards";
+  viewStorageKey?: string;
 }) {
   const [items, setItems] = useState<AlertLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +69,10 @@ export function AlertSentLogsPage({
   });
   const [appliedFilters, setAppliedFilters] = useState(filters);
   const [selected, setSelected] = useState<AlertLog | null>(null);
+  const [viewMode, setViewMode] = useViewMode(
+    viewStorageKey,
+    displayMode === "cards" ? "blocks" : "list"
+  );
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -108,7 +116,10 @@ export function AlertSentLogsPage({
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title={title} description={description} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <PageHeader title={title} description={description} />
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
+      </div>
 
       <section className="bg-white rounded-xl border shadow-sm p-4 space-y-4">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -216,7 +227,7 @@ export function AlertSentLogsPage({
           <p className="text-base font-medium">Nenhum alerta encontrado</p>
           <p className="text-sm mt-1">Ajuste os filtros para localizar alertas já disparados.</p>
         </div>
-      ) : displayMode === "cards" ? (
+      ) : viewMode === "blocks" ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {items.map((item) => (
             <button

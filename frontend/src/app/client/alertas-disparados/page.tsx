@@ -6,6 +6,7 @@ export default function ClientAlertSentLogsPage() {
       title="Alertas disparados"
       description="Histórico de alertas enviados das suas placas monitoradas"
       displayMode="cards"
+      viewStorageKey="client-alert-sent-logs-view"
     />
   );
 }

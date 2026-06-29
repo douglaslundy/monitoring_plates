@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ViewToggle } from "@/components/ui/ViewToggle";
+import { useViewMode } from "@/hooks/useViewMode";
 import type { FaceDetection } from "@/types";
 import { ScanFace, Trash2, UserRound, X } from "lucide-react";
 
@@ -22,7 +24,15 @@ function formatDuration(seconds: number | null): string {
   return `${m}m ${s}s`;
 }
 
-export function FaceDetectionsHistory({ title, description }: { title: string; description: string }) {
+export function FaceDetectionsHistory({
+  title,
+  description,
+  viewStorageKey = "face-detections-view",
+}: {
+  title: string;
+  description: string;
+  viewStorageKey?: string;
+}) {
   const [items, setItems] = useState<FaceDetection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -31,6 +41,7 @@ export function FaceDetectionsHistory({ title, description }: { title: string; d
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [viewMode, setViewMode] = useViewMode(viewStorageKey, "blocks");
 
   useEffect(() => {
     api.get<{ role: string }>("/api/auth/me").then((r) => {
@@ -95,7 +106,10 @@ export function FaceDetectionsHistory({ title, description }: { title: string; d
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title={title} description={description} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <PageHeader title={title} description={description} />
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
+      </div>
 
       {error && (
         <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">{error}</div>
@@ -136,7 +150,7 @@ export function FaceDetectionsHistory({ title, description }: { title: string; d
           <p className="text-base font-medium">Nenhuma detecção de face</p>
           <p className="text-sm mt-1">As detecções aparecerão aqui quando câmeras com faces ativas reconhecerem pessoas.</p>
         </div>
-      ) : (
+      ) : viewMode === "blocks" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((d) => (
             <div
@@ -185,6 +199,54 @@ export function FaceDetectionsHistory({ title, description }: { title: string; d
               </div>
             </div>
           ))}
+        </div>
+      ) : (
+        <div className="overflow-hidden bg-white rounded-xl border shadow-sm">
+          <div className="divide-y">
+            {items.map((d) => (
+              <div
+                key={d.id}
+                className={`flex items-center gap-4 p-4 ${selectedIds.has(d.id) ? "bg-red-50" : "bg-white"}`}
+              >
+                {isAdmin && (
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded shrink-0"
+                    checked={selectedIds.has(d.id)}
+                    onChange={() => toggleSelect(d.id)}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => d.image_url && setLightbox(d.image_url)}
+                  className="shrink-0 h-16 w-24 rounded overflow-hidden border bg-gray-100"
+                  aria-label="Ampliar imagem"
+                >
+                  {d.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={d.image_url} alt={d.person_name ?? "Desconhecido"} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                      <UserRound className="h-6 w-6" />
+                    </div>
+                  )}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <UserRound className="h-4 w-4 text-primary shrink-0" />
+                    <span className={`font-semibold text-sm ${d.person_name ? "" : "text-muted-foreground italic"}`}>
+                      {d.person_name ?? "Desconhecido"}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">{d.camera_name ?? "-"}</p>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-2">
+                    <span>{formatDateTime(d.detected_at)}</span>
+                    <span title="Tempo rastreado">Tempo: {formatDuration(d.tracked_seconds)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

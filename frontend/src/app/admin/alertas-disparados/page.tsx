@@ -5,6 +5,7 @@ export default function AdminAlertSentLogsPage() {
     <AlertSentLogsPage
       title="Alertas disparados"
       description="Veja todos os alertas enviados com filtro por tipo, data/hora e mensagem"
+      viewStorageKey="admin-alert-sent-logs-view"
     />
   );
 }
