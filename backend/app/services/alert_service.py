@@ -1,6 +1,10 @@
 import json
 import logging
+from datetime import timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo
+
+_SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 from sqlalchemy.orm import Session
 
 from app.models.occurrence import Occurrence
@@ -130,7 +134,10 @@ def _send_whatsapp_alert(occ, camera, mp, image_url: str, image_bytes: bytes | N
     if already:
         return
 
-    detected_at_str = occ.detected_at.strftime("%d/%m/%Y %H:%M") if occ.detected_at else ""
+    _dt = occ.detected_at
+    if _dt and not _dt.tzinfo:
+        _dt = _dt.replace(tzinfo=timezone.utc)
+    detected_at_str = _dt.astimezone(_SAO_PAULO).strftime("%d/%m/%Y %H:%M") if _dt else ""
     message = build_whatsapp_message(
         plate=occ.plate,
         camera_name=camera.name,

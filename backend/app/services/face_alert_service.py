@@ -14,6 +14,17 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
+
+_SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+
+
+def _fmt_dt(dt: datetime | None, fmt: str = "%d/%m/%Y %H:%M") -> str:
+    """Converte datetime UTC (naive ou aware) para horário de São Paulo e formata."""
+    if dt is None:
+        return ""
+    aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return aware.astimezone(_SAO_PAULO).strftime(fmt)
 
 from sqlalchemy.orm import Session
 
@@ -37,7 +48,7 @@ def _build_message(person: Person, camera: Camera, fd: FaceDetection) -> str:
     if camera.location:
         lines.append(f"Local: {camera.location}")
     if fd.detected_at:
-        lines.append(f"Quando: {fd.detected_at.strftime('%d/%m/%Y %H:%M')}")
+        lines.append(f"Quando: {_fmt_dt(fd.detected_at)}")
     return "\n".join(lines)
 
 
@@ -47,7 +58,7 @@ def _build_unknown_message(camera: Camera, fd: FaceDetection) -> str:
     if camera.location:
         lines.append(f"Local: {camera.location}")
     if fd.detected_at:
-        lines.append(f"Quando: {fd.detected_at.strftime('%d/%m/%Y %H:%M')}")
+        lines.append(f"Quando: {_fmt_dt(fd.detected_at)}")
     return "\n".join(lines)
 
 
@@ -275,7 +286,7 @@ def _send_email_alert(fd, person, camera, image_url, message, db) -> None:
         person_name=_person_name(person),
         camera_name=camera.name,
         location=camera.location or "",
-        detected_at=fd.detected_at.strftime("%d/%m/%Y %H:%M") if fd.detected_at else "",
+        detected_at=_fmt_dt(fd.detected_at),
         image_url=image_url,
         confidence=fd.confidence,
     )
@@ -314,7 +325,7 @@ def _send_whatsapp_alert(fd, person, camera, image_url, image_bytes, message, db
     if _already_sent(db, fd, person, AlertChannel.whatsapp):
         return
 
-    detected_at_str = fd.detected_at.strftime("%d/%m/%Y %H:%M") if fd.detected_at else ""
+    detected_at_str = _fmt_dt(fd.detected_at)
     success = send_whatsapp_alert(
         to=person.alert_whatsapp,
         plate=_person_name(person),
@@ -382,7 +393,7 @@ def _send_unknown_email_alert(fd, camera, image_url, message, cam_config, db) ->
         person_name="Face desconhecida",
         camera_name=camera.name,
         location=camera.location or "",
-        detected_at=fd.detected_at.strftime("%d/%m/%Y %H:%M") if fd.detected_at else "",
+        detected_at=_fmt_dt(fd.detected_at),
         image_url=image_url,
         confidence=fd.confidence,
     )
@@ -421,7 +432,7 @@ def _send_unknown_whatsapp_alert(fd, camera, image_url, image_bytes, message, ca
     if _already_sent_unknown(db, fd, AlertChannel.whatsapp):
         return
 
-    detected_at_str = fd.detected_at.strftime("%d/%m/%Y %H:%M") if fd.detected_at else ""
+    detected_at_str = _fmt_dt(fd.detected_at)
     success = send_whatsapp_alert(
         to=cam_config.unknown_face_whatsapp,
         plate="Face desconhecida",

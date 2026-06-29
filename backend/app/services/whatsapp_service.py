@@ -5,7 +5,7 @@ import base64
 import io
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from PIL import Image
@@ -35,7 +35,8 @@ def _format_detected_at(value: datetime | str | None) -> str:
         return "não informado"
     if isinstance(value, str):
         return value.strip() or "não informado"
-    dt = value if value.tzinfo else value.replace(tzinfo=_SAO_PAULO)
+    # Datetimes do banco são naive UTC — assumir UTC antes de converter.
+    dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     return dt.astimezone(_SAO_PAULO).strftime("%d/%m/%Y %H:%M:%S")
 
 
