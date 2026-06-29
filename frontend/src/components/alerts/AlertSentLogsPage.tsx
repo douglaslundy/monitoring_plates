@@ -44,7 +44,15 @@ function localDateTimeToIso(value: string): string | null {
   return date.toISOString();
 }
 
-export function AlertSentLogsPage({ title, description }: { title: string; description: string }) {
+export function AlertSentLogsPage({
+  title,
+  description,
+  displayMode = "table",
+}: {
+  title: string;
+  description: string;
+  displayMode?: "table" | "cards";
+}) {
   const [items, setItems] = useState<AlertLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -207,6 +215,65 @@ export function AlertSentLogsPage({ title, description }: { title: string; descr
           <BellRing className="h-14 w-14 mx-auto mb-4 opacity-15" />
           <p className="text-base font-medium">Nenhum alerta encontrado</p>
           <p className="text-sm mt-1">Ajuste os filtros para localizar alertas já disparados.</p>
+        </div>
+      ) : displayMode === "cards" ? (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSelected(item)}
+              className="bg-white rounded-xl border shadow-sm p-4 text-left hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex gap-4">
+                <div className="shrink-0">
+                  {item.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.image_url}
+                      alt={`Frame ${item.plate}`}
+                      className="h-20 w-28 rounded object-cover border bg-gray-100"
+                    />
+                  ) : (
+                    <div className="h-20 w-28 rounded border bg-gray-50 flex items-center justify-center text-gray-300">
+                      <ImageOff className="h-5 w-5" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-semibold">{item.plate}</span>
+                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 capitalize">
+                      {item.channel}
+                    </span>
+                    <span
+                      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        item.status === "sent"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {item.status}
+                    </span>
+                  </div>
+
+                  <div>
+                    <p className="font-medium">{item.camera_name}</p>
+                    {item.location && (
+                      <p className="text-xs text-muted-foreground">{item.location}</p>
+                    )}
+                  </div>
+
+                  <p className="text-sm text-muted-foreground">{formatDateTime(item.sent_at)}</p>
+
+                  <p className="text-sm text-muted-foreground break-words">
+                    {item.message ? truncate(item.message, 120) : "—"}
+                  </p>
+                </div>
+              </div>
+            </button>
+          ))}
         </div>
       ) : (
         <div className="overflow-hidden bg-white rounded-xl border shadow-sm">

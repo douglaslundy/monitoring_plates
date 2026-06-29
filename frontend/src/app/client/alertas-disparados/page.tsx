@@ -5,6 +5,7 @@ export default function ClientAlertSentLogsPage() {
     <AlertSentLogsPage
       title="Alertas disparados"
       description="Histórico de alertas enviados das suas placas monitoradas"
+      displayMode="cards"
     />
   );
 }
