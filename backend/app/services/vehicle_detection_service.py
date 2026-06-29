@@ -383,7 +383,7 @@ class VehicleDetector:
             np = None
 
         if cv2 is not None and np is not None:
-            arr = np.frombuffer(image_bytes, np.uint8)
+            arr = np.frombuffer(image_bytes, np.uint8).copy()
             image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
             return image
 

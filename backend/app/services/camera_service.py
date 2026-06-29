@@ -39,7 +39,7 @@ def crop_half_frame(frame_bytes: bytes, side: str) -> bytes:
     import cv2
     import numpy as np
 
-    arr = np.frombuffer(frame_bytes, dtype=np.uint8)
+    arr = np.frombuffer(frame_bytes, dtype=np.uint8).copy()
     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if frame is None:
         return frame_bytes

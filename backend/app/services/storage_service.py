@@ -62,7 +62,12 @@ def _save_latest_frame_local(image_bytes: bytes, camera_id: str) -> str:
     relative = f"cameras/{camera_id}/latest.jpg"
     full = Path(settings.STORAGE_PATH) / relative
     full.parent.mkdir(parents=True, exist_ok=True)
-    full.write_bytes(image_bytes)
+    # Escrita atômica: escreve em arquivo temporário e renomeia.
+    # Evita que leitores concorrentes (preview do painel) peguem o arquivo
+    # truncado durante a sobrescrita direta.
+    tmp = full.with_suffix(".tmp")
+    tmp.write_bytes(image_bytes)
+    tmp.replace(full)
     return relative
 
 

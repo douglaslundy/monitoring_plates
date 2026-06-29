@@ -9,9 +9,12 @@ OpenCV) a função devolve os bytes originais, sem quebrar.
 """
 from __future__ import annotations
 
+import logging
 from typing import Iterable
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Cor por categoria (BGR, p/ cv2).
 _CATEGORY_COLORS: dict[str, tuple[int, int, int]] = {
@@ -41,7 +44,7 @@ def draw_labeled_boxes(
     except Exception:
         return ""
 
-    arr = np.frombuffer(frame_bytes, np.uint8)
+    arr = np.frombuffer(frame_bytes, np.uint8).copy()
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         return ""
@@ -132,9 +135,10 @@ def draw_detections(
     except Exception:  # pragma: no cover - ambiente sem OpenCV
         return frame_bytes
 
-    arr = np.frombuffer(frame_bytes, np.uint8)
+    arr = np.frombuffer(frame_bytes, np.uint8).copy()
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
+        logger.warning("draw_detections: cv2.imdecode falhou (bytes=%d) — salvando frame original", len(frame_bytes))
         return frame_bytes
 
     h, w = img.shape[:2]

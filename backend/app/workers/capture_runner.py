@@ -134,6 +134,12 @@ class CameraCapture(threading.Thread):
             mid = h // 2
             frame = frame[mid:, :] if self.lens_side == "lower" else frame[:mid, :]
 
+        # Descarta frames onde a parte inferior está completamente preta —
+        # sinal de decodificação H.264 incompleta (FFMPEG error concealment).
+        # Esses frames causam imagens de detecção corrompidas (só o topo visível).
+        if self._is_partial_frame(frame):
+            return
+
         now = time.time()
         moved = self._has_motion(cv2, frame)
 
@@ -169,6 +175,33 @@ class CameraCapture(threading.Thread):
         # ele só dispara após um período inteiro SEM nenhum frame enviado.
         self._last_force_send = now
         self._enqueue(cv2, frame, forced=forced)
+
+    def _is_partial_frame(self, frame) -> bool:
+        """Detecta frames parciais do RTSP onde o FFMPEG/H.264 preenche as linhas
+        inferiores com zeros (error concealment). Critério conservador: parte de cima
+        tem conteúdo real (std > 10) mas a parte de baixo é toda preta (std < 2),
+        indicando falha na decodificação e não uma cena escura legítima.
+        """
+        try:
+            import numpy as np
+            h = frame.shape[0]
+            if h < 64:
+                return False
+            top = frame[: int(h * 0.2), :]
+            bottom = frame[int(h * 0.8) :, :]
+            top_std = float(np.std(top.astype(np.float32)))
+            bottom_std = float(np.std(bottom.astype(np.float32)))
+            if top_std > 10.0 and bottom_std < 2.0:
+                logger.warning(
+                    "Camera %s: frame parcial descartado (topo std=%.1f, base std=%.1f)",
+                    self.camera_id,
+                    top_std,
+                    bottom_std,
+                )
+                return True
+        except Exception:
+            pass
+        return False
 
     def _has_motion(self, cv2, frame) -> bool:
         small = cv2.resize(frame, (320, 180))
