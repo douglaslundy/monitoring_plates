@@ -177,26 +177,33 @@ class CameraCapture(threading.Thread):
         self._enqueue(cv2, frame, forced=forced)
 
     def _is_partial_frame(self, frame) -> bool:
-        """Detecta frames parciais do RTSP onde o FFMPEG/H.264 preenche as linhas
-        inferiores com zeros (error concealment). Critério conservador: parte de cima
-        tem conteúdo real (std > 10) mas a parte de baixo é toda preta (std < 2),
-        indicando falha na decodificação e não uma cena escura legítima.
+        """Detecta frames literalmente corrompidos pelo FFMPEG (error concealment):
+        linhas inferiores preenchidas com pixels exatamente zero. Critério rigoroso:
+        pelo menos 50% das linhas do quarto inferior são completamente pretas
+        (soma de canal = 0) E o topo tem conteúdo real (mean > 15). Isso evita
+        descartar cenas escuras legítimas, onde sempre há algum ruído de sensor.
         """
         try:
             import numpy as np
             h = frame.shape[0]
             if h < 64:
                 return False
-            top = frame[: int(h * 0.2), :]
-            bottom = frame[int(h * 0.8) :, :]
-            top_std = float(np.std(top.astype(np.float32)))
-            bottom_std = float(np.std(bottom.astype(np.float32)))
-            if top_std > 10.0 and bottom_std < 2.0:
+            top_mean = float(np.mean(frame[: int(h * 0.2)].astype(np.float32)))
+            # Só verifica a parte inferior se o topo tem conteúdo visível
+            if top_mean < 15.0:
+                return False
+            bottom = frame[int(h * 0.75) :, :]
+            # Conta linhas completamente pretas (soma por linha = 0)
+            row_sums = bottom.sum(axis=(1, 2))
+            zero_rows = int(np.sum(row_sums == 0))
+            total_rows = bottom.shape[0]
+            if total_rows > 0 and zero_rows / total_rows >= 0.5:
                 logger.warning(
-                    "Camera %s: frame parcial descartado (topo std=%.1f, base std=%.1f)",
+                    "Camera %s: frame parcial descartado (%d/%d linhas zeradas na base, topo mean=%.1f)",
                     self.camera_id,
-                    top_std,
-                    bottom_std,
+                    zero_rows,
+                    total_rows,
+                    top_mean,
                 )
                 return True
         except Exception:
